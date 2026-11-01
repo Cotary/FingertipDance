@@ -2,7 +2,7 @@ import type { LevelData } from '../core/levelTable';
 import { CellType } from '../core/types';
 import type { BoardLayout } from './layout';
 import { paintSkin, paletteOf, type Skin } from './skins';
-import { CLAY, clayBlock, clayDisc, clayText, type ClayColor } from '../ui/clay';
+import { CLAY, clayBlock, clayDisc, clayInset, clayText, type ClayColor } from '../ui/clay';
 
 export interface BoardRenderState {
   /** 已点亮的格子索引集合 */
@@ -154,21 +154,21 @@ function drawCell(
         roundRect(ctx, x + 1, y + 1, size - 2, size - 2, r);
         ctx.stroke();
       } else {
-        // 未点亮：一块奶油黏土砖（可通行，等着被点亮）
+        // 未点亮：压进板子的一个奶油色**凹坑**（可通行，等着被填）
         // 不画亮面色阶 —— 49 格全画会多出上百次 clip，而这层砖本来就不该抢戏
-        clayBlock(ctx, x, y, size, size, r, CLAY.cream, idx + 3, { depth: 2, lit: false, jitter: 0.005 });
+        clayInset(ctx, x, y, size, size, r, CLAY.cream, idx + 3, { lit: false });
       }
       break;
     }
     case CellType.ONEWAY: {
-      clayBlock(ctx, x, y, size, size, r, CLAY.cream, idx + 5, { depth: 2, lit: false, jitter: 0.005 });
+      clayInset(ctx, x, y, size, size, r, CLAY.cream, idx + 5, { lit: false });
       drawArrow(ctx, x + size / 2, y + size / 2, size * 0.27, dir, CLAY.terracotta.dark);
       break;
     }
     case CellType.START:
     case CellType.END: {
       // 只铺砖，圆片延后到 drawEndpoints() 画（避免被连线横穿）
-      clayBlock(ctx, x, y, size, size, r, CLAY.cream, idx + 7, { depth: 2, lit: false, jitter: 0.005 });
+      clayInset(ctx, x, y, size, size, r, CLAY.cream, idx + 7, { lit: false });
       break;
     }
   }
@@ -192,13 +192,18 @@ function drawEndpoint(
   c: ClayColor,
   label: string,
 ): void {
-  clayDisc(ctx, cx, cy, r * 0.96, c, 900 + label.charCodeAt(0), { depth: 6, hi: 0.15 });
+  const seed = 900 + label.charCodeAt(0);
+
+  // 衬白：起终点压在深蓝板上，直接上色会「陷」进去。
+  // 一圈纸白把它托起来，观者才能一眼找到两端的锚点。
+  clayDisc(ctx, cx, cy, r * 0.99, CLAY.paper, seed, { depth: 7, hi: 0.05, jitter: 0.008 });
+  clayDisc(ctx, cx, cy, r * 0.895, c, seed + 1, { depth: 4, hi: 0.15 });
 
   // 「起」「终」笔画密集，必须深色实心、不描边 —— 描边会把内部空隙填死成墨块
-  clayText(ctx, label, cx, cy, Math.floor(r * 0.72), {
+  clayText(ctx, label, cx, cy, Math.floor(r * 0.68), {
     fill: '#FFFBF3',
     outline: c.shade,
-    outlineWidth: Math.max(2, r * 0.085),
+    outlineWidth: Math.max(2, r * 0.075),
     emboss: false,
   });
 }

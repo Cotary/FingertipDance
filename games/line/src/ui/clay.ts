@@ -19,6 +19,7 @@
  */
 
 import { DESIGN_W, DESIGN_H } from '../render/layout';
+import { fillGrain } from '../render/grain';
 
 // ────────────────────────────── 色板 ──────────────────────────────
 
@@ -45,8 +46,12 @@ export const CLAY = {
   blue: { base: '#6C8AA6', light: '#9AB2C8', dark: '#4A637A', shade: '#33485B' },
   cream: { base: '#F7EADA', light: '#FFFBF3', dark: '#DCC6AC', shade: '#B49A7C' },
   rose: { base: '#D96A6A', light: '#F09E9E', dark: '#A74444', shade: '#7C2C2C' },
-  /** 棋盘底板：沉在浅色页面里的一块深灰蓝黏土 */
-  board: { base: '#5E7A8C', light: '#8AA3B5', dark: '#44596A', shade: '#2F404E' },
+  /**
+   * 棋盘底板。
+   * 砖块是「压进板子的凹坑」，板子必须比砖**亮一档** ——
+   * 板子一深，砖就成了浮在板上的小方块，整块棋盘读作「一堆骰子」。
+   */
+  board: { base: '#8CA6BA', light: '#B4C9D9', dark: '#6B8799', shade: '#4F6776' },
   /** 比底板再深一号：阻挡块用 */
   boardDark: { base: '#44596A', light: '#5E7A8C', dark: '#2F404E', shade: '#22303A' },
   /** 星球表面的大陆（低饱和绿，压在蓝球上不刺眼） */
@@ -55,6 +60,10 @@ export const CLAY = {
   sand: { base: '#E7D0B4', light: '#F5E3CB', dark: '#C9AE8E', shade: '#A88C6C' },
   /** 锁住的节点：比球体更深，才能从球上「浮」出来 */
   lockTile: { base: '#3C5163', light: '#54708A', dark: '#28394A', shade: '#1C2833' },
+  /** 衬纸白：贴在深色件上的留白边（起终点圆片的衬圈） */
+  paper: { base: '#FFFBF3', light: '#FFFFFF', dark: '#E6D8C6', shade: '#C2B09A' },
+  /** 凹槽：进度条的槽、任何要「挖进底面」的长条。比沙色深两档，浅底上才读得出 */
+  groove: { base: '#8E7053', light: '#A98B6C', dark: '#6E543B', shade: '#553F2A' },
 } as const satisfies Record<string, ClayColor>;
 
 export type ClayKey = keyof typeof CLAY;
@@ -89,12 +98,26 @@ function h1(seed: number, i: number): number {
 
 export type Pt = [number, number];
 
-/** 圆片的抖动手捏轮廓（顺时针）。 */
-export function discPts(cx: number, cy: number, r: number, seed: number, jitter = 0.006): Pt[] {
-  const segs = Math.max(26, Math.min(52, Math.round(r * 0.48)));
+/**
+ * 圆片的抖动手捏轮廓（顺时针）。
+ * @param segs 强制顶点数（默认按半径自适应）
+ * @param angleJitter 顶点**角度**的抖动比例（相对 1/segs 的角距）。
+ *   只抖半径会让形状变成「规则多边形」—— 手撕的东西边长和角都不均。
+ */
+export function discPts(
+  cx: number,
+  cy: number,
+  r: number,
+  seed: number,
+  jitter = 0.006,
+  segs?: number,
+  angleJitter = 0,
+): Pt[] {
+  const n = segs ?? Math.max(26, Math.min(52, Math.round(r * 0.48)));
+  const step = (Math.PI * 2) / n;
   const pts: Pt[] = [];
-  for (let i = 0; i < segs; i++) {
-    const a = (i / segs) * Math.PI * 2 - Math.PI / 2;
+  for (let i = 0; i < n; i++) {
+    const a = i * step - Math.PI / 2 + angleJitter * step * (h1(seed, i + 500) - 0.5);
     const rr = r * (1 + (h1(seed, i) - 0.5) * 2 * jitter);
     pts.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]);
   }
@@ -200,7 +223,69 @@ export function softShadow(
   }
 }
 
+/**
+ * 指压痕：手指按过黏土留下的浅沟。
+ *
+ * 每道沟用两条弧 —— 沟底暗、上唇亮，两像素的错位就够读出「凹」。
+ * 单画暗弧会像划痕（凸），单画亮弧会像贴纸（平），必须成对。
+ *
+ * 只在面积够大的块上画（调用方把关）：一块 60px 的砖上出现指痕，
+ * 尺度就崩了 —— 观者会把它读成砖上的脏污，而不是捏它的手。
+ */
+export function clayPress(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  w: number,
+  h: number,
+  seed: number,
+  alpha = 1,
+): void {
+  const n = 3 + Math.round(h1(seed, 7) * 3); // 3~6 道
+  const base = Math.min(w, h);
+  ctx.lineCap = 'round';
+  for (let i = 0; i < n; i++) {
+    const a = h1(seed, 20 + i) * Math.PI * 2;
+    // 落点偏外圈：捏的时候手指在边上，中间反而是掌心压平的
+    const dist = 0.34 + h1(seed, 40 + i) * 0.28;
+    const px = cx + Math.cos(a) * w * 0.5 * dist;
+    const py = cy + Math.sin(a) * h * 0.5 * dist;
+    const rad = base * (0.13 + h1(seed, 60 + i) * 0.15);
+    const span = 0.55 + h1(seed, 80 + i) * 1.0;
+    const mid = h1(seed, 100 + i) * Math.PI * 2;
+    const lw = Math.max(1.2, base * 0.024);
+
+    ctx.strokeStyle = `rgba(74,51,39,${0.06 * alpha})`;
+    ctx.lineWidth = lw;
+    ctx.beginPath();
+    ctx.arc(px, py + 1.1, rad, mid - span / 2, mid + span / 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = `rgba(255,255,255,${0.09 * alpha})`;
+    ctx.lineWidth = lw * 0.6;
+    ctx.beginPath();
+    ctx.arc(px, py - 1.0, rad, mid - span / 2, mid + span / 2);
+    ctx.stroke();
+  }
+}
+
 // ────────────────────────────── 主原语：黏土块 / 黏土球 ──────────────────────────────
+
+/** #RRGGBB 的相对亮度（0~1）。用来让颗粒层自动适配深浅底色。 */
+function hexLum(hex: string): number {
+  const n = parseInt(hex.slice(1), 16);
+  return (((n >> 16) & 255) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114) / 255;
+}
+
+/**
+ * 颗粒层的强度随底色走。
+ *
+ * 同一个 alpha 下，浅色大面（奶油卡片）上的颗粒会读成「脏」，深色件上又几乎看不见 ——
+ * 所以亮底压到 0.3，暗底放到 0.55。这不是调参偷懒，是暗底本身就要更多颗粒才出质感。
+ */
+function grainAlphaFor(c: ClayColor): number {
+  return 0.20 + (1 - hexLum(c.base)) * 0.40;
+}
 
 export interface ClayOpts {
   /** 软投影深度（px）。0 = 不画投影（平贴的） */
@@ -209,6 +294,16 @@ export interface ClayOpts {
   hi?: number;
   /** 轮廓抖动幅度，默认 0.006 */
   jitter?: number;
+  /**
+   * 强制轮廓顶点数。默认按半径自动取（26~52，够圆滑）。
+   * 给「大陆」这类需要**大块面**的形状传 8~12：顶点一多，同样的抖动
+   * 就从「手撕的纸片」退化成「碎锯齿」。
+   */
+  segs?: number;
+  /** 顶点角度抖动比例（0~1，相对角距）。只给大陆这类手撕形状用。 */
+  angleJitter?: number;
+  /** 折角磨钝的描边宽度（px）。折线形状配这个，尖角才会被「手抹平」。 */
+  round?: number;
   /** 是否画亮面 */
   lit?: boolean;
 }
@@ -271,6 +366,11 @@ export function clayBlock(
   ctx.beginPath();
   ctx.ellipse(cx - w * 0.16, cy - h * 0.30, w * 0.44, h * 0.30, -0.42, 0, Math.PI * 2);
   ctx.fill();
+
+  // 表面质感：砂粒（细）→ 指压痕（中）。顺序不能反 —— 指痕是压在砂面上的。
+  // 小件跳过：< 26px 上一颗砂粒就是一整块脏点。
+  if (Math.min(w, h) >= 26) fillGrain(ctx, x, y, w, h, grainAlphaFor(c));
+  if (w * h >= 28000) clayPress(ctx, cx, cy, w, h, seed);
   ctx.restore();
 }
 
@@ -285,19 +385,34 @@ export function clayDisc(
   opts: ClayOpts = {},
 ): void {
   const jitter = opts.jitter ?? 0.010;
-  const pts = discPts(cx, cy, r, seed, jitter);
+  const pts = discPts(cx, cy, r, seed, jitter, opts.segs, opts.angleJitter);
   const depth = opts.depth ?? 7;
+  const round = opts.round ?? 0;
+
+  /**
+   * 填一层同形色阶。
+   * `round > 0` 时用完色圆头描边把折角的尖磨钝 —— 捏过的黏土没有尖角，
+   * 那圈同色描边就是「手抹过去」的痕迹。折线本身保持不变。
+   */
+  const fillRing = (color: string, dx: number, dy: number, sc: number): void => {
+    tracePts(ctx, pts, dx, dy, sc, cx, cy);
+    ctx.fillStyle = color;
+    ctx.fill();
+    if (round > 0) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = round;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+  };
 
   if (depth > 0) softShadow(ctx, pts, depth, 0.085, cx, cy);
 
-  ctx.fillStyle = c.dark;
-  tracePts(ctx, pts);
-  ctx.fill();
+  fillRing(c.dark, 0, 0, 1);
 
   const lift = Math.max(1.5, r * 0.09);
-  ctx.fillStyle = c.base;
-  tracePts(ctx, pts, 0, -lift, 0.988, cx, cy);
-  ctx.fill();
+  fillRing(c.base, 0, -lift, 0.988);
 
   if (opts.lit === false) return;
 
@@ -313,6 +428,57 @@ export function clayDisc(
   ctx.beginPath();
   ctx.ellipse(cx - r * 0.26, cy - r * 0.34, r * 0.34, r * 0.24, -0.42, 0, Math.PI * 2);
   ctx.fill();
+
+  if (r >= 14) fillGrain(ctx, cx - r, cy - r, r * 2, r * 2, grainAlphaFor(c));
+  ctx.restore();
+}
+
+/**
+ * 黏土凹坑 —— 压进板子里的一个坑。
+ *
+ * 和 `clayBlock` 的差别只有一条：**光的方向被翻转**。
+ * - 凸起：底边露 `dark`（厚度），亮面在上 → 读作「堆在板上」
+ * - 凹坑：上沿露 `dark`（内阴影），亮唇在下 → 读作「压进板里」
+ *
+ * 棋盘的空格砖必须用它：走过的是凸起、没走过的是凹坑，
+ * 一眼能看出这条路被「填」过了 —— 这比给砖换颜色更省事，也更像真实材料。
+ */
+export function clayInset(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+  c: ClayColor,
+  seed: number,
+  opts: ClayOpts = {},
+): void {
+  const pts = rrectPts(x, y, w, h, radius, seed, opts.jitter ?? 0.005);
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  // 下沉量就是这个坑的深度感来源，超过 8px 会读成「一个洞」而不是「一个格子」
+  const sink = Math.max(1.2, Math.min(h * 0.055, 8));
+
+  ctx.save();
+  tracePts(ctx, pts);
+  ctx.clip();
+
+  // 坑壁：整块铺暗色，之后被坑底盖掉，只在上沿留一圈 = 内阴影
+  ctx.fillStyle = c.dark;
+  ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+
+  // 坑底：整体下沉 + 微缩，四周留出暗环
+  ctx.fillStyle = c.base;
+  tracePts(ctx, pts, 0, sink, 0.985, cx, cy);
+  ctx.fill();
+
+  // 下沿受光的亮唇：再往下推一段，被 clip 裁掉后只剩底边一条
+  ctx.fillStyle = c.light;
+  tracePts(ctx, pts, 0, sink + h * 0.13, 0.90, cx, cy);
+  ctx.fill();
+
+  if (opts.lit !== false) fillGrain(ctx, x, y, w, h, grainAlphaFor(c));
   ctx.restore();
 }
 
@@ -482,4 +648,26 @@ export function clayBackdrop(ctx: CanvasRenderingContext2D): void {
   dg.addColorStop(1, 'rgba(120,88,62,0.30)');
   ctx.fillStyle = dg;
   ctx.fillRect(0, DESIGN_H * 0.62, DESIGN_W, DESIGN_H * 0.38);
+
+  // 起伏：背景不是一张平纸，是搭出来的。
+  // 只有竖向渐变 + 一处暖光时，整屏读作「一个色块」；补 4 处大范围柔光/柔暗，
+  // 才有棚拍背景纸那种缓慢的明暗流动。全部走径向渐变，边界不许出现。
+  const blobs: Array<[number, number, number, [number, number, number], number]> = [
+    // 相对 x, 相对 y, 相对半径, 颜色, 中心 alpha
+    [0.16, 0.20, 0.52, [255, 247, 229], 0.26],
+    [0.88, 0.40, 0.40, [255, 247, 229], 0.14],
+    [0.66, 0.74, 0.46, [146, 106, 74], 0.10],
+    [0.06, 0.88, 0.34, [146, 106, 74], 0.12],
+  ];
+  for (const [bx, by, br, [r, g2, b], a] of blobs) {
+    const cx = DESIGN_W * bx;
+    const cy = DESIGN_H * by;
+    const rad = DESIGN_W * br;
+    const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    bg.addColorStop(0, `rgba(${r},${g2},${b},${a})`);
+    bg.addColorStop(0.55, `rgba(${r},${g2},${b},${a * 0.16})`);
+    bg.addColorStop(1, `rgba(${r},${g2},${b},0)`);
+    ctx.fillStyle = bg;
+    ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
+  }
 }

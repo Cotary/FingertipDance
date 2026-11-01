@@ -67,9 +67,9 @@ const ORBIT_FLAT = 0.86;
 
 /** 星球表面的黏土大陆（相对球心的偏移与半径）。 */
 const CONTINENTS = [
-  { dx: -62, dy: -66, r: 72, seed: 21 },
-  { dx: 58, dy: -18, r: 54, seed: 34 },
-  { dx: -22, dy: 78, r: 62, seed: 47 },
+  { dx: -58, dy: -60, r: 78, seed: 21 },
+  { dx: 62, dy: -14, r: 58, seed: 34 },
+  { dx: -20, dy: 74, r: 66, seed: 47 },
 ];
 
 /**
@@ -141,7 +141,7 @@ function drawPlanet(ctx: CanvasRenderingContext2D): void {
   ctx.fill();
 
   // 球体本身（软投影 + 硬边色阶）
-  clayDisc(ctx, x, y, r, CLAY.blue, 61, { depth: 18, hi: 0.13, jitter: 0.009 });
+  clayDisc(ctx, x, y, r, CLAY.blue, 61, { depth: 18, hi: 0.20, jitter: 0.009 });
 
   // 球面上的黏土大陆：贴在球面上，所以有轻微投影
   ctx.save();
@@ -149,11 +149,16 @@ function drawPlanet(ctx: CanvasRenderingContext2D): void {
   ctx.arc(x, y, r * 0.985, 0, Math.PI * 2);
   ctx.clip();
   for (const c of CONTINENTS) {
-    // jitter 必须够大：低于 0.08 就只是一个「绿圆饼」，读不出大陆
+    // 大陆要读成「手撕的纸片」：顶点少（8）+ 半径抖动大 + 角度也抖。
+    // 只抖半径会得到规则多边形；真正的手撕形状边长和角都不均。
     clayDisc(ctx, x + c.dx, y + c.dy, c.r, CLAY.land, c.seed, {
       depth: 6,
-      jitter: 0.115,
+      jitter: 0.20,
       hi: 0.13,
+      segs: 8,
+      angleJitter: 0.75,
+      // 角要圆钝：捏过的黏土没有尖角，一圈同色圆头描边就是手抹过去的痕迹
+      round: c.r * 0.13,
     });
   }
 
@@ -277,19 +282,8 @@ function drawSatellite(ctx: CanvasRenderingContext2D, s: Satellite, now: number)
     ctx.stroke();
   }
 
-  if (s.state === 'locked') {
-    // 小锁：一块压在上面的深色黏土
-    const lx = s.x;
-    const ly = s.y + r * 0.56;
-    ctx.strokeStyle = 'rgba(255,246,233,0.85)';
-    ctx.lineWidth = 2.6;
-    ctx.beginPath();
-    ctx.arc(lx, ly - 3, 5.2, Math.PI, 0);
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(255,246,233,0.9)';
-    roundRect(ctx, lx - 7.5, ly - 3, 15, 12, 3.5);
-    ctx.fill();
-  }
+  // 未解锁**不放锁**：28px 的圆上，挂锁和关号必然叠成一团糊（上一版就是这样，
+  // 数字被锁体压掉了下半截）。未解锁的表达交给「更深的底 + 白字」，与关卡地图一致。
 }
 
 // ────────────────────────────── 吉祥物 ──────────────────────────────

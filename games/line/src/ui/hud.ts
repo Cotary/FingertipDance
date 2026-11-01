@@ -1,6 +1,6 @@
 import { DESIGN_W, DESIGN_H } from '../render/layout';
 import { THEME, type Theme } from './theme';
-import { CLAY, CLAY_UI, clayBlock, clayDisc, clayStar, clayText, rrectPts, tracePts, type ClayColor } from './clay';
+import { CLAY, CLAY_UI, clayBlock, clayDisc, clayInset, clayStar, clayText, rrectPts, tracePts, type ClayColor } from './clay';
 
 /** 游戏内配色。保留此名以兼容既有引用（黏土版内部不读颜色，只用黏土 token）。 */
 export const COLORS = THEME;
@@ -99,10 +99,9 @@ export function drawHud(
 export function drawProgressBar(ctx: CanvasRenderingContext2D, current: number, total: number): void {
   const x = 40, y = 1196, w = DESIGN_W - 80, h = 20;
 
-  // 凹槽：浅底上要「深一档」才读得出是条槽（旧版用的是亮轨道，那是给深色底的解法）
-  ctx.fillStyle = CLAY.sand.shade;
-  tracePts(ctx, rrectPts(x, y, w, h, h / 2, 511, 0.003));
-  ctx.fill();
+  // 槽：压进桌面的一道沟。浅底上必须「深两档」才读得出是槽，
+  // 而且要走 inset（上沿暗、下沿亮），平涂的深色条会读成一根棕色的棒子。
+  clayInset(ctx, x, y, w, h, h / 2, CLAY.groove, 511, { lit: false, jitter: 0.003 });
 
   const ratio = total > 0 ? Math.min(1, current / total) : 0;
   const fillW = Math.max(0, w * ratio);
@@ -187,7 +186,8 @@ export function drawResult(
     clayDisc(ctx, barX + fw - barH / 2, barY + barH / 2, barH * 0.44, CLAY.mustard, 805, { depth: 3 });
   }
 
-  // 两块沙色数据块（在奶油面板上用「深一档」而不是玻璃）
+  // 两块沙色数据块：在奶油面板上「压进去」而不是浮出来。
+  // 凸起的沙块会读成又一张卡片，凹坑才读成「面板上挖出的读数窗」。
   const sW = 288, sH = 80, sY = py + 268;
   const stats: Array<[string, string]> = [
     ['步数', `${steps} / 最短 ${shortest}`],
@@ -195,7 +195,7 @@ export function drawResult(
   ];
   stats.forEach(([k, v], i) => {
     const sx = px + 30 + i * (sW + 14);
-    clayBlock(ctx, sx, sY, sW, sH, 22, CLAY.sand, 810 + i, { depth: 4, lit: false, jitter: 0.004 });
+    clayInset(ctx, sx, sY, sW, sH, 22, CLAY.sand, 810 + i, { jitter: 0.004 });
     clayText(ctx, k, sx + sW / 2, sY + 26, 20, {
       fill: 'rgba(74,51,39,0.62)',
       outlineWidth: 0,

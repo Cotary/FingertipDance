@@ -155,8 +155,9 @@ I:\work\f-game\
 │  │  │  └─ input.ts                  # T14
 │  │  ├─ render/
 │  │  │  ├─ board.ts  trail.ts  fx.ts # T13
+│  │  │  ├─ grain.ts                  # 黏土砂粒材质层（createPattern 贴图）
 │  │  │  └─ skins/                    # T16
-│  │  ├─ ui/                          # T16 / T17
+│  │  ├─ ui/                          # T16 / T17（clay.ts 为黏土原语唯一真相源）
 │  │  ├─ net/api.ts                   # T13
 │  │  ├─ platform/                    # T13 / T21
 │  │  │  ├─ index.ts  web.ts  wechat.ts
@@ -164,7 +165,10 @@ I:\work\f-game\
 │  ├─ tools/
 │  │  ├─ level-gen.ts                 # T06  生成 1000 关
 │  │  ├─ batch-audit.ts               # T06  批量体检
-│  │  └─ level-inspector.html         # T06  可视化调试器
+│  │  ├─ level-inspector.html         # T06  可视化调试器
+│  │  ├─ mock-ui.ts                   # 八屏 mock 数据（两套画廊共用）
+│  │  ├─ ui-gallery.ts                # 离线 SVG 画廊（看布局）
+│  │  └─ live-gallery.ts              # 浏览器真 canvas 画廊（看材质）
 │  ├─ test/                           # T07 vitest
 │  └─ scripts/                        # npm scripts 封装
 ├─ server/                            # Go 后端
@@ -272,3 +276,5 @@ I:\work\f-game\
 | 2026-11-01 | UI 改版 | 黏土改造只做了 3 屏（主页 / 游戏内 / 结算），地图 / 皮肤 / 排行 / 我的 / 好友榜仍是旧糖果夜空，切页会断层 | `main.ts` 的 `frame()` 按 phase 分支背景，全量迁移完成后只留 `clayBackdrop`。进度与规格见 `23-UI风格方案.md` §7 |
 | 2026-11-01 | UI 改版 | 结算面板 7 行内容挤在 660 高里，进度条与上下元素只隔 6px，读起来像一条分隔线 | 面板 `ph 660 → 732` 并按 `(1334-732)/2` 垂直居中，纵向节奏重排为 标题 `+58` / 三星 `+148` / 进度文字 `+212` / 细条 `+238` / 数据胶囊 `+272` / 解锁胶囊 `+380` / 按钮 `+456、+562、+642` |
 
+| 2026-11-01 | UI 还原 | 黏土表面全光滑，还原度卡在 78%。对照 8 张目标图逐屏比对，另有三个硬伤：大陆是碎锯齿（35 顶点 + jitter 0.115 → 高频锯齿）、棋盘砖读作「浮在板上的小方块」（应为压进板子的凹坑）、主页锁定节点的挂锁压在关号下半截 | 补三层材质：① `render/grain.ts` 砂粒贴图（256×256 可平铺噪声 + `createPattern`，一次生成、每帧一次 `fillRect`；BLK=1 细砂、72% 稀疏、密度走 32×32 低频噪声预表、强度按底色亮度自适应 0.20~0.48）② `clayPress` 指压痕（暗沟 + 亮唇成对，只在面积 ≥28000 的块上画）③ `clayInset` 凹坑（翻转光方向：上沿暗、下沿亮），棋盘空格改凹、已走凸起。另补 `discPts` 的 `segs`/`angleJitter` 与 `clayDisc` 的 `round`（圆头描边磨钝折角）。还原度 78% → 约 92%，6 处对齐修正见 `23-UI风格方案.md` §7.5.3 |
+| 2026-11-01 | 工具链 | 离线 SVG 画廊（RecordingCtx）画不出 `createPattern`，颗粒层在预览里完全看不到 —— 材质改动等于盲改 | 新增 `tools/live-gallery.ts`（浏览器真 canvas，`?p=home` 逐屏）+ `scripts/shot-ui.sh` 批量出 PNG。两套画廊共用新建的 `tools/mock-ui.ts`（原先 mock 数据只存在 ui-gallery.ts 里，复制一份必然漂移）。截图命令必须用**绝对路径 + 反斜杠**，相对路径在 Windows 上报 `0x5 拒绝访问`；chrome 并发会抢 user-data-dir，批量截图需逐个串行 |

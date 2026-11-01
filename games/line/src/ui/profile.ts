@@ -143,7 +143,7 @@ export function drawProfilePage(ctx: CanvasRenderingContext2D, st: ProfilePageSt
       ctx.restore();
     } else {
       // 锁必须用深色：奶油锁画在沙色格子上等于没有，第一版就是这么翻车的
-      clayLock(ctx, x + cell / 2, cy + cell / 2 + 2, 0.92, CLAY.board);
+      clayLock(ctx, x + cell / 2, cy + cell / 2 + 2, 0.92, CLAY.lockTile);
     }
   });
 

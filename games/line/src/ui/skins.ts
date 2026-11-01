@@ -79,10 +79,10 @@ export function drawSkinsPage(
     const pv = 150;
     const pvX = x + (cardW - pv) / 2;
     const pvY = y + 16;
-    ctx.fillStyle = CLAY.board.dark;
+    ctx.fillStyle = CLAY.boardDark.dark;
     tracePts(ctx, rrectPts(pvX - 7, pvY - 7, pv + 14, pv + 14, 20, 621 + i, 0.003));
     ctx.fill();
-    ctx.fillStyle = CLAY.board.base;
+    ctx.fillStyle = CLAY.boardDark.base;
     tracePts(ctx, rrectPts(pvX - 6, pvY - 8, pv + 12, pv + 12, 20, 621 + i, 0.003));
     ctx.fill();
 

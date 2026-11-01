@@ -126,37 +126,37 @@ export function drawMapView(ctx: CanvasRenderingContext2D, st: MapViewState, now
   ctx.beginPath();
   trace(first, lastSeg);
   ctx.strokeStyle = CLAY.sand.shade;
-  ctx.lineWidth = 22;
+  ctx.lineWidth = 26;
   ctx.stroke();
 
-  // 未走的路：浅棕，像还没压实的土
+  // 未走的路：浅棕细线，像还没压实的土（和已走的粗管拉开两档粗细，一眼分得清）
   if (doneSeg < lastSeg) {
     ctx.beginPath();
     trace(Math.max(first, doneSeg), lastSeg);
     ctx.strokeStyle = CLAY.cream.dark;
-    ctx.lineWidth = 15;
+    ctx.lineWidth = 11;
     ctx.stroke();
   }
 
-  // 已走的路：一条陶土条（先画下移 5px 的暗面，再画主色 → 底边露暗）
+  // 已走的路：一条陶土**管**（先画下移 5px 的暗面，再画主色 → 底边露暗）
   if (doneSeg > first) {
     ctx.beginPath();
     trace(first, doneSeg, 5);
     ctx.strokeStyle = CLAY.terracotta.dark;
-    ctx.lineWidth = 15;
+    ctx.lineWidth = 20;
     ctx.stroke();
 
     ctx.beginPath();
     trace(first, doneSeg);
     ctx.strokeStyle = CLAY.terracotta.base;
-    ctx.lineWidth = 15;
+    ctx.lineWidth = 20;
     ctx.stroke();
 
     // 大范围低 alpha 柔光（黏土不许有高光条，只能这样提亮上缘）
     ctx.beginPath();
-    trace(first, doneSeg, -3);
-    ctx.strokeStyle = 'rgba(255,246,233,0.22)';
-    ctx.lineWidth = 5;
+    trace(first, doneSeg, -4);
+    ctx.strokeStyle = 'rgba(255,246,233,0.24)';
+    ctx.lineWidth = 6;
     ctx.stroke();
   }
   ctx.restore();
@@ -235,10 +235,10 @@ function drawMapNode(
     // 未解锁：一块深蓝黏土片。比球面/桌面都深，才能读作「压在上面但关着」
     clayDisc(ctx, x, y, r, CLAY.lockTile, 900 + idx, { depth: 3, hi: 0.08 });
     // 不放锁：34px 的圆装不下能读清的挂锁，会变成一个白点。
-    // 未解锁的表达交给「更深 + 更沉（depth 小）+ 灰字」。
+    // 未解锁的表达交给「更深的底 + 更沉（depth 小）+ 白字」。
     clayText(ctx, String(idx), x, y, 24, {
       weight: 600,
-      fill: 'rgba(255,246,233,0.66)',
+      fill: 'rgba(255,251,243,0.92)',
       outlineWidth: 0,
       emboss: false,
     });
