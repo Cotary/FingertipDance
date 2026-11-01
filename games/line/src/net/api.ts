@@ -79,13 +79,41 @@ export function reportSkip(levelIdx: number): Promise<{ maxLevel: number }> {
   return authed<{ maxLevel: number }>('/api/skip', 'POST', { levelIdx });
 }
 
+/** 好友条目（服务端返回）。 */
+export interface FriendItem {
+  uid: number;
+  nickname: string;
+  avatar: string;
+  maxLevel: number;
+  totalTimeMs: number;
+  skinCount: number;
+  isMutual: boolean;
+}
+
+/** 好友进度统计。 */
+export interface FriendStats {
+  friendCount: number;
+  avgLevel: number;
+  maxLevel: number;
+}
+
+/** 榜单条目。 */
+export interface LeaderboardItem {
+  rank: number;
+  uid: number;
+  nickname: string;
+  avatar: string;
+  maxLevel: number;
+  totalTimeMs: number;
+}
+
 /** 拉取总榜。 */
-export function fetchLeaderboard(): Promise<{ list: any[]; myRank: number; total: number }> {
+export function fetchLeaderboard(): Promise<{ list: LeaderboardItem[]; myRank: number; total: number }> {
   return authed('/api/leaderboard', 'GET');
 }
 
 /** 拉取好友列表。 */
-export function fetchFriends(): Promise<{ list: any[]; stats: any }> {
+export function fetchFriends(): Promise<{ list: FriendItem[]; stats: FriendStats }> {
   return authed('/api/friends', 'GET');
 }
 

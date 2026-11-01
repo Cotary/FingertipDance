@@ -1,5 +1,5 @@
 import { platform } from './platform';
-import { login, fetchConfig, reportProgress, reportSkip, reportEvent } from './net/api';
+import { fetchFriends, login, fetchConfig, reportProgress, reportSkip, reportEvent } from './net/api';
 import { Session } from './game/session';
 import { LevelStore, ProgressStore } from './game/progressStore';
 import { DESIGN_W, DESIGN_H } from './render/layout';
@@ -13,6 +13,8 @@ import { ads } from './ads/ads';
 import { needsAdForHint, canSkipToday, markSkippedToday } from './ads/rewardRules';
 import { tracker } from './analytics/tracker';
 import { drawHud, drawProgressBar, drawResult, drawButton, hitButton, type Button } from './ui/hud';
+import { drawFriendsPage, type FriendsPageState } from './ui/friends';
+import { publishProfile } from './platform/openData';
 import { findHint } from './core/solver';
 import { CellType } from './core/types';
 import type { GameState } from './game/state';
@@ -34,7 +36,7 @@ let winAnimStart = 0;
 let waveLit = new Set<number>();
 
 let config: any = null;
-let phase: 'loading' | 'playing' | 'result' | 'skins' = 'loading';
+let phase: 'loading' | 'playing' | 'result' | 'skins' | 'friends' = 'loading';
 let resultButtons: Button[] = [];
 let resultData: { levelIdx: number; steps: number; shortest: number; timeMs: number; unlockedSkin: any } | null = null;
 let pressedBtn: string | null = null;
@@ -46,6 +48,14 @@ let skinsPage: SkinsPageState = {
   page: 0,
 };
 let skinButtons: Button[] = [];
+
+let friendsPage: FriendsPageState = {
+  friends: [],
+  stats: { friendCount: 0, avgLevel: 0, maxLevel: 0 },
+  myRank: 0,
+  loadingOpenData: true,
+};
+let friendsButtons: Button[] = [];
 
 /** 画布坐标 → 设计坐标。 */
 function toDesign(clientX: number, clientY: number): { x: number; y: number } {
@@ -61,6 +71,7 @@ function toDesign(clientX: number, clientY: number): { x: number; y: number } {
 /** 顶部操作按钮。 */
 const hintBtn: Button = { x: DESIGN_W - 210, y: 100, w: 90, h: 60, label: '提示', kind: 'ghost', id: 'hint' };
 const skipBtn: Button = { x: DESIGN_W - 110, y: 100, w: 90, h: 60, label: '跳过', kind: 'ghost', id: 'skip' };
+const friendsBtn: Button = { x: 40, y: 100, w: 90, h: 60, label: '好友', kind: 'ghost', id: 'friends' };
 
 session.on((e) => {
   if (e.type === 'won') { audio.win(); void onWin(e.steps, e.timeMs, e.path); }
@@ -106,6 +117,9 @@ async function onWin(steps: number, timeMs: number, path: number[], skipped = fa
     unlockedSkin,
   };
   pendingLevel = level.idx + 1;
+
+  // 发布进度到开放数据域（好友榜才准）
+  publishMyProfile();
 
   // 结算页延后出现，让通关波次动画播完；入场后再延迟 500ms 弹插屏
   setTimeout(() => {
@@ -182,8 +196,42 @@ async function unlockByAd(skinId: string) {
   reportEvent('skin_unlock', { skin_id: skinId, via: 'ad' });
 }
 
+/** 发布自己的进度到开放数据域（好友榜）。 */
+function publishMyProfile() {
+  publishProfile({
+    maxLevel: progress.current.maxLevel,
+    totalTimeMs: progress.current.totalTimeMs,
+    totalSteps: progress.current.totalSteps,
+    skinCount: progress.current.unlockedSkins.length,
+    nickname: '玩家',
+    avatar: '',
+    updatedAt: Date.now(),
+  });
+}
+
+/** 打开好友页。 */
+async function openFriends() {
+  phase = 'friends';
+  friendsPage.loadingOpenData = true;
+  reportEvent('leaderboard_view', { scope: 'friends', my_rank: friendsPage.myRank });
+
+  // 服务端好友列表（Web 兜底 + 统计）
+  try {
+    const res = await fetchFriends();
+    friendsPage.friends = res.list;
+    friendsPage.stats = res.stats;
+  } catch { /* 忽略 */ }
+
+  // 发布自己的进度到开放数据域
+  publishMyProfile();
+
+  // 开放数据域首帧需要时间
+  setTimeout(() => { friendsPage.loadingOpenData = false; }, 500);
+}
+
 /** 找起点索引。 */
-function findStartIdx(st: GameState): number {  for (let y = 0; y < st.level.h; y++) {
+function findStartIdx(st: GameState): number {
+  for (let y = 0; y < st.level.h; y++) {
     for (let x = 0; x < st.level.w; x++) {
       if (st.level.grid[y][x].type === CellType.START) return y * st.level.w + x;
     }
@@ -220,9 +268,16 @@ function onDown(clientX: number, clientY: number) {
     }
     return;
   }
+  if (phase === 'friends') {
+    for (const b of friendsButtons) {
+      if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
+    }
+    return;
+  }
   if (phase !== 'playing') return;
   if (hitButton(hintBtn, d.x, d.y)) { pressedBtn = 'hint'; return; }
   if (hitButton(skipBtn, d.x, d.y)) { pressedBtn = 'skip'; return; }
+  if (hitButton(friendsBtn, d.x, d.y)) { pressedBtn = 'friends'; return; }
   session.pointerDown(d.x, d.y);
 }
 
@@ -243,6 +298,7 @@ function onUp() {
     else if (id === 'next') void enterLevel(pendingLevel);
     else if (id === 'share') { void platform.share({ title: `我卡在第 ${session.state?.level.idx ?? 1} 关` }); reportEvent('share_click', {}); }
     else if (id === 'skins') { phase = 'skins'; ads.showBanner(); reportEvent('skin_page_view', { owned: skinsPage.unlocked.size, total: SKINS.length }); }
+    else if (id === 'friends') { void openFriends(); }
     else if (id === 'back') { phase = 'playing'; ads.hideBanner(); }
     else if (id === 'prevPage') skinsPage.page = Math.max(0, skinsPage.page - 1);
     else if (id === 'nextPage') skinsPage.page = Math.min(Math.ceil(SKINS.length / PER_PAGE) - 1, skinsPage.page + 1);
@@ -320,6 +376,7 @@ function frame() {
     // 顶部按钮
     drawButton(ctx, hintBtn, pressedBtn === 'hint');
     drawButton(ctx, skipBtn, pressedBtn === 'skip');
+    drawButton(ctx, friendsBtn, pressedBtn === 'friends');
   }
 
   // 特效（粒子 + 扩散环）
@@ -327,6 +384,10 @@ function frame() {
 
   if (phase === 'skins') {
     skinButtons = drawSkinsPage(ctx, skinsPage, now);
+  }
+
+  if (phase === 'friends') {
+    friendsButtons = drawFriendsPage(ctx, friendsPage);
   }
 
   if (phase === 'result' && resultData) {

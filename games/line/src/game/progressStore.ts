@@ -18,6 +18,10 @@ export interface Progress {
   unlockedSkins: string[];
   currentSkin: string;
   adWatchCnt: number;
+  /** 累计步数（用于好友榜/统计）。 */
+  totalSteps: number;
+  /** 累计用时（毫秒，用于好友榜分数）。 */
+  totalTimeMs: number;
 }
 
 /**
@@ -92,6 +96,8 @@ export class ProgressStore {
     unlockedSkins: ['wood', 'mint'],
     currentSkin: 'wood',
     adWatchCnt: 0,
+    totalSteps: 0,
+    totalTimeMs: 0,
   };
 
   /** 读取进度。 */
