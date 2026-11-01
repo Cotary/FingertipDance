@@ -413,3 +413,13 @@ npm test
 ## 产出物
 - `src/core/types.ts` `rng.ts` `grid.ts` `codec.ts`
 - `test/codec.test.ts` `rng.test.ts` `grid.test.ts`
+
+---
+
+## 遗留问题
+
+| 日期 | 问题 | 处理方式 |
+|---|---|---|
+| 2026-11-01 | 任务书 2.3 节 `canEnter`/`findByType`/`countSpecial` 用一维 `Cell[]`，与规格 00/02 及 T03 solver 的二维 `Cell[][]`（`grid[y][x]`）冲突 | 以规格为准，统一改二维 `Cell[][]`；`canEnter` 移除冗余的 `fromIdx` 参数，改为 `canEnter(grid, toIdx, enterDir)` |
+| 2026-11-01 | 任务书 codec 测试「往返一致」与「非 ONEWAY 方向归零」两断言矛盾（规格 02 §1.2 规定非 ONEWAY 的 dir 一律归 0） | 以规格为准：仅 ONEWAY 的 dir 往返保留，其余类型 dir 归零，测试已修正 |
+| 2026-11-01 | vitest 默认 threads 池在 Windows 沙箱下并发写 vite-node SSR 缓存临时文件报 EPERM（`fs.promises.writeFile` → `AppData\Local\Temp\...\ssr\<hash>`），导致 vitest 退出码非 0（测试用例本身全通过） | 在 `vitest.config.ts` 设 `pool: 'forks'` + `poolOptions.forks.singleFork: true`，规避并发写冲突 |

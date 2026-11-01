@@ -191,8 +191,8 @@ I:\work\f-game\
 
 | TASK | 状态 | 日期 | 产出物 / 备注 |
 |---|---|---|---|
-| T01 环境与工程骨架 | ☐ | | |
-| T02 core: rng + grid | ☐ | | |
+| T01 环境与工程骨架 | ☑ | 2026-11-01 | games/line/ 可运行工程（typecheck/test/build 全过）、server/ 目录骨架、git init → main |
+| T02 core: rng + grid | ☑ | 2026-11-01 | src/core/{types,rng,grid,codec}.ts + 3 测试文件（14 用例全过）；统一二维 Cell[][] 表示 |
 | T03 solver（BFS） | ☐ | | |
 | T04 难度曲线 curve | ☐ | | |
 | T05 generator | ☐ | | |
