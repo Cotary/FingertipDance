@@ -83,6 +83,9 @@ func main() {
 		auth.Use(core.AuthMiddleware(issuer))
 		auth.GET("/leaderboard", leaderboard.GetHandler(db, rdb))
 		auth.POST("/report", core.ReportHandler(db))
+		auth.POST("/progress", line.ProgressHandler(db, line.DefaultSkins()))
+		auth.POST("/challenge", line.ChallengeHandler(db))
+		auth.POST("/skip", line.SkipHandler(db))
 	}
 
 	srv := &http.Server{

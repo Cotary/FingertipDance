@@ -201,7 +201,7 @@ I:\work\f-game\
 | T08 Go 后端骨架 | ☑ | 2026-11-01 | server/ 完整骨架：internal/core 9 文件 + profile/leaderboard 占位 + deploy 配置 + migrations/001_init.sql（6 表）；go build/vet 通过；依赖固定到 go1.24 兼容版本 |
 | T09 关卡下发 + config | ☑ | 2026-11-01 | internal/games/line/{levels,codec,handler,skins,levels_test}.go；embed 关卡表 + /api/config /api/levels；go build/vet/test 通过（4 用例） |
 | T10 登录 + profile | ☑ | 2026-11-01 | platform/wechat/{code2session,openid}.go + profile/{profile,profile_test}.go；openid AES-GCM 加密存储 + sha256 哈希唯一索引 + JWT 签发；go build/vet/test 通过（4 用例） |
-| T11 进度上报 + 成绩校验 | ☐ | | |
+| T11 进度上报 + 成绩校验 | ☑ | 2026-11-01 | internal/games/line/{validate,progress,challenge,skip,validate_test}.go + 路由接入；防作弊校验（路径/步数/用时）+ 交叉验证 TS 解法通过 Go 校验；go build/vet/test 通过 |
 | T12 排行榜 + 好友后端 | ☐ | | |
 | T13 前端骨架 + 渲染 | ☐ | | |
 | T14 拖拽输入 + 关卡交互 | ☐ | | |
@@ -226,3 +226,4 @@ I:\work\f-game\
 | 2026-11-01 | T08 | 本环境 Docker daemon 未运行，无法端到端 curl /healthz 联调 | 已通过编译+运行验证启动序列（配置加载→DB 连接处清晰报错退出），完整联调留待有 Docker 环境 |
 | 2026-11-01 | T09 | 本环境 Docker daemon 未运行，无法 curl /api/config、/api/levels 端到端验证 | 用 levels_test.go（4 用例）从磁盘加载验证 1000 关+自检+Range 钳制+解码；SerializedLevel 不含 solution 字段保证不泄露解法 |
 | 2026-11-01 | T10 | 本环境 Docker daemon 未运行，无法 POST /api/login 端到端验证（重复登录 uid 稳定等依赖 MySQL） | 用单测覆盖哈希稳定性/加密随机性/加解密往返/mock code2session；openid 存 AES-GCM 密文而非明文 |
+| 2026-11-01 | T11 | 本环境 Docker daemon 未运行，无法执行 §11.7 的 7 项防作弊手动验证 | 用单测覆盖路径校验 4 种拒绝场景 + 交叉验证（TS 解法跑 Go ValidatePath 抽检 100 关），其余留待有 Docker 环境 |
