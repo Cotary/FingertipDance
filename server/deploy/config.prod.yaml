@@ -4,7 +4,7 @@ server:
   addr: ":8080"
 
 db:
-  dsn: "root:STRONG_PASSWORD@tcp(mysql:3306)/fgame?charset=utf8mb4&parseTime=true&loc=Local&multiStatements=true"
+  dsn: "postgres://fgame:STRONG_PASSWORD@postgres:5432/fgame?sslmode=disable"
 
 redis:
   addr: "redis:6379"

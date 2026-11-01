@@ -2,7 +2,7 @@ server:
   port: 8080
   addr: ":8080"
 db:
-  dsn: "root:root@tcp(127.0.0.1:3306)/fgame?charset=utf8mb4&parseTime=true&loc=Local&multiStatements=true"
+  dsn: "postgres://fgame:fgame@127.0.0.1:15432/fgame?sslmode=disable"
 redis:
   addr: "127.0.0.1:6379"
   db: 0

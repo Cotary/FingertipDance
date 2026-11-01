@@ -1,5 +1,5 @@
 // 埋点数据分析脚本。用于上线后快速查看漏斗。
-// 用法：DB_DSN="root:root@tcp(127.0.0.1:3306)/fgame?charset=utf8mb4&parseTime=true" go run ./tools/analyze
+// 用法：DB_DSN="postgres://fgame:fgame@127.0.0.1:15432/fgame?sslmode=disable" go run ./tools/analyze
 package main
 
 import (
@@ -7,15 +7,15 @@ import (
 	"fmt"
 	"os"
 
-	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 func main() {
 	dsn := os.Getenv("DB_DSN")
 	if dsn == "" {
-		dsn = "root:root@tcp(127.0.0.1:3306)/fgame?charset=utf8mb4&parseTime=true"
+		dsn = "postgres://fgame:fgame@127.0.0.1:15432/fgame?sslmode=disable"
 	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		fmt.Println("连接失败:", err)
 		os.Exit(1)
@@ -39,7 +39,7 @@ func main() {
 func printLevelFunnel(db *sql.DB) {
 	rows, err := db.Query(`
 		SELECT
-		  JSON_UNQUOTE(JSON_EXTRACT(params, '$.level_idx')) AS lvl,
+		  params->>'level_idx' AS lvl,
 		  SUM(CASE WHEN name='level_start' THEN 1 ELSE 0 END) AS starts,
 		  SUM(CASE WHEN name='level_pass' THEN 1 ELSE 0 END) AS passes,
 		  SUM(CASE WHEN name='level_fail' THEN 1 ELSE 0 END) AS fails
@@ -77,7 +77,7 @@ func printLevelFunnel(db *sql.DB) {
 func printAdFunnel(db *sql.DB) {
 	rows, err := db.Query(`
 		SELECT
-		  JSON_UNQUOTE(JSON_EXTRACT(params, '$.placement')) AS placement,
+		  params->>'placement' AS placement,
 		  SUM(CASE WHEN name='ad_start' THEN 1 ELSE 0 END) AS starts,
 		  SUM(CASE WHEN name='ad_complete' THEN 1 ELSE 0 END) AS completes,
 		  SUM(CASE WHEN name='ad_abort' THEN 1 ELSE 0 END) AS aborts
@@ -132,7 +132,7 @@ func printShareFunnel(db *sql.DB) {
 // printSkinFunnel 打印皮肤解锁分布。
 func printSkinFunnel(db *sql.DB) {
 	rows, err := db.Query(`
-		SELECT JSON_UNQUOTE(JSON_EXTRACT(params, '$.via')) AS via, COUNT(*)
+		SELECT params->>'via' AS via, COUNT(*)
 		FROM events WHERE name='skin_unlock' GROUP BY via
 	`)
 	if err != nil {
@@ -152,7 +152,7 @@ func printSkinFunnel(db *sql.DB) {
 	// 当前持有皮肤分布
 	fmt.Println("\n当前玩家皮肤持有分布：")
 	rows2, err := db.Query(`
-		SELECT JSON_LENGTH(unlocked_skins) AS cnt, COUNT(*) AS players
+		SELECT jsonb_array_length(unlocked_skins) AS cnt, COUNT(*) AS players
 		FROM users GROUP BY cnt ORDER BY cnt
 	`)
 	if err != nil {

@@ -108,8 +108,11 @@ type progressResult struct {
 	IsNewBest     bool              `json:"isNewBest"`
 	MaxLevel      int               `json:"maxLevel"`
 	TotalTimeMs   int64             `json:"totalTimeMs"`
+	TotalSteps    int               `json:"totalSteps"`
 	UnlockedSkins []string          `json:"unlockedSkins"`
 	MyRank        int64             `json:"myRank"`
+	// Stars 本次通关该关星级（1~3）
+	Stars int `json:"stars"`
 }
 
 // applyProgress 在事务内更新关卡记录、用户进度、排行榜与皮肤。
@@ -126,7 +129,7 @@ func applyProgress(db *core.DB, uid int64, lv *SerializedLevel, req progressReq,
 	var oldSteps, oldTime int
 	var oldSkipped bool
 	err = tx.QueryRow(
-		"SELECT steps, time_ms, skipped FROM level_records WHERE uid=? AND level_idx=?",
+		"SELECT steps, time_ms, skipped FROM level_records WHERE uid=$1 AND level_idx=$2",
 		uid, lv.Idx,
 	).Scan(&oldSteps, &oldTime, &oldSkipped)
 	firstPass := errors.Is(err, sql.ErrNoRows)
@@ -144,12 +147,12 @@ func applyProgress(db *core.DB, uid int64, lv *SerializedLevel, req progressReq,
 
 	if firstPass {
 		_, err = tx.Exec(
-			"INSERT INTO level_records (uid, level_idx, steps, time_ms, path, skipped, created_at) VALUES (?,?,?,?,?,?,?)",
+			"INSERT INTO level_records (uid, level_idx, steps, time_ms, path, skipped, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
 			uid, lv.Idx, req.Steps, req.TimeMs, string(pathJSON), skipped, now,
 		)
 	} else if isNewBest {
 		_, err = tx.Exec(
-			"UPDATE level_records SET steps=?, time_ms=?, path=?, skipped=? WHERE uid=? AND level_idx=?",
+			"UPDATE level_records SET steps=$1, time_ms=$2, path=$3, skipped=$4 WHERE uid=$5 AND level_idx=$6",
 			req.Steps, req.TimeMs, string(pathJSON), skipped, uid, lv.Idx,
 		)
 	}
@@ -160,7 +163,7 @@ func applyProgress(db *core.DB, uid int64, lv *SerializedLevel, req progressReq,
 	// 累计总步数与总用时（仅首次通关累加，避免重复提交刷数值）
 	if firstPass {
 		_, err = tx.Exec(
-			"UPDATE users SET total_steps = total_steps + ?, total_time_ms = total_time_ms + ? WHERE id=?",
+			"UPDATE users SET total_steps = total_steps + $1, total_time_ms = total_time_ms + $2 WHERE id=$3",
 			req.Steps, req.TimeMs, uid,
 		)
 		if err != nil {
@@ -171,7 +174,7 @@ func applyProgress(db *core.DB, uid int64, lv *SerializedLevel, req progressReq,
 	// 推进最高关卡（跳过的关卡也算推进，否则玩家会卡死）
 	if lv.Idx > 0 {
 		_, err = tx.Exec(
-			"UPDATE users SET max_level = GREATEST(max_level, ?) WHERE id=?",
+			"UPDATE users SET max_level = GREATEST(max_level, $1) WHERE id=$2",
 			lv.Idx, uid,
 		)
 		if err != nil {
@@ -183,7 +186,7 @@ func applyProgress(db *core.DB, uid int64, lv *SerializedLevel, req progressReq,
 	var unlocked *unlockedSkinInfo
 	if !req.Skipped && lv.UnlockSkin != nil && *lv.UnlockSkin != "" {
 		var unlockedJSON string
-		row := tx.QueryRow("SELECT unlocked_skins FROM users WHERE id=?", uid)
+		row := tx.QueryRow("SELECT unlocked_skins FROM users WHERE id=$1", uid)
 		if err := row.Scan(&unlockedJSON); err != nil {
 			return nil, fmt.Errorf("查询皮肤: %w", err)
 		}
@@ -202,7 +205,7 @@ func applyProgress(db *core.DB, uid int64, lv *SerializedLevel, req progressReq,
 		if !found {
 			list = append(list, *lv.UnlockSkin)
 			newJSON, _ := json.Marshal(list)
-			_, err = tx.Exec("UPDATE users SET unlocked_skins=? WHERE id=?", string(newJSON), uid)
+			_, err = tx.Exec("UPDATE users SET unlocked_skins=$1 WHERE id=$2", string(newJSON), uid)
 			if err != nil {
 				return nil, fmt.Errorf("写入皮肤: %w", err)
 			}
@@ -212,7 +215,7 @@ func applyProgress(db *core.DB, uid int64, lv *SerializedLevel, req progressReq,
 
 	// 成绩流水
 	_, err = tx.Exec(
-		"INSERT INTO scores (uid, level_idx, steps, time_ms, created_at) VALUES (?,?,?,?,?)",
+		"INSERT INTO scores (uid, level_idx, steps, time_ms, created_at) VALUES ($1,$2,$3,$4,$5)",
 		uid, lv.Idx, req.Steps, req.TimeMs, now,
 	)
 	if err != nil {
@@ -224,10 +227,12 @@ func applyProgress(db *core.DB, uid int64, lv *SerializedLevel, req progressReq,
 	}
 
 	// 读取最新进度用于响应
-	var maxLevel int
+	var maxLevel, totalSteps int
 	var totalTimeMs int64
 	var unlockedJSON string
-	if err := db.QueryRow("SELECT max_level, total_time_ms, unlocked_skins FROM users WHERE id=?", uid).Scan(&maxLevel, &totalTimeMs, &unlockedJSON); err != nil {
+	if err := db.QueryRow(
+		"SELECT max_level, total_time_ms, total_steps, unlocked_skins FROM users WHERE id=$1", uid,
+	).Scan(&maxLevel, &totalTimeMs, &totalSteps, &unlockedJSON); err != nil {
 		return nil, fmt.Errorf("读取进度: %w", err)
 	}
 	var skinList []string
@@ -239,6 +244,8 @@ func applyProgress(db *core.DB, uid int64, lv *SerializedLevel, req progressReq,
 		IsNewBest:     isNewBest,
 		MaxLevel:      maxLevel,
 		TotalTimeMs:   totalTimeMs,
+		TotalSteps:    totalSteps,
 		UnlockedSkins: skinList,
+		Stars:         StarOf(req.Steps, lv.Shortest),
 	}, nil
 }

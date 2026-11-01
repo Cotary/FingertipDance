@@ -29,7 +29,7 @@ func SkipHandler(db *core.DB) gin.HandlerFunc {
 		day := time.Now().Format("2006-01-02")
 		// 幂等插入：已存在则跳过
 		res, err := db.Exec(
-			"INSERT IGNORE INTO skips (uid, level_idx, day) VALUES (?,?,?)",
+			"INSERT INTO skips (uid, level_idx, day) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
 			uid, lv.Idx, day,
 		)
 		if err != nil {
@@ -44,8 +44,8 @@ func SkipHandler(db *core.DB) gin.HandlerFunc {
 		// 写关卡记录（标记为跳过）
 		pathJSON := "[]"
 		_, err = db.Exec(
-			"INSERT INTO level_records (uid, level_idx, steps, time_ms, path, skipped, created_at) VALUES (?,?,?,?,?,1,?) "+
-				"ON DUPLICATE KEY UPDATE skipped=1",
+			"INSERT INTO level_records (uid, level_idx, steps, time_ms, path, skipped, created_at) VALUES ($1,$2,$3,$4,$5,1,$6) "+
+				"ON CONFLICT (uid, level_idx) DO UPDATE SET skipped=1",
 			uid, lv.Idx, lv.Shortest, 0, pathJSON, time.Now(),
 		)
 		if err != nil {
@@ -54,14 +54,14 @@ func SkipHandler(db *core.DB) gin.HandlerFunc {
 		}
 
 		// 推进最高关卡（否则玩家卡死），但不发皮肤
-		_, err = db.Exec("UPDATE users SET max_level = GREATEST(max_level, ?) WHERE id=?", lv.Idx, uid)
+		_, err = db.Exec("UPDATE users SET max_level = GREATEST(max_level, $1) WHERE id=$2", lv.Idx, uid)
 		if err != nil {
 			core.Fail(c, core.CodeInternal, "推进进度失败: "+err.Error())
 			return
 		}
 
 		var maxLevel int
-		_ = db.QueryRow("SELECT max_level FROM users WHERE id=?", uid).Scan(&maxLevel)
+		_ = db.QueryRow("SELECT max_level FROM users WHERE id=$1", uid).Scan(&maxLevel)
 
 		core.OK(c, gin.H{
 			"ok":       true,

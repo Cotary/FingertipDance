@@ -45,7 +45,7 @@ func ReportHandler(db *DB) gin.HandlerFunc {
 				ts = time.UnixMilli(e.TS)
 			}
 			_, err := db.Exec(
-				"INSERT INTO events (uid, name, params, ts) VALUES (?,?,?,?)",
+				"INSERT INTO events (uid, name, params, ts) VALUES ($1,$2,$3,$4)",
 				uid, e.Name, string(p), ts,
 			)
 			if err != nil {
@@ -60,13 +60,12 @@ func ReportHandler(db *DB) gin.HandlerFunc {
 // AnalyticsSchema 事件表建表语句。
 const AnalyticsSchema = `
 CREATE TABLE IF NOT EXISTS events (
-  id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  uid        BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  id         BIGSERIAL PRIMARY KEY,
+  uid        BIGINT      NOT NULL DEFAULT 0,
   name       VARCHAR(64) NOT NULL,
-  params     JSON NOT NULL,
-  ts         DATETIME NOT NULL,
-  PRIMARY KEY (id),
-  KEY idx_name_ts (name, ts),
-  KEY idx_uid (uid)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  params     JSONB       NOT NULL,
+  ts         TIMESTAMP   NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_name_ts ON events (name, ts);
+CREATE INDEX IF NOT EXISTS idx_uid_events ON events (uid);
 `

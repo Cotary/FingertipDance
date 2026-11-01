@@ -23,7 +23,7 @@ type ServerConfig struct {
 	Addr string `yaml:"addr"`
 }
 
-// DBConfig 是 MySQL 配置。
+// DBConfig 是 PostgreSQL 配置。
 type DBConfig struct {
 	DSN string `yaml:"dsn"`
 }

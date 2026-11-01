@@ -65,8 +65,8 @@ func handleAction(c *gin.Context, db *core.DB) {
 	switch req.Action {
 	case "apply":
 		_, err := db.Exec(
-			"INSERT INTO friends (uid, friend_uid, status, created_at) VALUES (?,?,?,?) "+
-				"ON DUPLICATE KEY UPDATE status=VALUES(status)",
+			"INSERT INTO friends (uid, friend_uid, status, created_at) VALUES ($1,$2,$3,$4) "+
+				"ON CONFLICT (uid, friend_uid) DO UPDATE SET status=EXCLUDED.status",
 			uid, req.FriendUID, StatusPending, now,
 		)
 		if err != nil {
@@ -75,14 +75,14 @@ func handleAction(c *gin.Context, db *core.DB) {
 		}
 		// 对方也需要能看到这条申请
 		_, _ = db.Exec(
-			"INSERT INTO friends (uid, friend_uid, status, created_at) VALUES (?,?,?,?) "+
-				"ON DUPLICATE KEY UPDATE status=VALUES(status)",
+			"INSERT INTO friends (uid, friend_uid, status, created_at) VALUES ($1,$2,$3,$4) "+
+				"ON CONFLICT (uid, friend_uid) DO UPDATE SET status=EXCLUDED.status",
 			req.FriendUID, uid, StatusPending, now,
 		)
 
 	case "accept":
 		_, err := db.Exec(
-			"UPDATE friends SET status=? WHERE (uid=? AND friend_uid=?) OR (uid=? AND friend_uid=?)",
+			"UPDATE friends SET status=$1 WHERE (uid=$2 AND friend_uid=$3) OR (uid=$4 AND friend_uid=$5)",
 			StatusAccepted, uid, req.FriendUID, req.FriendUID, uid,
 		)
 		if err != nil {
@@ -92,7 +92,7 @@ func handleAction(c *gin.Context, db *core.DB) {
 
 	case "remove":
 		_, err := db.Exec(
-			"DELETE FROM friends WHERE (uid=? AND friend_uid=?) OR (uid=? AND friend_uid=?)",
+			"DELETE FROM friends WHERE (uid=$1 AND friend_uid=$2) OR (uid=$3 AND friend_uid=$4)",
 			uid, req.FriendUID, req.FriendUID, uid,
 		)
 		if err != nil {
@@ -102,7 +102,7 @@ func handleAction(c *gin.Context, db *core.DB) {
 
 	case "block":
 		_, err := db.Exec(
-			"UPDATE friends SET status=? WHERE uid=? AND friend_uid=?",
+			"UPDATE friends SET status=$1 WHERE uid=$2 AND friend_uid=$3",
 			StatusBlocked, uid, req.FriendUID,
 		)
 		if err != nil {
@@ -112,7 +112,7 @@ func handleAction(c *gin.Context, db *core.DB) {
 
 	case "unblock":
 		_, err := db.Exec(
-			"UPDATE friends SET status=? WHERE uid=? AND friend_uid=?",
+			"UPDATE friends SET status=$1 WHERE uid=$2 AND friend_uid=$3",
 			StatusPending, uid, req.FriendUID,
 		)
 		if err != nil {
@@ -133,9 +133,9 @@ func handleList(c *gin.Context, db *core.DB) {
 	uid := core.UIDFromContext(c)
 	rows, err := db.Query(
 		"SELECT u.id, u.nickname, u.avatar, u.max_level, u.total_time_ms, "+
-			"JSON_LENGTH(u.unlocked_skins) FROM friends f "+
+			"jsonb_array_length(u.unlocked_skins) FROM friends f "+
 			"JOIN users u ON u.id = f.friend_uid "+
-			"WHERE f.uid = ? AND f.status = ?",
+			"WHERE f.uid = $1 AND f.status = $2",
 		uid, StatusAccepted,
 	)
 	if err != nil {

@@ -108,6 +108,7 @@ func main() {
 		auth.GET("/friends", friend.Handler(db))
 		auth.POST("/friend", friend.Handler(db))
 		auth.GET("/profile", profile.ProfileHandler(db))
+		auth.GET("/progress/stars", line.StarsHandler(db))
 		auth.POST("/report", core.ReportHandler(db))
 		auth.POST("/progress", line.ProgressHandler(db, rdb, line.DefaultSkins()))
 		auth.POST("/challenge", line.ChallengeHandler(db))

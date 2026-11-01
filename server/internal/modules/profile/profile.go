@@ -90,10 +90,10 @@ func LoginHandler(cfg *core.Config, issuer *core.TokenIssuer, db *core.DB) gin.H
 func ProfileHandler(db *core.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		uid := core.UIDFromContext(c)
-		row := db.QueryRow(
-			"SELECT max_level, total_time_ms, total_steps, unlocked_skins FROM users WHERE id=?",
-			uid,
-		)
+	row := db.QueryRow(
+		"SELECT max_level, total_time_ms, total_steps, unlocked_skins FROM users WHERE id=$1",
+		uid,
+	)
 		var maxLevel, totalSteps int
 		var totalTimeMs int64
 		var skinsJSON string
@@ -123,7 +123,7 @@ func findOrCreate(db *core.DB, hash, enc, nickname, avatar string) (*User, bool,
 		// 更新登录信息
 		if nickname != "" || avatar != "" {
 			_, _ = db.Exec(
-				"UPDATE users SET nickname=?, avatar=?, last_login_at=? WHERE id=?",
+				"UPDATE users SET nickname=$1, avatar=$2, last_login_at=$3 WHERE id=$4",
 				orKeep(nickname, u.Nickname), orKeep(avatar, u.Avatar), time.Now(), u.ID,
 			)
 			if nickname != "" {
@@ -133,7 +133,7 @@ func findOrCreate(db *core.DB, hash, enc, nickname, avatar string) (*User, bool,
 				u.Avatar = avatar
 			}
 		} else {
-			_, _ = db.Exec("UPDATE users SET last_login_at=? WHERE id=?", time.Now(), u.ID)
+			_, _ = db.Exec("UPDATE users SET last_login_at=$1 WHERE id=$2", time.Now(), u.ID)
 		}
 		return u, false, nil
 	}
@@ -143,14 +143,14 @@ func findOrCreate(db *core.DB, hash, enc, nickname, avatar string) (*User, bool,
 
 	// 新用户
 	now := time.Now()
-	res, err := db.Exec(
-		"INSERT INTO users (openid, openid_hash, nickname, avatar, max_level, total_time_ms, total_steps, unlocked_skins, ad_watch_cnt, created_at, last_login_at) VALUES (?,?,?,?,0,0,0,?,0,?,?)",
+	var id int64
+	err = db.QueryRow(
+		"INSERT INTO users (openid, openid_hash, nickname, avatar, max_level, total_time_ms, total_steps, unlocked_skins, ad_watch_cnt, created_at, last_login_at) VALUES ($1,$2,$3,$4,0,0,0,$5,0,$6,$7) RETURNING id",
 		enc, hash, nickname, avatar, `["wood","mint"]`, now, now,
-	)
+	).Scan(&id)
 	if err != nil {
 		return nil, false, fmt.Errorf("创建用户: %w", err)
 	}
-	id, _ := res.LastInsertId()
 	return &User{
 		ID: id, OpenIDEnc: enc, OpenIDHash: hash, Nickname: nickname, Avatar: avatar,
 		UnlockedSkins: []string{"wood", "mint"},
@@ -160,7 +160,7 @@ func findOrCreate(db *core.DB, hash, enc, nickname, avatar string) (*User, bool,
 // queryByHash 按 openid 哈希查询用户。
 func queryByHash(db *core.DB, hash string) (*User, error) {
 	row := db.QueryRow(
-		"SELECT id, openid, openid_hash, nickname, avatar, max_level, total_time_ms, total_steps, unlocked_skins, ad_watch_cnt FROM users WHERE openid_hash=?",
+		"SELECT id, openid, openid_hash, nickname, avatar, max_level, total_time_ms, total_steps, unlocked_skins, ad_watch_cnt FROM users WHERE openid_hash=$1",
 		hash,
 	)
 	var u User

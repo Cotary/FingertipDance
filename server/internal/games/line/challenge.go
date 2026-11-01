@@ -46,7 +46,7 @@ func ChallengeHandler(db *core.DB) gin.HandlerFunc {
 
 		// 只写流水，不动进度
 		_, err = db.Exec(
-			"INSERT INTO scores (uid, level_idx, steps, time_ms, created_at) VALUES (?,?,?,?,?)",
+			"INSERT INTO scores (uid, level_idx, steps, time_ms, created_at) VALUES ($1,$2,$3,$4,$5)",
 			uid, lv.Idx, req.Steps, req.TimeMs, nowFunc(),
 		)
 		if err != nil {
@@ -57,7 +57,7 @@ func ChallengeHandler(db *core.DB) gin.HandlerFunc {
 		// 查询该关的历史最佳
 		var bestSteps, bestTime int
 		err = db.QueryRow(
-			"SELECT steps, time_ms FROM scores WHERE level_idx=? ORDER BY steps ASC, time_ms ASC LIMIT 1",
+			"SELECT steps, time_ms FROM scores WHERE level_idx=$1 ORDER BY steps ASC, time_ms ASC LIMIT 1",
 			req.LevelIdx,
 		).Scan(&bestSteps, &bestTime)
 		if err != nil {
