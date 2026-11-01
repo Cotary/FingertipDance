@@ -193,8 +193,8 @@ I:\work\f-game\
 |---|---|---|---|
 | T01 环境与工程骨架 | ☑ | 2026-11-01 | games/line/ 可运行工程（typecheck/test/build 全过）、server/ 目录骨架、git init → main |
 | T02 core: rng + grid | ☑ | 2026-11-01 | src/core/{types,rng,grid,codec}.ts + 3 测试文件（14 用例全过）；统一二维 Cell[][] 表示 |
-| T03 solver（BFS） | ☐ | | |
-| T04 难度曲线 curve | ☐ | | |
+| T03 solver（BFS） | ☑ | 2026-11-01 | src/core/solver.ts（solve/isPathLegal/countTurns/findHint/solveFrom）+ 10 用例；5×5 全通自检 steps=8 pathCount=8 |
+| T04 难度曲线 curve | ☑ | 2026-11-01 | src/core/curve.ts（curveFor/targetDiff/computeDiff）+ 9 用例；修正 computeDiff 唯一性项语义笔误 |
 | T05 generator | ☐ | | |
 | T06 关卡表流水线 + 体检 CLI | ☐ | | |
 | T07 单元测试 + 难度校准 | ☐ | | |
