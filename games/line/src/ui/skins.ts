@@ -3,9 +3,10 @@
  * `Skin` 接口与皮肤清单从 `../render/skins` 导入（唯一真相源）。
  */
 import { DESIGN_W, DESIGN_H } from '../render/layout';
-import { drawButton, COLORS, type Button } from './hud';
+import { drawButton, type Button } from './hud';
 import { roundRect } from '../render/board';
 import { SKINS, paintSkin, type Skin } from '../render/skins';
+import { LOBBY_THEME, type Theme } from './theme';
 
 export interface SkinsPageState {
   /** 当前装备的皮肤 */
@@ -21,23 +22,25 @@ export const PER_PAGE = 9;
 
 /**
  * 绘制皮肤页。
+ * @param theme 主题，默认亮色大厅主题（皮肤页挂在底部导航下）
  * @returns 按钮列表
  */
 export function drawSkinsPage(
   ctx: CanvasRenderingContext2D,
   st: SkinsPageState,
   now: number,
+  theme: Theme = LOBBY_THEME,
 ): Button[] {
-  ctx.fillStyle = COLORS.bg;
+  ctx.fillStyle = theme.bg;
   ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
 
   // 标题
-  ctx.fillStyle = COLORS.text;
+  ctx.fillStyle = theme.text;
   ctx.font = '700 38px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.fillText('皮肤', DESIGN_W / 2, 70);
-  ctx.fillStyle = COLORS.subText;
+  ctx.fillStyle = theme.subText;
   ctx.font = '24px system-ui, sans-serif';
   ctx.fillText(`已解锁 ${st.unlocked.size} / ${SKINS.length}`, DESIGN_W / 2, 125);
 
@@ -63,10 +66,10 @@ export function drawSkinsPage(
     const isEquipped = st.equipped === skin.id;
 
     // 卡片
-    ctx.fillStyle = isEquipped ? 'rgba(102,146,245,0.18)' : COLORS.panel;
+    ctx.fillStyle = isEquipped ? 'rgba(61,123,255,0.14)' : theme.panel;
     roundRect(ctx, x, y, cardW, cardH, 16);
     ctx.fill();
-    ctx.strokeStyle = isEquipped ? COLORS.blue : COLORS.border;
+    ctx.strokeStyle = isEquipped ? theme.blue : theme.border;
     ctx.lineWidth = isEquipped ? 3 : 1.5;
     roundRect(ctx, x, y, cardW, cardH, 16);
     ctx.stroke();
@@ -85,31 +88,31 @@ export function drawSkinsPage(
     // 名字
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = owned ? COLORS.text : COLORS.subText;
+    ctx.fillStyle = owned ? theme.text : theme.subText;
     ctx.font = '600 24px system-ui, sans-serif';
     ctx.fillText(skin.name, x + cardW / 2, y + pv + 26);
 
     // 状态
     if (isEquipped) {
-      ctx.fillStyle = COLORS.blue;
+      ctx.fillStyle = theme.blue;
       ctx.font = '20px system-ui, sans-serif';
       ctx.fillText('使用中', x + cardW / 2, y + pv + 60);
     } else if (owned) {
-      ctx.fillStyle = COLORS.subText;
+      ctx.fillStyle = theme.subText;
       ctx.font = '20px system-ui, sans-serif';
       ctx.fillText('点击装备', x + cardW / 2, y + pv + 60);
     } else {
-      ctx.fillStyle = COLORS.yellow;
+      ctx.fillStyle = '#C08A16';
       ctx.font = '20px system-ui, sans-serif';
       ctx.fillText(unlockLabel(skin), x + cardW / 2, y + pv + 60);
     }
 
     // 未解锁的遮罩（只盖预览区，条件文案留在卡片下方）
     if (!owned) {
-      ctx.fillStyle = 'rgba(10,12,20,0.5)';
+      ctx.fillStyle = 'rgba(34,48,77,0.45)';
       roundRect(ctx, pvX - 2, pvY - 2, pv + 4, pv + 4, 10);
       ctx.fill();
-      ctx.fillStyle = COLORS.text;
+      ctx.fillStyle = '#FFFFFF';
       ctx.font = '36px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -117,20 +120,18 @@ export function drawSkinsPage(
     }
   });
 
-  // 底部：返回 / 翻页
-  const backBtn: Button = { x: 40, y: DESIGN_H - 140, w: 160, h: 72, label: '返回', kind: 'secondary', id: 'back' };
-  drawButton(ctx, backBtn, false);
-  buttons.push(backBtn);
-
+  // 底部：翻页（返回由底部导航承担，不再单独放「返回」按钮）
+  // 底部导航占据 DESIGN_H-120 以下，按钮整体上移
+  const btnY = DESIGN_H - 250;
   const totalPages = Math.ceil(SKINS.length / PER_PAGE);
   if (st.page > 0) {
-    const prev: Button = { x: DESIGN_W - 320, y: DESIGN_H - 140, w: 120, h: 72, label: '上一页', kind: 'ghost', id: 'prevPage' };
-    drawButton(ctx, prev, false);
+    const prev: Button = { x: DESIGN_W - 320, y: btnY, w: 120, h: 72, label: '上一页', kind: 'ghost', id: 'prevPage' };
+    drawButton(ctx, prev, false, theme);
     buttons.push(prev);
   }
   if (st.page < totalPages - 1) {
-    const next: Button = { x: DESIGN_W - 180, y: DESIGN_H - 140, w: 120, h: 72, label: '下一页', kind: 'ghost', id: 'nextPage' };
-    drawButton(ctx, next, false);
+    const next: Button = { x: DESIGN_W - 180, y: btnY, w: 120, h: 72, label: '下一页', kind: 'ghost', id: 'nextPage' };
+    drawButton(ctx, next, false, theme);
     buttons.push(next);
   }
 

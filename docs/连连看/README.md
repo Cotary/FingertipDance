@@ -29,7 +29,8 @@
 | `10-GDD-连连看.md` | 正式版 GDD（软著/提审用） | 对外 |
 | `17-数据模型.md` | 6 张表的字段与索引说明 | 后端 |
 | `19-执行总览.md` | 一页速查（一天干什么） | 所有人 |
-| `TASK/T01`~`T22` | **22 份可独立交付的任务书** | 执行者 |
+| `21-大厅与导航规格.md` | 大厅外壳 5 页面 + 底部导航 + 双主题（T23 唯一真相源） | 前端 |
+| `TASK/T01`~`T23` | **23 份可独立交付的任务书** | 执行者 |
 
 ---
 
@@ -101,9 +102,14 @@ T01 环境与工程骨架
   T20 分享挑战
     └─> T21 微信小游戏移植
           └─> T22 部署 + 备案 + 提审
+  T23 大厅外壳 + 底部导航（主页/地图/排行/我的）
 ```
 
 **并行建议**：T08~T12（后端）与 T13~T18（前端）可并行，互不阻塞。T19/T20 依赖 T14 与 T11。
+
+> **T23 是补齐任务**：T01–T22 的规格文档从头到尾没有描述大厅/主页/底部导航，
+> 首版实现因此是「启动直接进关卡」的裸游戏循环。T23 依据用户提供的参考截图
+> （`I:\work\f-game\连连看` 下 6 张）补齐 App 外壳，**不改 T01–T22 的任何既有结论**。
 
 ---
 
@@ -213,6 +219,7 @@ I:\work\f-game\
 | T20 分享挑战 | ☑ | 2026-11-01 | game/challenge.ts（parseChallenge/buildShareQuery）+ net/api reportChallenge + ui/share.ts（renderPoster 平台分支/shareCopy）+ main.ts 挑战模式接入 + test/challenge.test.ts(2 用例) + 18-社交裂变设计.md；typecheck/test(89)/build 全过 |
 | T21 微信小游戏移植 | ☑ | 2026-11-01 | line-wx/ 工程脚手架（game.js/game.json/project.config.json）+ vite 多环境构建 + scripts/copy-wx-assets.mjs + main.ts 微信触摸/onHide/onShow 分支 + 后端 GET /api/profile；build:wx 产出 game.js(39KB)；typecheck/test(89)/build + go build/vet 全过（真机验证留待外部条件） |
 | T22 部署 + 备案 + 提审 | ☑ | 2026-11-01 | deploy/{config.prod.yaml,nginx.prod.conf,docker-compose.prod.yml,backup-mysql.sh} + 20-软著说明书骨架.md；外部流程（备案/软著/服务器/提审）留待人工 |
+| T23 大厅外壳 + 底部导航 | ☑ | 2026-11-01 | 新增 `ui/{theme,nav,home,mapview,leaderboard,profile}.ts`（双主题 + 5 Tab 导航 + 主页大厅/关卡地图/排行榜总榜+好友榜/我的页）+ `ui/friends.ts` 拆出可复用 `drawFriendsBoard` + `ui/hud.ts` 结算页加「返回大厅」（面板 560→660）+ `main.ts` phase 5→8 值状态机改造 + 后端 `GET /api/progress/stars`（stars.go，与客户端 starOf 双端一致）；typecheck/test(111，19 文件)/build + go build/vet/test 全过；`/api/progress` 返回已含 `stars`/`totalSteps` |
 
 ---
 
@@ -238,3 +245,10 @@ I:\work\f-game\
 | 2026-11-01 | T20 | 挑战模式端到端需后端 `/api/challenge` + MySQL（scores 表），本环境 Docker 未启动 | parseChallenge/buildShareQuery/renderPoster/挑战结算前端全通 + challenge.test.ts 2 用例；数据库落库留待有 Docker 环境补做 |
 | 2026-11-01 | T21 | G6 门禁需外部条件：微信开发者工具、AppID、ICP 备案域名 + HTTPS、广告位 ID（本环境均无） | 代码侧全部完成：工程脚手架 + 多环境构建（build:wx 产出 game.js 39KB）+ 微信触摸/onHide/onShow 分支 + GET /api/profile；真机验证留待外部条件齐备后人工完成 |
 | 2026-11-01 | T22 | G7 门禁依赖外部流程：域名 ICP 备案（1–3 周）、软著（10–17 天）、服务器购买、微信提审，本环境均无法完成 | 生产部署模板（config.prod/nginx.prod/docker-compose.prod/backup）+ 软著说明书骨架已就绪；实际备案/软著/部署/提审留待人工启动 |
+| 2026-11-01 | 全局 | 数据库按用户要求由 MySQL 迁到 **PostgreSQL**：`server/` 全部 SQL 改为 `$n` 占位符 / `ON CONFLICT` / `jsonb` / `BIGSERIAL`，驱动换 pgx v5，`backup-mysql.sh` → `backup-pg.sh`。T22 行里提到的 `backup-mysql.sh` 文件名已过时 | 复用现有 `mcp-test-pg`（postgres:16-alpine，端口 15432）+ 新起 `fgame-redis`；pgx 固定 v5.7.2（v5.12 要求 go1.25，本机 go1.24.1）；所有 go 命令统一加 `GOTOOLCHAIN=local` 防 go.mod 被自动升级。迁移后 login/progress/leaderboard/skip/report/friends/analyze 端到端 curl 全通 |
+| 2026-11-01 | 全局 | `users.openid` 原为 `VARCHAR(64)`，AES-GCM + base64 后密文超长。MySQL 非严格模式静默截断未暴露，PG 严格模式直接报 `SQLSTATE 22001` | 列宽改 `VARCHAR(256)` 并 DROP 重建表（`CREATE TABLE IF NOT EXISTS` 不会修改已存在表的结构，只改迁移文件不生效） |
+| 2026-11-01 | T23 | 本环境无浏览器（playwright / puppeteer 均未安装），无法截图做 Canvas 视觉验收 | 自建 `fakeCtx()` Proxy 桩（所有绘图方法 no-op + 记录调用）+ `test/lobby-smoke.test.ts` 8 用例，在 Node 里跑主页/导航/地图/排行/我的/皮肤/结算 7 个页面的**真实绘制代码**抓运行时错误；像素级视觉回归留待人工在浏览器确认 |
+| 2026-11-01 | T23 | 地图页 1000 关靠 `visibleRange` 虚拟滚动只渲染可视区，但单测只能验算区间 | `mapview.test.ts` 6 用例锁定（x 在设计宽度内 / y 线性递增 / 视区随滚动平移 / 不越界 / 点击选中关号 / `scrollToLevel` 合法区间）；真实帧率需浏览器 Performance 面板或真机 |
+| 2026-11-01 | T23 | 星级阈值（≤1.15 三星、≤1.5 二星、其余一星）双端各有一份实现，天然存在漂移风险 | `test/stars.test.ts`（3 用例）+ `stars_test.go`（5 用例）两端锁死同一组边界值，任一侧改动都会红 |
+| 2026-11-01 | T23 | 任务书 §7.1、§11.9 两处故意留白需自行判断实现 | §7.1：把 `drawFriendsPage` 拆出 `drawFriendsBoard(ctx, st, topY, height)` 供排行榜好友 Tab 复用；§11.9：结算页加「返回大厅」按钮并把 `drawResult` 面板高度 560→660 腾位 |
+

@@ -1,6 +1,6 @@
 import { platform } from './platform';
 import { configureAds } from './platform/wechat';
-import { fetchFriends, fetchProfile, login, fetchConfig, reportProgress, reportSkip, reportChallenge, reportEvent } from './net/api';
+import { fetchFriends, fetchLeaderboard, fetchProfile, fetchStars, login, fetchConfig, reportProgress, reportSkip, reportChallenge, reportEvent, type ServerConfig } from './net/api';
 import { Session } from './game/session';
 import { LevelStore, ProgressStore } from './game/progressStore';
 import { DESIGN_W, DESIGN_H } from './render/layout';
@@ -14,7 +14,12 @@ import { ads } from './ads/ads';
 import { needsAdForHint, canSkipToday, markSkippedToday } from './ads/rewardRules';
 import { tracker } from './analytics/tracker';
 import { drawHud, drawProgressBar, drawResult, drawButton, hitButton, COLORS, type Button } from './ui/hud';
-import { drawFriendsPage, type FriendsPageState } from './ui/friends';
+import { drawHomePage, type HomePageState } from './ui/home';
+import { drawMapView, createMapState, pickMapNode, scrollToLevel, type MapViewState } from './ui/mapview';
+import { drawRankPage, createRankState, type RankPageState } from './ui/leaderboard';
+import { drawProfilePage, type ProfilePageState } from './ui/profile';
+import { drawNav, pickNavTab, type NavTab } from './ui/nav';
+import { LOBBY_THEME } from './ui/theme';
 import { publishProfile } from './platform/openData';
 import { parseChallenge, buildShareQuery } from './game/challenge';
 import { renderPoster, shareCopy } from './ui/share';
@@ -38,10 +43,21 @@ let lastFrameAt = Date.now();
 let winAnimStart = 0;
 let waveLit = new Set<number>();
 
-let config: any = null;
-let phase: 'loading' | 'playing' | 'result' | 'skins' | 'friends' = 'loading';
+/** 页面状态机。大厅体系 5 页 + 游戏内 2 页 + 加载态。 */
+type Phase =
+  | 'loading'
+  | 'home'
+  | 'map'
+  | 'skins'
+  | 'rank'
+  | 'profile'
+  | 'playing'
+  | 'result';
+
+let config: ServerConfig | null = null;
+let phase: Phase = 'loading';
 let resultButtons: Button[] = [];
-let resultData: { levelIdx: number; steps: number; shortest: number; timeMs: number; unlockedSkin: any } | null = null;
+let resultData: { levelIdx: number; steps: number; shortest: number; timeMs: number; unlockedSkin: { id: string; name: string } | null } | null = null;
 let pressedBtn: string | null = null;
 let pendingLevel = 1;
 
@@ -52,13 +68,41 @@ let skinsPage: SkinsPageState = {
 };
 let skinButtons: Button[] = [];
 
-let friendsPage: FriendsPageState = {
-  friends: [],
-  stats: { friendCount: 0, avgLevel: 0, maxLevel: 0 },
-  myRank: 0,
-  loadingOpenData: true,
+/** 主页大厅。 */
+let homePage: HomePageState = {
+  maxLevel: 1,
+  levelCount: 1000,
+  nickname: '玩家',
+  avatar: '',
+  skinCount: 2,
+  totalSkins: 16,
 };
-let friendsButtons: Button[] = [];
+let homeButtons: Button[] = [];
+
+/** 关卡地图。 */
+let mapPage: MapViewState = createMapState(1, 1000, {});
+let mapButtons: Button[] = [];
+/** 地图拖动会话（区分拖动与点击）。 */
+let mapDragStart: { x: number; y: number; scrollY: number; moved: boolean } | null = null;
+
+/** 排行榜。 */
+let rankPage: RankPageState = createRankState();
+let rankButtons: Button[] = [];
+
+/** 我的页。 */
+let profilePage: ProfilePageState = {
+  nickname: '玩家',
+  avatar: '',
+  maxLevel: 1,
+  totalSteps: 0,
+  totalTimeMs: 0,
+  adWatchCnt: 0,
+  unlockedSkins: ['wood', 'mint'],
+  totalSkins: 16,
+  soundOn: true,
+  vibrateOn: true,
+};
+let profileButtons: Button[] = [];
 
 /** 当前挑战上下文（若来自好友分享）。 */
 let challenge: ReturnType<typeof parseChallenge> = null;
@@ -79,7 +123,81 @@ function toDesign(clientX: number, clientY: number): { x: number; y: number } {
 /** 顶部操作按钮。 */
 const hintBtn: Button = { x: DESIGN_W - 210, y: 100, w: 90, h: 60, label: '提示', kind: 'ghost', id: 'hint' };
 const skipBtn: Button = { x: DESIGN_W - 110, y: 100, w: 90, h: 60, label: '跳过', kind: 'ghost', id: 'skip' };
-const friendsBtn: Button = { x: 40, y: 100, w: 90, h: 60, label: '好友', kind: 'ghost', id: 'friends' };
+const backHomeBtn: Button = { x: 40, y: 100, w: 90, h: 60, label: '返回', kind: 'ghost', id: 'backHome' };
+
+/** 需要显示底部导航的页面。 */
+const NAV_PAGES: NavTab[] = ['home', 'map', 'skins', 'rank', 'profile'];
+
+/** 当前 phase 是否属于大厅体系（有底部导航）。 */
+function isNavPhase(p: Phase): boolean {
+  return (NAV_PAGES as string[]).includes(p);
+}
+
+/** 当前 phase 对应的导航页签。 */
+function navTabOf(p: Phase): NavTab {
+  switch (p) {
+    case 'map': return 'map';
+    case 'skins': return 'skins';
+    case 'rank': return 'rank';
+    case 'profile': return 'profile';
+    default: return 'home';
+  }
+}
+
+/** 切换到某个导航页。 */
+async function gotoTab(tab: NavTab): Promise<void> {
+  reportEvent('nav_click', { tab });
+  ads.hideBanner();
+
+  switch (tab) {
+    case 'home':
+      phase = 'home';
+      break;
+    case 'map': {
+      mapPage = createMapState(progress.current.maxLevel, config?.levelCount ?? 1000, progress.current.stars);
+      // 首次进入地图聚焦当前关
+      mapPage.scrollY = Math.min(mapPage.maxScrollY, scrollToLevel(progress.current.maxLevel));
+      mapDragStart = null;
+      phase = 'map';
+      break;
+    }
+    case 'skins':
+      phase = 'skins';
+      ads.showBanner();
+      reportEvent('skin_page_view', { owned: skinsPage.unlocked.size, total: SKINS.length });
+      break;
+    case 'rank':
+      phase = 'rank';
+      await loadGlobalRank();
+      break;
+    case 'profile':
+      phase = 'profile';
+      profilePage = {
+        ...profilePage,
+        nickname: progress.current.nickname || '玩家',
+        avatar: progress.current.avatar || '',
+        maxLevel: progress.current.maxLevel,
+        totalSteps: progress.current.totalSteps,
+        totalTimeMs: progress.current.totalTimeMs,
+        adWatchCnt: progress.current.adWatchCnt,
+        unlockedSkins: progress.current.unlockedSkins,
+        totalSkins: SKINS.length,
+      };
+      reportEvent('profile_view', { max_level: progress.current.maxLevel });
+      break;
+  }
+}
+
+/** 拉取总榜。 */
+async function loadGlobalRank(): Promise<void> {
+  rankPage.global.loading = true;
+  try {
+    const res = await fetchLeaderboard();
+    rankPage.global = { list: res.list, myRank: res.myRank, total: res.total, loading: false };
+  } catch {
+    rankPage.global.loading = false;
+  }
+}
 
 session.on((e) => {
   if (e.type === 'won') {
@@ -107,7 +225,7 @@ async function onWin(steps: number, timeMs: number, path: number[], skipped = fa
   fx.clear();
   reportEvent('level_pass', { level_idx: level.idx, steps, time_ms: timeMs, skipped });
 
-  let unlockedSkin: any = null;
+  let unlockedSkin: { id: string; name: string } | null = null;
   try {
     const res = await reportProgress(level.idx, steps, timeMs, path);
     unlockedSkin = res.unlockedSkin;
@@ -116,7 +234,14 @@ async function onWin(steps: number, timeMs: number, path: number[], skipped = fa
       audio.unlock();
       platform.vibrate();
     }
-    progress.sync({ maxLevel: res.maxLevel, unlockedSkins: res.unlockedSkins });
+    progress.sync({
+      maxLevel: res.maxLevel,
+      unlockedSkins: res.unlockedSkins,
+      totalTimeMs: res.totalTimeMs,
+      totalSteps: res.totalSteps,
+    });
+    // 本地即时更新该关星级，地图页无需等下次拉取
+    progress.setStar(level.idx, res.stars);
   } catch (e) {
     console.error('上报成绩失败', e);
   }
@@ -176,7 +301,7 @@ async function onChallengeWin(steps: number, timeMs: number, path: number[]) {
 
 /** 进入关卡。 */
 async function enterLevel(idx: number) {
-  const lv = await levels.ensure(idx, config.levelVersion);
+  const lv = await levels.ensure(idx, config?.levelVersion ?? '');
   if (!lv) {
     console.error('关卡加载失败', idx);
     return;
@@ -257,13 +382,14 @@ async function refreshProgress() {
 }
 
 /** 发布自己的进度到开放数据域（好友榜）。 */
-function publishMyProfile() {  publishProfile({
+function publishMyProfile() {
+  publishProfile({
     maxLevel: progress.current.maxLevel,
     totalTimeMs: progress.current.totalTimeMs,
     totalSteps: progress.current.totalSteps,
     skinCount: progress.current.unlockedSkins.length,
-    nickname: '玩家',
-    avatar: '',
+    nickname: progress.current.nickname || '玩家',
+    avatar: progress.current.avatar || '',
     updatedAt: Date.now(),
   });
 }
@@ -319,24 +445,23 @@ function drawChallengeResult(ctx: CanvasRenderingContext2D, r: { win: boolean; m
   return [retry, shareBtn];
 }
 
-/** 打开好友页。 */
+/** 拉取好友榜数据（只拉数据、不切页；好友榜是排行榜页的一个 Tab）。 */
 async function openFriends() {
-  phase = 'friends';
-  friendsPage.loadingOpenData = true;
-  reportEvent('leaderboard_view', { scope: 'friends', my_rank: friendsPage.myRank });
+  rankPage.friends.loadingOpenData = true;
+  reportEvent('leaderboard_view', { scope: 'friends', my_rank: rankPage.friends.myRank });
 
   // 服务端好友列表（Web 兜底 + 统计）
   try {
     const res = await fetchFriends();
-    friendsPage.friends = res.list;
-    friendsPage.stats = res.stats;
+    rankPage.friends.friends = res.list;
+    rankPage.friends.stats = res.stats;
   } catch { /* 忽略 */ }
 
   // 发布自己的进度到开放数据域
   publishMyProfile();
 
   // 开放数据域首帧需要时间
-  setTimeout(() => { friendsPage.loadingOpenData = false; }, 500);
+  setTimeout(() => { rankPage.friends.loadingOpenData = false; }, 500);
 }
 
 /** 找起点索引。 */
@@ -352,8 +477,42 @@ function findStartIdx(st: GameState): number {
 /** 指针按下。 */
 function onDown(clientX: number, clientY: number) {
   const d = toDesign(clientX, clientY);
-  if (phase === 'result') {
-    for (const b of resultButtons) {
+
+  // ── 大厅体系：先判导航栏（导航栏压在所有页面内容之上）──
+  if (isNavPhase(phase)) {
+    const tab = pickNavTab(d.x, d.y);
+    if (tab) { pressedBtn = 'nav:' + tab; return; }
+  }
+
+  if (phase === 'home') {
+    for (const b of homeButtons) {
+      if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
+    }
+    return;
+  }
+  if (phase === 'map') {
+    for (const b of mapButtons) {
+      if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
+    }
+    // 命中关卡节点 → 可能是点击，也可能是拖动起点
+    const idx = pickMapNode(d.x, d.y, mapPage);
+    if (idx > 0) {
+      pressedBtn = 'map:' + idx;
+      mapDragStart = { x: d.x, y: d.y, scrollY: mapPage.scrollY, moved: false };
+    } else {
+      // 空白处也可拖动滚动
+      mapDragStart = { x: d.x, y: d.y, scrollY: mapPage.scrollY, moved: false };
+    }
+    return;
+  }
+  if (phase === 'rank') {
+    for (const b of rankButtons) {
+      if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
+    }
+    return;
+  }
+  if (phase === 'profile') {
+    for (const b of profileButtons) {
       if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
     }
     return;
@@ -368,7 +527,6 @@ function onDown(clientX: number, clientY: number) {
         audio.unlock();
         reportEvent('skin_equip', { skin_id: skin.id });
       } else if (skin.unlockType === 'ad') {
-        // 广告解锁（T17 接广告）
         void unlockByAd(skin.id);
       }
       return;
@@ -378,39 +536,99 @@ function onDown(clientX: number, clientY: number) {
     }
     return;
   }
-  if (phase === 'friends') {
-    for (const b of friendsButtons) {
+  if (phase === 'result') {
+    for (const b of resultButtons) {
       if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
     }
     return;
   }
+
   if (phase !== 'playing') return;
+  if (hitButton(backHomeBtn, d.x, d.y)) { pressedBtn = 'backHome'; return; }
   if (hitButton(hintBtn, d.x, d.y)) { pressedBtn = 'hint'; return; }
   if (hitButton(skipBtn, d.x, d.y)) { pressedBtn = 'skip'; return; }
-  if (hitButton(friendsBtn, d.x, d.y)) { pressedBtn = 'friends'; return; }
   session.pointerDown(d.x, d.y);
 }
 
 /** 指针移动。 */
 function onMove(clientX: number, clientY: number) {
-  if (phase !== 'playing') return;
   const d = toDesign(clientX, clientY);
+
+  // 地图拖动滚动
+  if (phase === 'map' && mapDragStart) {
+    const dy = d.y - mapDragStart.y;
+    if (Math.abs(dy) > 6) mapDragStart.moved = true;
+    if (mapDragStart.moved) {
+      const next = mapDragStart.scrollY - dy;
+      mapPage.scrollY = Math.max(0, Math.min(mapPage.maxScrollY, next));
+    }
+    return;
+  }
+
+  if (phase !== 'playing') return;
   session.pointerMove(d.x, d.y);
 }
 
 /** 指针抬起。 */
 function onUp() {
+  // 地图拖动结束必须在 pressedBtn 分支之前处理，否则 'map:N' 会先被消费掉
+  if (phase === 'map' && mapDragStart) {
+    const wasMoved = mapDragStart.moved;
+    mapDragStart = null;
+    if (wasMoved) { pressedBtn = null; return; }
+  }
+
   if (pressedBtn) {
     const id = pressedBtn;
     pressedBtn = null;
+
+    // 底部导航
+    if (id.startsWith('nav:')) { void gotoTab(id.slice(4) as NavTab); return; }
+
+    // 大厅 / 地图
+    if (id === 'homeStart') {
+      reportEvent('home_start_click', { level_idx: progress.current.maxLevel });
+      void enterLevel(progress.current.maxLevel || 1);
+      return;
+    }
+    if (id === 'navHome') { void gotoTab('home'); return; }
+    if (id.startsWith('map:')) {
+      const idx = parseInt(id.slice(4), 10);
+      if (idx <= progress.current.maxLevel) {
+        reportEvent('map_level_click', { level_idx: idx });
+        void enterLevel(idx);
+      } else {
+        mapPage.toast = `先通过第 ${progress.current.maxLevel} 关`;
+        mapPage.toastAt = Date.now();
+      }
+      return;
+    }
+
+    // 排行榜 Tab
+    if (id === 'tabGlobal') { rankPage.tab = 'global'; reportEvent('leaderboard_tab_switch', { tab: 'global' }); return; }
+    if (id === 'tabFriends') {
+      rankPage.tab = 'friends';
+      reportEvent('leaderboard_tab_switch', { tab: 'friends' });
+      void openFriends();
+      return;
+    }
+
+    // 我的页功能行
+    if (id === 'toggleSound') { profilePage.soundOn = !profilePage.soundOn; return; }
+    if (id === 'toggleVibrate') { profilePage.vibrateOn = !profilePage.vibrateOn; return; }
+    if (id === 'shareGame') { void doShare(); return; }
+    if (id === 'clearCache') { platform.storage.remove('levels_cache'); return; }
+
+    // 游戏内
     if (id === 'hint') void useHint();
     else if (id === 'skip') void useSkip();
+    else if (id === 'backHome') { phase = 'home'; return; }
     else if (id === 'next') void enterLevel(pendingLevel);
+    else if (id === 'home') { phase = 'home'; challenge = null; challengeResult = null; return; }
     else if (id === 'retry') { challengeResult = null; void enterLevel(challenge ? challenge.levelIdx : pendingLevel); }
     else if (id === 'share') doShare();
     else if (id === 'skins') { phase = 'skins'; ads.showBanner(); reportEvent('skin_page_view', { owned: skinsPage.unlocked.size, total: SKINS.length }); }
-    else if (id === 'friends') { void openFriends(); }
-    else if (id === 'back') { phase = 'playing'; ads.hideBanner(); }
+    else if (id === 'back') { phase = 'home'; ads.hideBanner(); }
     else if (id === 'prevPage') skinsPage.page = Math.max(0, skinsPage.page - 1);
     else if (id === 'nextPage') skinsPage.page = Math.min(Math.ceil(SKINS.length / PER_PAGE) - 1, skinsPage.page + 1);
     return;
@@ -508,7 +726,7 @@ function frame() {
     // 顶部按钮
     drawButton(ctx, hintBtn, pressedBtn === 'hint');
     drawButton(ctx, skipBtn, pressedBtn === 'skip');
-    drawButton(ctx, friendsBtn, pressedBtn === 'friends');
+    drawButton(ctx, backHomeBtn, pressedBtn === 'backHome');
 
     // 挑战模式横幅
     if (challenge) {
@@ -526,12 +744,34 @@ function frame() {
   // 特效（粒子 + 扩散环）
   fx.update(ctx, dt);
 
+  // ── 大厅体系页面 ──
+  if (phase === 'home') {
+    homePage = {
+      ...homePage,
+      maxLevel: progress.current.maxLevel,
+      skinCount: progress.current.unlockedSkins.length,
+    };
+    homeButtons = drawHomePage(ctx, homePage, now);
+  }
+  if (phase === 'map') {
+    // 星级与最高关可能在通关后变化，每帧对齐一次
+    mapPage.stars = progress.current.stars;
+    mapPage.maxLevel = progress.current.maxLevel;
+    mapButtons = drawMapView(ctx, mapPage, now);
+  }
+  if (phase === 'rank') {
+    rankButtons = drawRankPage(ctx, rankPage, now);
+  }
+  if (phase === 'profile') {
+    profileButtons = drawProfilePage(ctx, profilePage, now);
+  }
   if (phase === 'skins') {
-    skinButtons = drawSkinsPage(ctx, skinsPage, now);
+    skinButtons = drawSkinsPage(ctx, skinsPage, now, LOBBY_THEME);
   }
 
-  if (phase === 'friends') {
-    friendsButtons = drawFriendsPage(ctx, friendsPage);
+  // ── 底部导航 ──
+  if (isNavPhase(phase)) {
+    drawNav(ctx, navTabOf(phase), now);
   }
 
   if (phase === 'result' && challengeResult) {
@@ -558,6 +798,10 @@ async function boot() {
     progress.sync({
       maxLevel: loginRes.maxLevel || 1,
       unlockedSkins: loginRes.unlockedSkins,
+      totalTimeMs: loginRes.totalTimeMs,
+      totalSteps: loginRes.totalSteps,
+      nickname: loginRes.nickname || '玩家',
+      avatar: loginRes.avatar || '',
     });
     skinsPage.equipped = progress.current.currentSkin;
     skinsPage.unlocked = new Set(progress.current.unlockedSkins);
@@ -570,10 +814,25 @@ async function boot() {
     }
     await levels.init(config.levelVersion);
     challenge = parseChallenge();
-    const startIdx = challenge
-      ? challenge.levelIdx
-      : Math.min(progress.current.maxLevel || 1, levels.loadedMax || 1);
-    await enterLevel(startIdx);
+    // 分享挑战 → 直接进关卡；普通启动 → 回大厅
+    if (challenge) {
+      await enterLevel(challenge.levelIdx);
+    } else {
+      phase = 'home';
+      homePage = {
+        ...homePage,
+        maxLevel: progress.current.maxLevel,
+        levelCount: config?.levelCount ?? 1000,
+        nickname: progress.current.nickname || '玩家',
+        avatar: progress.current.avatar || '',
+        skinCount: progress.current.unlockedSkins.length,
+        totalSkins: SKINS.length,
+      };
+      // 异步拉星级，不阻塞进大厅
+      void fetchStars()
+        .then((res) => progress.setStars(res.stars))
+        .catch(() => { /* 忽略 */ });
+    }
     reportEvent('app_start', {});
   } catch (e) {
     console.error('启动失败', e);

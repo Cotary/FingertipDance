@@ -7,7 +7,10 @@ export type EventName =
   | 'ad_start' | 'ad_complete' | 'ad_abort' | 'ad_error'
   | 'skin_unlock' | 'skin_equip' | 'skin_page_view'
   | 'leaderboard_view' | 'share_click' | 'share_success'
-  | 'challenge_start' | 'challenge_result';
+  | 'challenge_start' | 'challenge_result'
+  // 大厅体系（T23）
+  | 'nav_click' | 'home_start_click' | 'map_level_click'
+  | 'leaderboard_tab_switch' | 'profile_view';
 
 /** 缓冲的事件。 */
 interface BufferedEvent {

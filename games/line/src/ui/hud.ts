@@ -1,19 +1,9 @@
 import { DESIGN_W, DESIGN_H } from '../render/layout';
 import { roundRect } from '../render/board';
+import { GAME_THEME, type Theme } from './theme';
 
-export const COLORS = {
-  bg: '#141824',
-  bgLight: '#1E2436',
-  panel: '#262D42',
-  border: '#39415C',
-  text: '#E8ECF5',
-  subText: '#8A94AD',
-  accent: '#E97E6A',
-  success: '#5EA94C',
-  blue: '#6692F5',
-  yellow: '#F2C14E',
-  purple: '#9B7BE8',
-};
+/** 游戏内配色（深色）。保留此名以兼容既有引用。 */
+export const COLORS = GAME_THEME;
 
 /** 矩形按钮。 */
 export interface Button {
@@ -24,9 +14,22 @@ export interface Button {
 }
 
 /**
- * 画一个按钮并返回它是否被点击。
+ * 按「步数 / 理论最短步数」算星级。
+ * 阈值必须与后端 server/internal/games/line/stars.go 的 StarOf 一致。
  */
-export function drawButton(ctx: CanvasRenderingContext2D, b: Button, pressed: boolean): void {
+export function starOf(steps: number, shortest: number): number {
+  if (shortest <= 0) return 1;
+  const ratio = steps / shortest;
+  if (ratio <= 1.15) return 3;
+  if (ratio <= 1.5) return 2;
+  return 1;
+}
+
+/**
+ * 画一个按钮。
+ * @param theme 主题，默认深色游戏主题（既有调用点无需改）
+ */
+export function drawButton(ctx: CanvasRenderingContext2D, b: Button, pressed: boolean, theme: Theme = COLORS): void {
   const scale = pressed ? 0.96 : 1;
   const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
   ctx.save();
@@ -35,21 +38,21 @@ export function drawButton(ctx: CanvasRenderingContext2D, b: Button, pressed: bo
   ctx.translate(-cx, -cy);
 
   if (b.kind === 'primary') {
-    ctx.fillStyle = COLORS.blue;
+    ctx.fillStyle = theme.blue;
     roundRect(ctx, b.x, b.y, b.w, b.h, 24);
     ctx.fill();
     ctx.fillStyle = '#FFFFFF';
   } else if (b.kind === 'secondary') {
-    ctx.strokeStyle = COLORS.blue;
+    ctx.strokeStyle = theme.blue;
     ctx.lineWidth = 2;
     roundRect(ctx, b.x, b.y, b.w, b.h, 24);
     ctx.stroke();
-    ctx.fillStyle = COLORS.blue;
+    ctx.fillStyle = theme.blue;
   } else {
-    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillStyle = theme.border;
     roundRect(ctx, b.x, b.y, b.w, b.h, 24);
     ctx.fill();
-    ctx.fillStyle = COLORS.text;
+    ctx.fillStyle = theme.text;
   }
 
   ctx.font = '600 32px system-ui, sans-serif';
@@ -119,7 +122,7 @@ export function drawResult(
   ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
 
   // 面板
-  const px = 50, py = 380, pw = DESIGN_W - 100, ph = 560;
+  const px = 50, py = 380, pw = DESIGN_W - 100, ph = 660;
   ctx.fillStyle = COLORS.panel;
   roundRect(ctx, px, py, pw, ph, 24);
   ctx.fill();
@@ -130,8 +133,7 @@ export function drawResult(
   ctx.font = '700 44px system-ui, sans-serif';
   ctx.fillText(`第 ${levelIdx} 关 通关！`, DESIGN_W / 2, py + 40);
 
-  const ratio = shortest > 0 ? steps / shortest : 1;
-  const stars = ratio <= 1.15 ? 3 : ratio <= 1.5 ? 2 : 1;
+  const stars = starOf(steps, shortest);
   ctx.fillStyle = COLORS.yellow;
   ctx.font = '40px system-ui, sans-serif';
   ctx.fillText('★'.repeat(stars) + '☆'.repeat(3 - stars), DESIGN_W / 2, py + 110);
@@ -154,10 +156,12 @@ export function drawResult(
   const nextBtn: Button = { x: 120, y: py + 400, w: DESIGN_W - 240, h: 88, label: '下一关', kind: 'primary', id: 'next' };
   const shareBtn: Button = { x: 120, y: py + 500, w: (DESIGN_W - 260) / 2, h: 64, label: '分享', kind: 'secondary', id: 'share' };
   const skinBtn: Button = { x: 140 + (DESIGN_W - 260) / 2, y: py + 500, w: (DESIGN_W - 260) / 2, h: 64, label: '皮肤', kind: 'secondary', id: 'skins' };
+  const homeBtn: Button = { x: 120, y: py + 570, w: DESIGN_W - 240, h: 64, label: '返回大厅', kind: 'ghost', id: 'home' };
 
   drawButton(ctx, nextBtn, false);
   drawButton(ctx, shareBtn, false);
   drawButton(ctx, skinBtn, false);
+  drawButton(ctx, homeBtn, false);
 
-  return [nextBtn, shareBtn, skinBtn];
+  return [nextBtn, shareBtn, skinBtn, homeBtn];
 }

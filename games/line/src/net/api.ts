@@ -36,7 +36,11 @@ export interface ProgressResult {
   isNewBest: boolean;
   maxLevel: number;
   totalTimeMs: number;
+  /** 累计步数（服务端 users.total_steps） */
+  totalSteps: number;
   unlockedSkins: string[];
+  /** 本次通关该关星级（1~3） */
+  stars: number;
 }
 
 /** 令牌存取。 */
@@ -130,6 +134,11 @@ export function fetchLeaderboard(): Promise<{ list: LeaderboardItem[]; myRank: n
 /** 拉取好友列表。 */
 export function fetchFriends(): Promise<{ list: FriendItem[]; stats: FriendStats }> {
   return authed('/api/friends', 'GET');
+}
+
+/** 拉取玩家每关星级（关号 → 星级）。 */
+export function fetchStars(): Promise<{ stars: Record<string, number> }> {
+  return authed('/api/progress/stars', 'GET');
 }
 
 /** 上报埋点（走 tracker，带本地缓冲 + 断网补传）。 */

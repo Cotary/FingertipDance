@@ -22,6 +22,12 @@ export interface Progress {
   totalSteps: number;
   /** 累计用时（毫秒，用于好友榜分数）。 */
   totalTimeMs: number;
+  /** 昵称（来自服务端登录响应）。 */
+  nickname: string;
+  /** 头像 URL（空则程序化生成）。 */
+  avatar: string;
+  /** 关号 → 星级（1~3），来自 /api/progress/stars。 */
+  stars: Record<string, number>;
 }
 
 /**
@@ -98,6 +104,9 @@ export class ProgressStore {
     adWatchCnt: 0,
     totalSteps: 0,
     totalTimeMs: 0,
+    nickname: '玩家',
+    avatar: '',
+    stars: {},
   };
 
   /** 读取进度。 */
@@ -129,6 +138,21 @@ export class ProgressStore {
   /** 装备皮肤。 */
   equipSkin(id: string): void {
     this.progress.currentSkin = id;
+    platform.storage.set(KEY_PROGRESS, JSON.stringify(this.progress));
+  }
+
+  /** 写入全量星级（首次进大厅时拉一次）。 */
+  setStars(stars: Record<string, number>): void {
+    this.progress.stars = stars;
+    platform.storage.set(KEY_PROGRESS, JSON.stringify(this.progress));
+  }
+
+  /** 写入单关星级（通关后本地即时更新，避免等下次拉取）。 */
+  setStar(levelIdx: number, star: number): void {
+    if (star <= 0) return;
+    const key = String(levelIdx);
+    if ((this.progress.stars[key] ?? 0) >= star) return;
+    this.progress.stars[key] = star;
     platform.storage.set(KEY_PROGRESS, JSON.stringify(this.progress));
   }
 }

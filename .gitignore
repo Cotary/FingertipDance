@@ -21,3 +21,9 @@ Thumbs.db
 
 # WorkBuddy 项目数据（非交付物）
 .workbuddy/
+
+# Go 编译产物
+*.exe
+
+# 参考图裁剪（分析用，非交付物）
+.research/
