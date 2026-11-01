@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>关卡调试器</title>
+<style>
+  body { margin:0; background:#141824; color:#E8ECF5; font-family: system-ui, sans-serif; display:flex; }
+  #wrap { flex:1; padding:16px; }
+  #side { width:320px; padding:16px; background:#1E2436; border-left:1px solid #39415C; }
+  canvas { background:#262D42; border-radius:8px; image-rendering:pixelated; }
+  label { display:block; margin:10px 0 4px; color:#8A94AD; font-size:13px; }
+  input, button { width:100%; padding:8px; border-radius:6px; border:1px solid #39415C; background:#262D42; color:#E8ECF5; font-size:14px; margin-bottom:6px; }
+  button { background:#6692F5; color:#fff; cursor:pointer; font-weight:600; }
+  .stat { display:flex; justify-content:space-between; padding:4px 0; font-size:14px; }
+  .stat span:last-child { color:#F2C14E; font-weight:600; }
+  h3 { margin:16px 0 8px; font-size:15px; color:#8A94AD; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <h2>关卡调试器</h2>
+  <canvas id="cv" width="600" height="600"></canvas>
+</div>
+<div id="side">
+  <label>关号</label><input id="idx" type="number" value="1" />
+  <label>全局种子</label><input id="seed" type="number" value="20261101" />
+  <button id="load">加载</button>
+  <button id="prev">上一关</button>
+  <button id="next">下一关</button>
+  <button id="regen">重新生成此关（换种子）</button>
+  <button id="export">导出 PNG</button>
+  <h3>关卡信息</h3>
+  <div class="stat"><span>尺寸</span><span id="s-size">-</span></div>
+  <div class="stat"><span>最短步数</span><span id="s-steps">-</span></div>
+  <div class="stat"><span>转弯数</span><span id="s-turns">-</span></div>
+  <div class="stat"><span>难度分</span><span id="s-diff">-</span></div>
+  <div class="stat"><span>阻挡块</span><span id="s-blocks">-</span></div>
+  <div class="stat"><span>单向块</span><span id="s-oneways">-</span></div>
+  <div class="stat"><span>开放比</span><span id="s-open">-</span></div>
+  <div class="stat"><span>等价解</span><span id="s-paths">-</span></div>
+  <h3>图例</h3>
+  <div class="stat"><span>■ 阻挡</span><span>深灰</span></div>
+  <div class="stat"><span>□ 砖块</span><span>中灰</span></div>
+  <div class="stat"><span>→ 单向</span><span>箭头</span></div>
+  <div class="stat"><span>● 起点</span><span>绿</span></div>
+  <div class="stat"><span>● 终点</span><span>红</span></div>
+  <div class="stat" style="margin-top:8px"><span>虚线</span><span>解法路径</span></div>
+</div>
+<script type="module">
+import { generateLevel } from '/src/core/generator';
+import { solve } from '/src/core/solver';
+import { targetDiff } from '/src/core/curve';
+import { CellType } from '/src/core/types';
+
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+
+const COLORS = {
+  [CellType.BLOCK]: '#39415C',
+  [CellType.BRICK]: '#8A94AD',
+  [CellType.ONEWAY]: '#9B7BE8',
+  [CellType.START]: '#5EA94C',
+  [CellType.END]: '#E97E6A',
+};
+
+function draw(level, paths) {
+  const w = level.w, h = level.h;
+  const size = Math.min(cv.width / w, cv.height / h);
+  const ox = (cv.width - size * w) / 2;
+  const oy = (cv.height - size * h) / 2;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = '#262D42'; ctx.fillRect(0, 0, cv.width, cv.height);
+
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const c = level.grid[y][x];
+    const px = ox + x * size, py = oy + y * size;
+    ctx.fillStyle = COLORS[c.type];
+    ctx.fillRect(px + 2, py + 2, size - 4, size - 4);
+    if (c.type === CellType.ONEWAY) {
+      const cx = px + size/2, cy = py + size/2;
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(c.dir * Math.PI/2);
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.moveTo(0, -size*0.22); ctx.lineTo(size*0.16, size*0.12); ctx.lineTo(-size*0.16, size*0.12); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+    if (c.type === CellType.START) { ctx.fillStyle='#fff'; ctx.font=`bold ${size*0.4}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('起', px+size/2, py+size/2); }
+    if (c.type === CellType.END) { ctx.fillStyle='#fff'; ctx.font=`bold ${size*0.4}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('终', px+size/2, py+size/2); }
+  }
+
+  if (paths && paths.length) {
+    ctx.strokeStyle = 'rgba(242,193,78,0.85)';
+    ctx.setLineDash([6, 5]); ctx.lineWidth = 3; ctx.lineJoin='round';
+    ctx.beginPath();
+    paths[0].forEach((idx, i) => {
+      const x = ox + (idx % w) * size + size/2;
+      const y = oy + Math.floor(idx / w) * size + size/2;
+      if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+}
+
+function load() {
+  const idx = parseInt(document.getElementById('idx').value, 10);
+  const seed = parseInt(document.getElementById('seed').value, 10);
+  const level = generateLevel(idx, seed);
+  const res = solve(level.grid);
+  draw(level, res.paths);
+  const set = (id, v) => document.getElementById(id).textContent = v;
+  set('s-size', `${level.w}×${level.h}`);
+  set('s-steps', `${level.shortest} (目标 ${targetDiff(idx)})`);
+  set('s-turns', String(level.turns));
+  set('s-diff', String(level.diff));
+  set('s-blocks', String(level.blocks));
+  set('s-oneways', String(level.oneways));
+  set('s-open', `${(100*(1-level.blocks/(level.w*level.h))).toFixed(0)}%`);
+  set('s-paths', res.pathCount <= 1 ? '唯一' : `${res.pathCount}+`);
+}
+
+document.getElementById('load').onclick = load;
+document.getElementById('next').onclick = () => { document.getElementById('idx').value = String(+document.getElementById('idx').value + 1); load(); };
+document.getElementById('prev').onclick = () => { document.getElementById('idx').value = String(+document.getElementById('idx').value - 1); load(); };
+document.getElementById('regen').onclick = () => { document.getElementById('seed').value = String(+document.getElementById('seed').value + 7919); load(); };
+document.getElementById('export').onclick = () => { const a=document.createElement('a'); a.download='level.png'; a.href=cv.toDataURL(); a.click(); };
+load();
+</script>
+</body>
+</html>
