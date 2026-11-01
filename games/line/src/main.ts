@@ -9,6 +9,8 @@ import { Fx } from './render/fx';
 import { audio } from './render/audio';
 import { SKINS, skinById } from './render/skins';
 import { drawSkinsPage, pickSkinCard, PER_PAGE, type SkinsPageState } from './ui/skins';
+import { ads } from './ads/ads';
+import { needsAdForHint, canSkipToday, markSkippedToday } from './ads/rewardRules';
 import { drawHud, drawProgressBar, drawResult, drawButton, hitButton, type Button } from './ui/hud';
 import { findHint } from './core/solver';
 import { CellType } from './core/types';
@@ -74,12 +76,12 @@ session.on((e) => {
 });
 
 /** 通关处理：上报成绩。 */
-async function onWin(steps: number, timeMs: number, path: number[]) {
+async function onWin(steps: number, timeMs: number, path: number[], skipped = false) {
   const level = session.state!.level;
   // 通关波次动画（约 1.2 秒），结算页延后出现
   winAnimStart = Date.now();
   fx.clear();
-  reportEvent('level_pass', { level_idx: level.idx, steps, time_ms: timeMs, skipped: false });
+  reportEvent('level_pass', { level_idx: level.idx, steps, time_ms: timeMs, skipped });
 
   let unlockedSkin: any = null;
   try {
@@ -104,8 +106,11 @@ async function onWin(steps: number, timeMs: number, path: number[]) {
   };
   pendingLevel = level.idx + 1;
 
-  // 结算页延后出现，让通关波次动画播完
-  setTimeout(() => { phase = 'result'; }, 1200);
+  // 结算页延后出现，让通关波次动画播完；入场后再延迟 500ms 弹插屏
+  setTimeout(() => {
+    phase = 'result';
+    setTimeout(() => { void ads.showInterstitial('result_interstitial'); }, 500);
+  }, 1200);
 }
 
 /** 进入关卡。 */
@@ -133,26 +138,47 @@ async function useHint() {
     console.log('当前无法给出提示');
     return;
   }
-  // 广告逻辑在 T17 接入；当前直接给提示
+
+  // 首次使用需看广告
+  let viaAd = false;
+  if (needsAdForHint(st.level.idx, st.hintUsed)) {
+    const ok = await ads.showRewarded('hint');
+    if (!ok) return; // 中途退出 → 不给提示
+    viaAd = true;
+  }
+
   session.setHint(hint);
-  reportEvent('hint_use', { level_idx: st.level.idx, via_ad: false });
+  reportEvent('hint_use', { level_idx: st.level.idx, via_ad: viaAd });
 }
 
 /** 跳过关卡。 */
 async function useSkip() {
   const st = session.state;
   if (!st) return;
-  // 广告逻辑在 T17 接入
+  if (!canSkipToday(st.level.idx)) {
+    console.log('本关今天已跳过');
+    return;
+  }
+  const ok = await ads.showRewarded('skip');
+  if (!ok) return;
+
+  markSkippedToday(st.level.idx);
   await reportSkip(st.level.idx);
   session.markSkipped();
-  await onWin(st.level.shortest, 0, []);
   reportEvent('skip_use', { level_idx: st.level.idx, via_ad: true });
+  void onWin(st.level.shortest, 0, [], true);
 }
 
-/** 广告解锁皮肤（T17 接入激励视频）。 */
+/** 广告解锁皮肤。 */
 async function unlockByAd(skinId: string) {
-  // T17：调用 platform.ad.showRewarded('skin_unlock')，成功后 progress.unlockSkin(skinId)
-  console.log('广告解锁皮肤待 T17 接入', skinId);
+  const ok = await ads.showRewarded('skin_unlock');
+  if (!ok) return;
+  progress.unlockSkin(skinId);
+  skinsPage.unlocked.add(skinId);
+  skinsPage.equipped = skinId;
+  progress.equipSkin(skinId);
+  audio.unlock();
+  reportEvent('skin_unlock', { skin_id: skinId, via: 'ad' });
 }
 
 /** 找起点索引。 */
@@ -214,8 +240,8 @@ function onUp() {
     else if (id === 'skip') void useSkip();
     else if (id === 'next') void enterLevel(pendingLevel);
     else if (id === 'share') { void platform.share({ title: `我卡在第 ${session.state?.level.idx ?? 1} 关` }); reportEvent('share_click', {}); }
-    else if (id === 'skins') { phase = 'skins'; }
-    else if (id === 'back') phase = 'playing';
+    else if (id === 'skins') { phase = 'skins'; ads.showBanner(); }
+    else if (id === 'back') { phase = 'playing'; ads.hideBanner(); }
     else if (id === 'prevPage') skinsPage.page = Math.max(0, skinsPage.page - 1);
     else if (id === 'nextPage') skinsPage.page = Math.min(Math.ceil(SKINS.length / PER_PAGE) - 1, skinsPage.page + 1);
     return;
