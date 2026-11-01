@@ -4,9 +4,9 @@
  */
 import { DESIGN_W, DESIGN_H } from '../render/layout';
 import { drawButton, type Button } from './hud';
-import { roundRect } from '../render/board';
 import { getOpenDataCanvas } from '../platform/openData';
-import { LOBBY_THEME } from './theme';
+import { CANDY, THEME, type CandyColor } from './theme';
+import { glass, strokeText } from './draw';
 import type { FriendItem, FriendStats } from '../net/api';
 
 /** 好友页状态。 */
@@ -38,45 +38,53 @@ export function drawFriendsBoard(
   topY: number,
   height: number,
 ): void {
-  const t = LOBBY_THEME;
-
   // ── 统计面板 ──
   const panelY = topY;
-  ctx.fillStyle = t.panel;
-  roundRect(ctx, 40, panelY, DESIGN_W - 80, PANEL_H, 16);
-  ctx.fill();
+  glass(ctx, 40, panelY, DESIGN_W - 80, PANEL_H, 28, { fill: 'rgba(255,255,255,0.10)' });
 
-  const statItems = [
-    { label: '好友数', value: String(st.stats.friendCount) },
-    { label: '好友平均进度', value: `${st.stats.avgLevel} 关` },
-    { label: '好友最高进度', value: `${st.stats.maxLevel} 关` },
-    { label: '我的名次', value: st.myRank > 0 ? `第 ${st.myRank} 名` : '未上榜' },
+  const statItems: Array<{ label: string; value: string; c: CandyColor }> = [
+    { label: '好友数', value: String(st.stats.friendCount), c: CANDY.blue },
+    { label: '好友平均进度', value: `${st.stats.avgLevel} 关`, c: CANDY.green },
+    { label: '好友最高进度', value: `${st.stats.maxLevel} 关`, c: CANDY.orange },
+    { label: '我的名次', value: st.myRank > 0 ? `第 ${st.myRank} 名` : '未上榜', c: CANDY.gold },
   ];
   statItems.forEach((s, i) => {
     const col = i % 2;
     const row = Math.floor(i / 2);
-    const x = 90 + col * 300;
-    const y = panelY + 30 + row * 70;
-    ctx.fillStyle = t.subText;
-    ctx.font = '22px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText(s.label, x, y);
-    ctx.fillStyle = t.blue;
-    ctx.font = '600 32px system-ui, sans-serif';
-    ctx.fillText(s.value, x, y + 28);
+    const x = 150 + col * 300;
+    const y = panelY + 34 + row * 78;
+    strokeText(ctx, s.label, x, y, 21, {
+      weight: 600,
+      fill: THEME.subText,
+    });
+    strokeText(ctx, s.value, x, y + 34, 32, {
+      fill: s.c.light,
+      stroke: 'rgba(8,4,30,0.45)',
+      strokeWidth: 4,
+    });
   });
+
+  // 面板中间的分隔线
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(300, panelY + 26);
+  ctx.lineTo(300, panelY + PANEL_H - 26);
+  ctx.stroke();
 
   // ── 好友榜 ──
   const boardY = panelY + PANEL_TO_BOARD;
-  ctx.fillStyle = t.subText;
-  ctx.font = '24px system-ui, sans-serif';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillText('好友榜', 40, boardY);
+  strokeText(ctx, '好友榜', 40, boardY + 12, 28, {
+    align: 'left',
+    stroke: 'rgba(8,4,30,0.5)',
+    strokeWidth: 5,
+  });
   if (st.loadingOpenData) {
-    ctx.textAlign = 'right';
-    ctx.fillText('加载中...', DESIGN_W - 40, boardY);
+    strokeText(ctx, '加载中…', DESIGN_W - 40, boardY + 12, 22, {
+      weight: 600,
+      fill: THEME.subText,
+      align: 'right',
+    });
   }
 
   // 榜单区：从 boardY + 40 起，正好铺到 topY + height
@@ -90,31 +98,54 @@ export function drawFriendsBoard(
     } catch {
       // 微信端首帧可能还没画好
     }
-  } else {
-    // Web 版用服务端好友列表兜底绘制
-    ctx.fillStyle = t.panel;
-    roundRect(ctx, 40, boardBoxY, DESIGN_W - 80, boardBoxH, 16);
-    ctx.fill();
-    ctx.textAlign = 'center';
-    ctx.font = '26px system-ui, sans-serif';
-    ctx.textBaseline = 'middle';
-    const list = st.friends.slice(0, 12);
-    if (list.length === 0) {
-      ctx.fillStyle = t.subText;
-      ctx.fillText('还没有好友，分享给好友一起来玩吧', DESIGN_W / 2, boardBoxY + boardBoxH / 2);
-    }
-    list.forEach((f, i) => {
-      const y = boardBoxY + 50 + i * 46;
-      if (y > boardBoxY + boardBoxH - 20) return;
-      ctx.textAlign = 'left';
-      ctx.fillStyle = t.text;
-      ctx.font = '24px system-ui, sans-serif';
-      ctx.fillText(`${i + 1}. ${f.nickname || '玩家'}`, 70, y);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = t.blue;
-      ctx.fillText(`第 ${f.maxLevel} 关`, DESIGN_W - 70, y);
-    });
+    return;
   }
+
+  // Web 版用服务端好友列表兜底绘制
+  glass(ctx, 40, boardBoxY, DESIGN_W - 80, boardBoxH, 28, { fill: 'rgba(255,255,255,0.08)' });
+  const list = st.friends.slice(0, 12);
+  if (list.length === 0) {
+    strokeText(ctx, '还没有好友，分享给好友一起来玩吧', DESIGN_W / 2, boardBoxY + boardBoxH / 2, 26, {
+      weight: 600,
+      fill: THEME.subText,
+    });
+    return;
+  }
+
+  list.forEach((f, i) => {
+    const y = boardBoxY + 40 + i * 52;
+    if (y > boardBoxY + boardBoxH - 24) return;
+
+    // 名次糖果圆片
+    const medal = i === 0 ? CANDY.gold : i === 1 ? CANDY.blue : i === 2 ? CANDY.orange : CANDY.purple;
+    ctx.fillStyle = medal.dark;
+    ctx.beginPath();
+    ctx.arc(82, y + 2, 17, 0, Math.PI * 2);
+    ctx.fill();
+    const g = ctx.createLinearGradient(82, y - 15, 82, y + 17);
+    g.addColorStop(0, medal.light);
+    g.addColorStop(0.5, medal.base);
+    g.addColorStop(1, medal.base);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(82, y, 17, 0, Math.PI * 2);
+    ctx.fill();
+    strokeText(ctx, String(i + 1), 82, y + 1, 18, {
+      stroke: medal.dark,
+      strokeWidth: 3,
+    });
+
+    strokeText(ctx, f.nickname || '玩家', 116, y, 24, {
+      align: 'left',
+      stroke: 'rgba(8,4,30,0.45)',
+      strokeWidth: 4,
+    });
+    strokeText(ctx, `第 ${f.maxLevel} 关`, DESIGN_W - 70, y, 24, {
+      weight: 600,
+      fill: CANDY.blue.light,
+      align: 'right',
+    });
+  });
 }
 
 /**
@@ -122,20 +153,14 @@ export function drawFriendsBoard(
  * 排行榜页内嵌时不走这个函数，直接调 `drawFriendsBoard`。
  */
 export function drawFriendsPage(ctx: CanvasRenderingContext2D, st: FriendsPageState): Button[] {
-  const t = LOBBY_THEME;
+  strokeText(ctx, '好友', DESIGN_W / 2, 76, 40, {
+    stroke: 'rgba(8,4,30,0.6)',
+    strokeWidth: 7,
+  });
 
-  ctx.fillStyle = t.bg;
-  ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+  drawFriendsBoard(ctx, st, 130, 900);
 
-  ctx.fillStyle = t.text;
-  ctx.font = '700 38px system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillText('好友', DESIGN_W / 2, 60);
-
-  drawFriendsBoard(ctx, st, 120, 900);
-
-  const back: Button = { x: 40, y: DESIGN_H - 140, w: 160, h: 72, label: '返回', kind: 'secondary', id: 'back' };
-  drawButton(ctx, back, false, t);
+  const back: Button = { x: 40, y: DESIGN_H - 220, w: 160, h: 72, label: '返回', kind: 'secondary', id: 'back', tone: 'blue' };
+  drawButton(ctx, back, false);
   return [back];
 }

@@ -27,3 +27,8 @@ Thumbs.db
 
 # 参考图裁剪（分析用，非交付物）
 .research/
+
+# UI 校验中间产物（tools/ui-gallery.ts 生成，非交付物）
+games/line/tools/*.png
+games/line/tools/ui-gallery.html
+games/line/tools/ui-debug.html

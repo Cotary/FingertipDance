@@ -4,7 +4,7 @@ import { fetchFriends, fetchLeaderboard, fetchProfile, fetchStars, login, fetchC
 import { Session } from './game/session';
 import { LevelStore, ProgressStore } from './game/progressStore';
 import { DESIGN_W, DESIGN_H } from './render/layout';
-import { drawBoard, roundRect } from './render/board';
+import { drawBoard, drawEndpoints, roundRect } from './render/board';
 import { drawTrail } from './render/trail';
 import { Fx } from './render/fx';
 import { audio } from './render/audio';
@@ -13,13 +13,15 @@ import { drawSkinsPage, pickSkinCard, PER_PAGE, type SkinsPageState } from './ui
 import { ads } from './ads/ads';
 import { needsAdForHint, canSkipToday, markSkippedToday } from './ads/rewardRules';
 import { tracker } from './analytics/tracker';
-import { drawHud, drawProgressBar, drawResult, drawButton, hitButton, COLORS, type Button } from './ui/hud';
+import { drawHud, drawProgressBar, drawResult, drawButton, hitButton, type Button } from './ui/hud';
 import { drawHomePage, type HomePageState } from './ui/home';
 import { drawMapView, createMapState, pickMapNode, scrollToLevel, type MapViewState } from './ui/mapview';
 import { drawRankPage, createRankState, type RankPageState } from './ui/leaderboard';
 import { drawProfilePage, type ProfilePageState } from './ui/profile';
 import { drawNav, pickNavTab, type NavTab } from './ui/nav';
 import { LOBBY_THEME } from './ui/theme';
+import { nightSky, glass, strokeText } from './ui/draw';
+import { CANDY } from './ui/theme';
 import { publishProfile } from './platform/openData';
 import { parseChallenge, buildShareQuery } from './game/challenge';
 import { renderPoster, shareCopy } from './ui/share';
@@ -413,33 +415,55 @@ function doShare() {
 
 /** 绘制挑战结算面板。 */
 function drawChallengeResult(ctx: CanvasRenderingContext2D, r: { win: boolean; mySteps: number; bestSteps: number; fromName: string; isNewBest: boolean }): Button[] {
-  ctx.fillStyle = 'rgba(10,12,20,0.82)';
+  ctx.fillStyle = 'rgba(6,3,24,0.80)';
   ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
 
   const px = 50, py = 380, pw = DESIGN_W - 100, ph = 480;
-  ctx.fillStyle = COLORS.panel;
-  roundRect(ctx, px, py, pw, ph, 24);
+
+  // 面板：胜负两种色调
+  const accent = r.win ? CANDY.green : CANDY.coral;
+  ctx.fillStyle = r.win ? 'rgba(126,217,87,0.20)' : 'rgba(255,107,107,0.20)';
+  roundRect(ctx, px - 6, py - 6, pw + 12, ph + 12, 50);
   ctx.fill();
 
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = r.win ? COLORS.success : COLORS.accent;
-  ctx.font = '700 44px system-ui, sans-serif';
-  ctx.fillText(r.win ? '挑战成功！' : '惜败', DESIGN_W / 2, py + 40);
+  const pg = ctx.createLinearGradient(0, py, 0, py + ph);
+  pg.addColorStop(0, '#3A2E92');
+  pg.addColorStop(1, '#1C1658');
+  ctx.fillStyle = pg;
+  roundRect(ctx, px, py, pw, ph, 44);
+  ctx.fill();
 
-  ctx.fillStyle = COLORS.text;
-  ctx.font = '26px system-ui, sans-serif';
-  ctx.fillText(`${r.fromName} 的挑战`, DESIGN_W / 2, py + 120);
-  ctx.fillText(`我的步数 ${r.mySteps} · 最佳 ${r.bestSteps}`, DESIGN_W / 2, py + 170);
+  ctx.strokeStyle = accent.base;
+  ctx.lineWidth = 3;
+  roundRect(ctx, px + 1.5, py + 1.5, pw - 3, ph - 3, 43);
+  ctx.stroke();
+
+  strokeText(ctx, r.win ? '挑战成功！' : '惜败', DESIGN_W / 2, py + 66, 48, {
+    fill: r.win ? CANDY.green.light : CANDY.coral.light,
+    stroke: '#160F45',
+    strokeWidth: 7,
+  });
+
+  strokeText(ctx, `${r.fromName} 的挑战`, DESIGN_W / 2, py + 140, 26, {
+    weight: 600,
+    fill: '#D6D2FF',
+  });
+  strokeText(ctx, `我的步数 ${r.mySteps} · 最佳 ${r.bestSteps}`, DESIGN_W / 2, py + 190, 26, {
+    weight: 600,
+    fill: '#D6D2FF',
+  });
 
   if (r.isNewBest) {
-    ctx.fillStyle = COLORS.yellow;
-    ctx.font = '600 26px system-ui, sans-serif';
-    ctx.fillText('刷新最佳纪录！', DESIGN_W / 2, py + 220);
+    glass(ctx, DESIGN_W / 2 - 160, py + 222, 320, 52, 26, { fill: 'rgba(255,213,79,0.22)' });
+    strokeText(ctx, '刷新最佳纪录！', DESIGN_W / 2, py + 248, 26, {
+      fill: CANDY.gold.light,
+      stroke: CANDY.gold.dark,
+      strokeWidth: 4,
+    });
   }
 
-  const retry: Button = { x: 120, y: py + 300, w: DESIGN_W - 240, h: 80, label: '再试一次', kind: 'primary', id: 'retry' };
-  const shareBtn: Button = { x: 120, y: py + 400, w: DESIGN_W - 240, h: 64, label: '分享', kind: 'secondary', id: 'share' };
+  const retry: Button = { x: 120, y: py + 300, w: DESIGN_W - 240, h: 80, label: '再试一次', kind: 'primary', id: 'retry', tone: 'green' };
+  const shareBtn: Button = { x: 120, y: py + 400, w: DESIGN_W - 240, h: 64, label: '分享', kind: 'secondary', id: 'share', tone: 'blue' };
   drawButton(ctx, retry, false);
   drawButton(ctx, shareBtn, false);
   return [retry, shareBtn];
@@ -702,8 +726,8 @@ function frame() {
   ctx.scale(dpr * scale, dpr * scale);
   ctx.translate(offsetX / dpr, offsetY / dpr);
 
-  ctx.fillStyle = '#141824';
-  ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+  // 全应用统一背景（夜空 + 星 + 山影），各页面不再自己画背景
+  nightSky(ctx, now);
 
   const st = session.state;
   if (st && session.layout && (phase === 'playing' || phase === 'result')) {
@@ -718,7 +742,9 @@ function frame() {
       shakeAt: st.shakeAt,
     }, skinById(progress.current.currentSkin), now);
 
-    drawTrail(ctx, st.path, st.level.w, session.layout, '#6692F5', 'rgba(102,146,245,0.35)');
+    drawTrail(ctx, st.path, st.level.w, session.layout, '#4FC3F7', 'rgba(79,195,247,0.42)');
+    // 端点圆片必须在连线之后，否则线头会横穿圆片、把「起」「终」压成一团
+    drawEndpoints(ctx, st.level, session.layout);
 
     drawHud(ctx, st.level.idx, progress.current.currentSkin, progress.current.unlockedSkins.length, config?.skins?.length ?? 13);
     drawProgressBar(ctx, progress.current.maxLevel, config?.levelCount ?? 1000);
@@ -730,14 +756,11 @@ function frame() {
 
     // 挑战模式横幅
     if (challenge) {
-      ctx.fillStyle = 'rgba(155,123,232,0.9)';
-      roundRect(ctx, 40, 60, DESIGN_W - 80, 60, 12);
-      ctx.fill();
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = '600 26px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(`${challenge.fromName} 的挑战 · 第 ${challenge.levelIdx} 关`, DESIGN_W / 2, 90);
+      glass(ctx, 40, 60, DESIGN_W - 80, 64, 32, { fill: 'rgba(179,136,255,0.85)', edge: 'rgba(255,255,255,0.55)' });
+      strokeText(ctx, `${challenge.fromName} 的挑战 · 第 ${challenge.levelIdx} 关`, DESIGN_W / 2, 92, 26, {
+        stroke: CANDY.purple.dark,
+        strokeWidth: 4,
+      });
     }
   }
 
