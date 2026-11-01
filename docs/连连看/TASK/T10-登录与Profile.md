@@ -358,3 +358,15 @@ go test ./...
 ## 产出物
 - `server/internal/platform/wechat/code2session.go` `openid.go`
 - `server/internal/modules/profile/profile.go` `profile_test.go`
+
+---
+
+## 遗留问题（workbuddy 追加）
+
+1. **任务书 §10.3 `findOrCreate` 里 INSERT 空字符串违背 spec §7「openid 不落明文」的本意**：任务书坑里自己也指出要「传入 cfg 并存 `wechat.EncryptOpenID`」。已按修正实现：`LoginHandler` 先用 `EncryptOpenID(openID, appid, secret)` 得到 AES-GCM 密文，`findOrCreate` 里 INSERT 的是密文（不再传空串）。新用户 `openid` 列存密文，`openid_hash` 列存 sha256 十六进制串做唯一索引。
+
+2. **任务书 §10.1 `HashOpenID` 用 `base64.RawURLEncoding`（43 字符）与 spec §3 `CHAR(64)` / §7「sha256」不一致**：已改为 `hex.EncodeToString(sha256(...))`（64 字符十六进制），严格对齐 `openid_hash CHAR(64)` 与「sha256(openid)」语义。测试断言从 `len(a)>=40` 改为 `len(a)==64`。
+
+3. **补充了 `DecryptOpenID`**：任务书只给了 `EncryptOpenID`，但 spec §7 要求 AES-GCM 可逆（后续可能需还原 openid），故补了对称解密函数并加了往返测试 `TestEncryptDecryptRoundTrip`。
+
+4. **无法端到端 `POST /api/login` 验证**：本环境 Docker daemon 未运行，`go run` 在 `OpenDB` 处即失败，无法验证「重复登录 uid 稳定」「isNew 翻转」「openid 列存密文」等依赖 MySQL 的行为。已用单测覆盖可独立验证的部分（哈希稳定性、加密随机性、加解密往返、mock code2session），其余留待有 Docker 环境联调。
