@@ -210,7 +210,7 @@ I:\work\f-game\
 | T17 广告与商业化 | ☑ | 2026-11-01 | src/ads/{ads,rewardRules}.ts + main.ts 接入激励视频/插屏频控/Banner + test/ads.test.ts(5 用例) + 16-商业化与埋点.md；typecheck/test(83)/build 全过 |
 | T18 埋点 | ☑ | 2026-11-01 | src/analytics/tracker.ts（本地缓冲+批量上报+断网补传）+ net/api.reportEvent 改走 tracker + main.ts 初始化+补齐埋点 + server/tools/analyze/main.go（4 漏斗）+ 16-商业化与埋点.md 数据看板章节；typecheck/test(83)/build + go build/vet 全过 |
 | T19 开放数据域好友榜 | ☑ | 2026-11-01 | platform/openData.ts（publishProfile/computeRankScore）+ ui/friends.ts（好友页+统计面板）+ line-wx/openDataContext/index.js + main.ts 接入 + test/friends.test.ts(4 用例)；typecheck/test(87)/build 全过 |
-| T20 分享挑战 | ☐ | | |
+| T20 分享挑战 | ☑ | 2026-11-01 | game/challenge.ts（parseChallenge/buildShareQuery）+ net/api reportChallenge + ui/share.ts（renderPoster 平台分支/shareCopy）+ main.ts 挑战模式接入 + test/challenge.test.ts(2 用例) + 18-社交裂变设计.md；typecheck/test(89)/build 全过 |
 | T21 微信小游戏移植 | ☐ | | |
 | T22 部署 + 备案 + 提审 | ☐ | | |
 
@@ -235,3 +235,4 @@ I:\work\f-game\
 | 2026-11-01 | T17 | G5 门禁「激励视频 mock 走通 + 跳过通关拿皮肤入库」依赖后端数据库（skin 入库需 MySQL），本环境 Docker 未启动 | 广告管理器 + 奖励规则 + 前端接入 + ads.test.ts 5 用例全过（mock 广告 3s 倒计时走通）；端到端变现闭环留待有 Docker 环境补做 |
 | 2026-11-01 | T18 | 本环境无 MySQL，无法 `go run ./tools/analyze` 实跑打印四张漏斗表 | 分析脚本 go build/vet 通过；tracker 单测覆盖埋点规则；实际跑数留待有 MySQL 环境 |
 | 2026-11-01 | T19 | 微信开放数据域需真机 + 两个互关微信号才能端到端验证好友榜 | openData 主域侧 + 开放数据域 index.js + 好友页 + computeRankScore 单测全过；真机好友榜留待 T21 微信移植后验证 |
+| 2026-11-01 | T20 | 挑战模式端到端需后端 `/api/challenge` + MySQL（scores 表），本环境 Docker 未启动 | parseChallenge/buildShareQuery/renderPoster/挑战结算前端全通 + challenge.test.ts 2 用例；数据库落库留待有 Docker 环境补做 |

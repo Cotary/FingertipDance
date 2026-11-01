@@ -1,9 +1,9 @@
 import { platform } from './platform';
-import { fetchFriends, login, fetchConfig, reportProgress, reportSkip, reportEvent } from './net/api';
+import { fetchFriends, login, fetchConfig, reportProgress, reportSkip, reportChallenge, reportEvent } from './net/api';
 import { Session } from './game/session';
 import { LevelStore, ProgressStore } from './game/progressStore';
 import { DESIGN_W, DESIGN_H } from './render/layout';
-import { drawBoard } from './render/board';
+import { drawBoard, roundRect } from './render/board';
 import { drawTrail } from './render/trail';
 import { Fx } from './render/fx';
 import { audio } from './render/audio';
@@ -12,9 +12,11 @@ import { drawSkinsPage, pickSkinCard, PER_PAGE, type SkinsPageState } from './ui
 import { ads } from './ads/ads';
 import { needsAdForHint, canSkipToday, markSkippedToday } from './ads/rewardRules';
 import { tracker } from './analytics/tracker';
-import { drawHud, drawProgressBar, drawResult, drawButton, hitButton, type Button } from './ui/hud';
+import { drawHud, drawProgressBar, drawResult, drawButton, hitButton, COLORS, type Button } from './ui/hud';
 import { drawFriendsPage, type FriendsPageState } from './ui/friends';
 import { publishProfile } from './platform/openData';
+import { parseChallenge, buildShareQuery } from './game/challenge';
+import { renderPoster, shareCopy } from './ui/share';
 import { findHint } from './core/solver';
 import { CellType } from './core/types';
 import type { GameState } from './game/state';
@@ -57,6 +59,11 @@ let friendsPage: FriendsPageState = {
 };
 let friendsButtons: Button[] = [];
 
+/** 当前挑战上下文（若来自好友分享）。 */
+let challenge: ReturnType<typeof parseChallenge> = null;
+/** 挑战结算结果。 */
+let challengeResult: { win: boolean; mySteps: number; bestSteps: number; fromName: string; isNewBest: boolean } | null = null;
+
 /** 画布坐标 → 设计坐标。 */
 function toDesign(clientX: number, clientY: number): { x: number; y: number } {
   if (platform.name === 'wechat') {
@@ -74,7 +81,11 @@ const skipBtn: Button = { x: DESIGN_W - 110, y: 100, w: 90, h: 60, label: '跳�
 const friendsBtn: Button = { x: 40, y: 100, w: 90, h: 60, label: '好友', kind: 'ghost', id: 'friends' };
 
 session.on((e) => {
-  if (e.type === 'won') { audio.win(); void onWin(e.steps, e.timeMs, e.path); }
+  if (e.type === 'won') {
+    audio.win();
+    if (challenge) void onChallengeWin(e.steps, e.timeMs, e.path);
+    else void onWin(e.steps, e.timeMs, e.path);
+  }
   if (e.type === 'break') { audio.break(); platform.vibrate(); }
   if (e.type === 'moved') {
     audio.light();
@@ -125,6 +136,40 @@ async function onWin(steps: number, timeMs: number, path: number[], skipped = fa
   setTimeout(() => {
     phase = 'result';
     setTimeout(() => { void ads.showInterstitial('result_interstitial'); }, 500);
+  }, 1200);
+}
+
+/** 挑战模式通关：不推进主线，走 /api/challenge。 */
+async function onChallengeWin(steps: number, timeMs: number, path: number[]) {
+  const level = session.state!.level;
+  let isNewBest = false;
+  let best = { steps: level.shortest, timeMs: 0 };
+  try {
+    const res = await reportChallenge(level.idx, steps, timeMs, path);
+    isNewBest = res.isNewBest;
+    best = res.best;
+  } catch (e) {
+    console.error('提交挑战成绩失败', e);
+  }
+
+  reportEvent('challenge_result', {
+    from_uid: challenge?.fromUid,
+    level_idx: level.idx,
+    win: steps <= best.steps,
+    is_new_best: isNewBest,
+  });
+
+  winAnimStart = Date.now();
+  fx.clear();
+  setTimeout(() => {
+    phase = 'result';
+    challengeResult = {
+      win: steps <= best.steps,
+      mySteps: steps,
+      bestSteps: best.steps,
+      fromName: challenge?.fromName ?? '好友',
+      isNewBest,
+    };
   }, 1200);
 }
 
@@ -207,6 +252,57 @@ function publishMyProfile() {
     avatar: '',
     updatedAt: Date.now(),
   });
+}
+
+/** 分享：生成海报 + 调起分享。 */
+function doShare() {
+  const st = session.state;
+  if (!st) return;
+  const query = buildShareQuery({ levelIdx: st.level.idx, steps: st.level.shortest });
+  const poster = renderPoster(st.level, progress.current.currentSkin, st.level.shortest, '我');
+  if (platform.name === 'web' && poster.toDataURL) {
+    const url = poster.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `level-${st.level.idx}.png`;
+    a.click();
+  }
+  void platform.share({ title: shareCopy(st.level.idx, st.level.shortest), query });
+  reportEvent('share_click', { level_idx: st.level.idx });
+}
+
+/** 绘制挑战结算面板。 */
+function drawChallengeResult(ctx: CanvasRenderingContext2D, r: { win: boolean; mySteps: number; bestSteps: number; fromName: string; isNewBest: boolean }): Button[] {
+  ctx.fillStyle = 'rgba(10,12,20,0.82)';
+  ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+
+  const px = 50, py = 380, pw = DESIGN_W - 100, ph = 480;
+  ctx.fillStyle = COLORS.panel;
+  roundRect(ctx, px, py, pw, ph, 24);
+  ctx.fill();
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = r.win ? COLORS.success : COLORS.accent;
+  ctx.font = '700 44px system-ui, sans-serif';
+  ctx.fillText(r.win ? '挑战成功！' : '惜败', DESIGN_W / 2, py + 40);
+
+  ctx.fillStyle = COLORS.text;
+  ctx.font = '26px system-ui, sans-serif';
+  ctx.fillText(`${r.fromName} 的挑战`, DESIGN_W / 2, py + 120);
+  ctx.fillText(`我的步数 ${r.mySteps} · 最佳 ${r.bestSteps}`, DESIGN_W / 2, py + 170);
+
+  if (r.isNewBest) {
+    ctx.fillStyle = COLORS.yellow;
+    ctx.font = '600 26px system-ui, sans-serif';
+    ctx.fillText('刷新最佳纪录！', DESIGN_W / 2, py + 220);
+  }
+
+  const retry: Button = { x: 120, y: py + 300, w: DESIGN_W - 240, h: 80, label: '再试一次', kind: 'primary', id: 'retry' };
+  const shareBtn: Button = { x: 120, y: py + 400, w: DESIGN_W - 240, h: 64, label: '分享', kind: 'secondary', id: 'share' };
+  drawButton(ctx, retry, false);
+  drawButton(ctx, shareBtn, false);
+  return [retry, shareBtn];
 }
 
 /** 打开好友页。 */
@@ -296,7 +392,8 @@ function onUp() {
     if (id === 'hint') void useHint();
     else if (id === 'skip') void useSkip();
     else if (id === 'next') void enterLevel(pendingLevel);
-    else if (id === 'share') { void platform.share({ title: `我卡在第 ${session.state?.level.idx ?? 1} 关` }); reportEvent('share_click', {}); }
+    else if (id === 'retry') { challengeResult = null; void enterLevel(challenge ? challenge.levelIdx : pendingLevel); }
+    else if (id === 'share') doShare();
     else if (id === 'skins') { phase = 'skins'; ads.showBanner(); reportEvent('skin_page_view', { owned: skinsPage.unlocked.size, total: SKINS.length }); }
     else if (id === 'friends') { void openFriends(); }
     else if (id === 'back') { phase = 'playing'; ads.hideBanner(); }
@@ -377,6 +474,18 @@ function frame() {
     drawButton(ctx, hintBtn, pressedBtn === 'hint');
     drawButton(ctx, skipBtn, pressedBtn === 'skip');
     drawButton(ctx, friendsBtn, pressedBtn === 'friends');
+
+    // 挑战模式横幅
+    if (challenge) {
+      ctx.fillStyle = 'rgba(155,123,232,0.9)';
+      roundRect(ctx, 40, 60, DESIGN_W - 80, 60, 12);
+      ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '600 26px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${challenge.fromName} 的挑战 · 第 ${challenge.levelIdx} 关`, DESIGN_W / 2, 90);
+    }
   }
 
   // 特效（粒子 + 扩散环）
@@ -390,7 +499,9 @@ function frame() {
     friendsButtons = drawFriendsPage(ctx, friendsPage);
   }
 
-  if (phase === 'result' && resultData) {
+  if (phase === 'result' && challengeResult) {
+    resultButtons = drawChallengeResult(ctx, challengeResult);
+  } else if (phase === 'result' && resultData) {
     resultButtons = drawResult(
       ctx, resultData.levelIdx, resultData.steps, resultData.shortest,
       resultData.timeMs, resultData.unlockedSkin,
@@ -417,7 +528,10 @@ async function boot() {
     skinsPage.unlocked = new Set(progress.current.unlockedSkins);
     config = await fetchConfig();
     await levels.init(config.levelVersion);
-    const startIdx = Math.min(progress.current.maxLevel || 1, levels.loadedMax || 1);
+    challenge = parseChallenge();
+    const startIdx = challenge
+      ? challenge.levelIdx
+      : Math.min(progress.current.maxLevel || 1, levels.loadedMax || 1);
     await enterLevel(startIdx);
     reportEvent('app_start', {});
   } catch (e) {

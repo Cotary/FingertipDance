@@ -79,6 +79,16 @@ export function reportSkip(levelIdx: number): Promise<{ maxLevel: number }> {
   return authed<{ maxLevel: number }>('/api/skip', 'POST', { levelIdx });
 }
 
+/** 提交挑战成绩（不推进主线进度）。 */
+export function reportChallenge(
+  levelIdx: number,
+  steps: number,
+  timeMs: number,
+  path: number[],
+): Promise<{ passed: boolean; best: { steps: number; timeMs: number }; isNewBest: boolean }> {
+  return authed('/api/challenge', 'POST', { levelIdx, steps, timeMs, path, skipped: false });
+}
+
 /** 好友条目（服务端返回）。 */
 export interface FriendItem {
   uid: number;
