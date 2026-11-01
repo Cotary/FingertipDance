@@ -496,8 +496,10 @@ function drawPager(
 /** 未解锁皮肤的提示文案。 */
 function unlockLabel(skin: Skin): string {
   switch (skin.unlockType) {
+    // premium 是唯一还能靠关卡拿到的档位，条件必须写死关号 ——
+    // 只写「通关解锁」等于没写，玩家不知道要打到哪儿
     case 'level': return `通关第 ${skin.unlockValue} 关解锁`;
-    case 'milestone': return `通关 ${skin.unlockValue} 关解锁`;
+    case 'milestone': return `通关第 ${skin.unlockValue} 关解锁`;
     case 'ad': return '看广告解锁';
     default: return '未开放';
   }

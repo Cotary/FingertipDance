@@ -31,18 +31,27 @@ export interface Skin {
   texture: TextureType;
 }
 
-/** 皮肤清单。必须覆盖四种解锁方式。 */
+/**
+ * 皮肤清单。必须覆盖四种解锁方式。
+ *
+ * 获取分层（2026-11-01 调整）：
+ * - `free` 默认拥有
+ * - `normal` —— 全部走**广告**解锁。旧版把 8 个普通皮肤挂在 3/8/15…关上自动发放，
+ *   结果「打关卡」和「看广告」两条路发的是同一批货，稀缺感被稀释；
+ *   现在普通皮肤是随时可取的，顶级皮肤才是打出来的
+ * - `premium` —— 只能靠 `milestone`（通关第 200/500/900 关），且条件写在皮肤页上
+ */
 export const SKINS: Skin[] = [
   { id: 'wood', name: '原木', tier: 'free', unlockType: 'default', unlockValue: 0, hue: 28, sat: 45, light: 48, texture: 'wood' },
   { id: 'mint', name: '薄荷', tier: 'free', unlockType: 'default', unlockValue: 0, hue: 160, sat: 42, light: 52, texture: 'none' },
-  { id: 'graphite', name: '石墨', tier: 'normal', unlockType: 'level', unlockValue: 3, hue: 220, sat: 12, light: 40, texture: 'none' },
-  { id: 'slate', name: '青岩', tier: 'normal', unlockType: 'level', unlockValue: 8, hue: 200, sat: 22, light: 46, texture: 'none' },
-  { id: 'blush', name: '藕粉', tier: 'normal', unlockType: 'level', unlockValue: 15, hue: 340, sat: 48, light: 62, texture: 'none' },
-  { id: 'amber', name: '琥珀', tier: 'normal', unlockType: 'level', unlockValue: 25, hue: 42, sat: 72, light: 55, texture: 'none' },
-  { id: 'marble', name: '大理石', tier: 'normal', unlockType: 'level', unlockValue: 40, hue: 40, sat: 15, light: 72, texture: 'marble' },
-  { id: 'brushed', name: '金属拉丝', tier: 'normal', unlockType: 'level', unlockValue: 60, hue: 210, sat: 18, light: 58, texture: 'brushed' },
-  { id: 'ice', name: '冰晶', tier: 'normal', unlockType: 'level', unlockValue: 90, hue: 190, sat: 55, light: 68, texture: 'ice' },
-  { id: 'neon', name: '霓虹', tier: 'normal', unlockType: 'level', unlockValue: 130, hue: 285, sat: 85, light: 60, texture: 'neon' },
+  { id: 'graphite', name: '石墨', tier: 'normal', unlockType: 'ad', unlockValue: 0, hue: 220, sat: 12, light: 40, texture: 'none' },
+  { id: 'slate', name: '青岩', tier: 'normal', unlockType: 'ad', unlockValue: 0, hue: 200, sat: 22, light: 46, texture: 'none' },
+  { id: 'blush', name: '藕粉', tier: 'normal', unlockType: 'ad', unlockValue: 0, hue: 340, sat: 48, light: 62, texture: 'none' },
+  { id: 'amber', name: '琥珀', tier: 'normal', unlockType: 'ad', unlockValue: 0, hue: 42, sat: 72, light: 55, texture: 'none' },
+  { id: 'marble', name: '大理石', tier: 'normal', unlockType: 'ad', unlockValue: 0, hue: 40, sat: 15, light: 72, texture: 'marble' },
+  { id: 'brushed', name: '金属拉丝', tier: 'normal', unlockType: 'ad', unlockValue: 0, hue: 210, sat: 18, light: 58, texture: 'brushed' },
+  { id: 'ice', name: '冰晶', tier: 'normal', unlockType: 'ad', unlockValue: 0, hue: 190, sat: 55, light: 68, texture: 'ice' },
+  { id: 'neon', name: '霓虹', tier: 'normal', unlockType: 'ad', unlockValue: 0, hue: 285, sat: 85, light: 60, texture: 'neon' },
   { id: 'gold', name: '黄金', tier: 'premium', unlockType: 'milestone', unlockValue: 200, hue: 45, sat: 80, light: 55, texture: 'gold' },
   { id: 'stardust', name: '星尘', tier: 'premium', unlockType: 'milestone', unlockValue: 500, hue: 265, sat: 60, light: 45, texture: 'stardust' },
   { id: 'galaxy', name: '星河', tier: 'premium', unlockType: 'milestone', unlockValue: 900, hue: 255, sat: 65, light: 40, texture: 'galaxy' },

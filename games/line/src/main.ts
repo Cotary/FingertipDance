@@ -619,6 +619,12 @@ function onUp() {
       return;
     }
     if (id === 'navHome') { void gotoTab('home'); return; }
+    if (id === 'playCurrent') {
+      // 吸底的「继续」：地图上一屏 16 关，让玩家自己找当前关太苛刻
+      reportEvent('map_level_click', { level_idx: progress.current.maxLevel });
+      void enterLevel(progress.current.maxLevel || 1);
+      return;
+    }
     if (id.startsWith('map:')) {
       const idx = parseInt(id.slice(4), 10);
       if (idx <= progress.current.maxLevel) {

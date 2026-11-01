@@ -1,20 +1,81 @@
 /**
  * 关卡地图页。
- * 陶土桌面 + 一条嵌进桌面的黏土路 + 手捏关号圆片 + 星级 + 锁 + 章节里程碑。
- * 1000 关用虚拟滚动，只渲染可视区附近节点。
+ *
+ * 蛇形路线 + 七个「世界」。
+ *
+ * 旧版是一条单列 S 形直线（`x = 中轴 + sin 摆动`），1000 个一模一样的圆点排到底，
+ * 一屏只看得到 7 关，而且 `curve.ts` 里分好的 7 段（棋盘 6×6 → 11×11）在地图上
+ * 完全没有体现 —— 打第 500 关和打第 50 关看起来是同一条路的第 N 个点。
+ *
+ * 新版：
+ * - 蛇形排布：每行 4 关、左右往返，横向利用率翻倍 → 一屏 15~16 关
+ * - 七个世界：边界**对齐到行首**（1/13/33/65/153/405/705，都是 4k+1），
+ *   世界之间横插一道「世界门」，门独占一段高度，不和任何一行节点打架
+ * - 世界末关插旗、皮肤奖励关（200/500/900）挂钻石，让长线有可数的锚点
  */
 import { DESIGN_W, DESIGN_H } from '../render/layout';
+import { SKINS } from '../render/skins';
 import { drawButton, type Button } from './hud';
 import { CLAY, CLAY_UI, clayBlock, clayDisc, clayStar, clayText } from './clay';
 
-/** 相邻节点的垂直间距（设计坐标系）。 */
-export const NODE_GAP = 132;
+/** 每行关卡数。4 列 → 一屏能放下 15~16 关。 */
+const PER_ROW = 4;
 
-/** 路线起点 y。 */
+/** 行高（相邻两行节点的垂直间距）。 */
+const ROW_H = 248;
+
+/** 世界门独占的额外高度。门插在两行之间，不占任何一行的位置。 */
+const GATE_H = 96;
+
+/** 可视区顶部（顶部遮罩以下）。第一行节点中心 = 这个值 + ROW_H/2。 */
 const ROUTE_TOP = 210;
 
-/** 地图可视区底部（导航栏之上）。 */
-const VIEW_BOTTOM = DESIGN_H - 120;
+/** 可视区底部。下方 76px 留给吸底的「继续」按钮和导航栏。 */
+const VIEW_BOTTOM = DESIGN_H - 196;
+
+/** 四列的 x 坐标。最右一列留够半径 40 的节点不出界。 */
+const COL_X = [60, 270, 480, 690];
+
+/** 世界：关号区间 + 名字。区间来自 `curve.ts` 的 SEGMENTS，但边界取整到 4k+1。 */
+export interface World {
+  from: number;
+  to: number;
+  name: string;
+}
+
+/**
+ * 七个世界。
+ *
+ * 边界必须是 4k+1（即 (from-1) 能被 PER_ROW 整除），否则世界门会插在同一行的
+ * 两个节点之间，把一行切成两半。原 SEGMENTS 边界是 11/31/61/151/401/701，
+ * 这里就近取到 13/33/65/153/405/705，误差 ≤2 关。
+ */
+export const WORLDS: World[] = [
+  { from: 1, to: 12, name: '苗圃' },
+  { from: 13, to: 32, name: '石溪' },
+  { from: 33, to: 64, name: '苔原' },
+  { from: 65, to: 152, name: '熔炉' },
+  { from: 153, to: 404, name: '深井' },
+  { from: 405, to: 704, name: '云阶' },
+  { from: 705, to: 1000, name: '星穹' },
+];
+
+/** 罗马数字（世界门序号）。 */
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+
+/** 门所在的行号（第 2 个世界起，每个世界一道门）。导出供测试校验几何。 */
+export const GATE_ROWS: number[] = WORLDS.slice(1).map((w) => (w.from - 1) / PER_ROW);
+
+/** 世界末关（插旗的关号）。 */
+const WORLD_ENDS: number[] = WORLDS.map((w) => w.to);
+
+/**
+ * 皮肤奖励关。只认 premium —— 普通皮肤已经整体改成广告解锁，
+ * 标在地图上会误导成「打这关才有」。
+ */
+const SKIN_LEVELS: number[] = SKINS
+  .filter((s) => s.unlockType === 'milestone' && s.unlockValue > 0)
+  .map((s) => s.unlockValue);
 
 /** 地图状态。 */
 export interface MapViewState {
@@ -34,6 +95,31 @@ export interface MapViewState {
   toastAt: number;
 }
 
+/** 到指定行为止，前面插了几道门。 */
+function gatesUpTo(row: number): number {
+  let n = 0;
+  for (const r of GATE_ROWS) if (r <= row) n++;
+  return n;
+}
+
+/** 第 row 行节点的中心 y（世界坐标，未减 scrollY）。导出供测试校验几何。 */
+export function rowCenterY(row: number): number {
+  return ROUTE_TOP + ROW_H / 2 + row * ROW_H + gatesUpTo(row) * GATE_H;
+}
+
+/** 第 gateIdx 道门的中心 y。正好落在上一行与本行中间。导出供测试校验几何。 */
+export function gateCenterY(gateIdx: number): number {
+  const row = GATE_ROWS[gateIdx];
+  return ROUTE_TOP + row * ROW_H + gateIdx * GATE_H + GATE_H / 2;
+}
+
+/** 内容总高度（最后一行底边）。 */
+function contentBottom(levelCount: number): number {
+  const rows = Math.ceil(levelCount / PER_ROW);
+  if (rows <= 0) return ROUTE_TOP;
+  return rowCenterY(rows - 1) + ROW_H / 2;
+}
+
 /** 创建初始状态。 */
 export function createMapState(maxLevel: number, levelCount: number, stars: Record<string, number>): MapViewState {
   return {
@@ -41,7 +127,7 @@ export function createMapState(maxLevel: number, levelCount: number, stars: Reco
     levelCount,
     stars,
     scrollY: 0,
-    maxScrollY: Math.max(0, levelCount * NODE_GAP - (VIEW_BOTTOM - ROUTE_TOP)),
+    maxScrollY: Math.max(0, contentBottom(levelCount) - VIEW_BOTTOM),
     toast: '',
     toastAt: 0,
   };
@@ -49,21 +135,42 @@ export function createMapState(maxLevel: number, levelCount: number, stars: Reco
 
 /**
  * 节点坐标。关号 1-based。
- * x 用 sin 摆动形成 S 形，y 线性递增。
+ * 偶数行左→右，奇数行右→左 —— 蛇形折返处两个节点同列，路径是垂直的。
  */
 export function mapNodePos(idx: number): { x: number; y: number } {
-  const y = ROUTE_TOP + (idx - 1) * NODE_GAP;
-  const x = DESIGN_W / 2 + Math.sin((idx - 1) * 0.55) * 200;
-  return { x, y };
+  const i = idx - 1;
+  const row = Math.floor(i / PER_ROW);
+  const c = i % PER_ROW;
+  const col = row % 2 === 0 ? c : PER_ROW - 1 - c;
+  return { x: COL_X[col], y: rowCenterY(row) };
+}
+
+/** 关号所属的世界下标。 */
+export function worldOf(idx: number): number {
+  for (let i = WORLDS.length - 1; i >= 0; i--) if (idx >= WORLDS[i].from) return i;
+  return 0;
 }
 
 /**
- * 计算可视区内的节点区间（含 1 节点余量）。
+ * 计算可视区内的节点区间。
+ * 逐行扫（1000 关 = 250 行），比维护 y→row 反函数简单，开销可忽略。
  */
 export function visibleRange(scrollY: number, levelCount: number): { first: number; last: number } {
-  const first = Math.max(1, Math.floor(scrollY / NODE_GAP) - 1);
-  const last = Math.min(levelCount, Math.ceil((scrollY + (VIEW_BOTTOM - ROUTE_TOP)) / NODE_GAP) + 1);
-  return { first, last };
+  const rows = Math.ceil(levelCount / PER_ROW);
+  const top = scrollY - ROW_H;
+  const bot = scrollY + (VIEW_BOTTOM - ROUTE_TOP) + ROW_H;
+
+  let r0 = -1;
+  let r1 = -2;
+  for (let r = 0; r < rows; r++) {
+    const y = rowCenterY(r);
+    if (y >= top && y <= bot) {
+      if (r0 < 0) r0 = r;
+      r1 = r;
+    }
+  }
+  if (r0 < 0) return { first: 1, last: Math.min(levelCount, PER_ROW) };
+  return { first: r0 * PER_ROW + 1, last: Math.min(levelCount, (r1 + 1) * PER_ROW) };
 }
 
 /**
@@ -86,8 +193,8 @@ export function pickMapNode(x: number, y: number, st: MapViewState): number {
  * 让指定关号滚动到可视区中部（进入地图时聚焦当前关用）。
  */
 export function scrollToLevel(idx: number): number {
-  const p = mapNodePos(idx);
-  return Math.max(0, p.y - (VIEW_BOTTOM - ROUTE_TOP) / 2);
+  const y = rowCenterY(Math.floor((idx - 1) / PER_ROW));
+  return Math.max(0, y - (VIEW_BOTTOM - ROUTE_TOP) / 2);
 }
 
 /**
@@ -126,7 +233,7 @@ export function drawMapView(ctx: CanvasRenderingContext2D, st: MapViewState, now
   ctx.beginPath();
   trace(first, lastSeg);
   ctx.strokeStyle = CLAY.sand.shade;
-  ctx.lineWidth = 26;
+  ctx.lineWidth = 24;
   ctx.stroke();
 
   // 未走的路：浅棕细线，像还没压实的土（和已走的粗管拉开两档粗细，一眼分得清）
@@ -161,6 +268,13 @@ export function drawMapView(ctx: CanvasRenderingContext2D, st: MapViewState, now
   }
   ctx.restore();
 
+  // ── 世界门（画在路径之上：路径是穿过门的） ──
+  for (let gi = 0; gi < GATE_ROWS.length; gi++) {
+    const gy = gateCenterY(gi) - st.scrollY;
+    if (gy < -GATE_H || gy > VIEW_BOTTOM) continue;
+    drawWorldGate(ctx, gi, gy, st);
+  }
+
   // ── 节点 ──
   for (let i = first; i <= last; i++) {
     const p = mapNodePos(i);
@@ -179,6 +293,7 @@ export function drawMapView(ctx: CanvasRenderingContext2D, st: MapViewState, now
   ctx.fillRect(0, 0, DESIGN_W, 204);
 
   const pw = 240, ph = 64, px = (DESIGN_W - pw) / 2, py = 90;
+  const wi = worldOf(st.maxLevel);
   clayBlock(ctx, px, py, pw, ph, ph * 0.5, CLAY.terracotta, 771, { depth: 9, hi: 0.07 });
   clayText(ctx, `第 ${st.maxLevel} 关`, DESIGN_W / 2, py + ph / 2, 32, {
     fill: '#FFF6E9',
@@ -186,15 +301,38 @@ export function drawMapView(ctx: CanvasRenderingContext2D, st: MapViewState, now
     outlineWidth: 5,
   });
 
+  // 世界名：当前关落在哪个世界，比关号更能定位「我在哪」
+  clayText(ctx, `${WORLDS[wi].name} ${WORLDS[wi].from}-${WORLDS[wi].to}`, DESIGN_W / 2, py + ph + 22, 22, {
+    weight: 600,
+    fill: CLAY_UI.inkSoft,
+    outlineWidth: 0,
+    emboss: false,
+  });
+
   const back: Button = { x: 30, y: 92, w: 96, h: 60, label: '返回', kind: 'ghost', id: 'navHome' };
   drawButton(ctx, back, false);
+
+  // ── 吸底「继续」：地图上最该被点的地方，不该让玩家自己找当前关 ──
+  const cbW = 320, cbH = 62;
+  const cb: Button = {
+    x: (DESIGN_W - cbW) / 2,
+    y: VIEW_BOTTOM + 6,
+    w: cbW,
+    h: cbH,
+    label: `继续第 ${st.maxLevel} 关`,
+    kind: 'primary',
+    id: 'playCurrent',
+  };
+  drawButton(ctx, cb, false);
 
   // ── 提示气泡 ──
   if (st.toast && now - st.toastAt < 1800) {
     const alpha = Math.min(1, (1800 - (now - st.toastAt)) / 400);
     ctx.globalAlpha = alpha;
-    clayBlock(ctx, DESIGN_W / 2 - 210, 176, 420, 80, 26, CLAY.rose, 772, { depth: 8, hi: 0.06 });
-    clayText(ctx, st.toast, DESIGN_W / 2, 216, 26, {
+    // 236 而不是 176：顶栏多了一行世界名，气泡压上去会糊成一团。
+    // 这里已经在遮罩下方，浮在节点之上是气泡该有的样子
+    clayBlock(ctx, DESIGN_W / 2 - 210, 236, 420, 80, 26, CLAY.rose, 772, { depth: 8, hi: 0.06 });
+    clayText(ctx, st.toast, DESIGN_W / 2, 276, 26, {
       fill: '#FFF6E9',
       outline: 'rgba(88,24,24,0.45)',
       outlineWidth: 4,
@@ -202,7 +340,71 @@ export function drawMapView(ctx: CanvasRenderingContext2D, st: MapViewState, now
     ctx.globalAlpha = 1;
   }
 
-  return [back];
+  return [back, cb];
+}
+
+/** 画一道横贯的世界门。 */
+function drawWorldGate(
+  ctx: CanvasRenderingContext2D,
+  gi: number,
+  y: number,
+  st: MapViewState,
+): void {
+  const w = WORLDS[gi + 1];
+  const gx = 36;
+  const gw = DESIGN_W - 72;
+  const gh = 76;
+  const gy = y - gh / 2;
+
+  // 还没走到这个世界：整块压成深灰蓝，读作「关着」而不是「禁用」——
+  // 玩家要能看见前面还有六个世界，只是暂时进不去
+  const opened = st.maxLevel + 1 >= w.from;
+  const cleared = st.maxLevel >= w.to;
+
+  clayBlock(ctx, gx, gy, gw, gh, 26, opened ? CLAY.stage : CLAY.lockTile, 800 + gi, {
+    depth: 10,
+    hi: 0.04,
+  });
+
+  const ink = opened ? '#FFF6E9' : 'rgba(255,246,233,0.72)';
+  const shade = opened ? 'rgba(40,26,16,0.55)' : 'rgba(16,26,36,0.6)';
+
+  // 左：◆ + 罗马序号
+  drawDiamond(ctx, gx + 30, y, 9, opened ? CLAY.mustard.base : CLAY.cream.dark);
+  clayText(ctx, ROMAN[gi + 1], gx + 76, y, 26, {
+    align: 'left',
+    weight: 700,
+    fill: ink,
+    outline: shade,
+    outlineWidth: 3,
+  });
+
+  // 中：世界名
+  clayText(ctx, w.name, gx + 150, y, 34, {
+    align: 'left',
+    weight: 700,
+    fill: ink,
+    outline: shade,
+    outlineWidth: 4,
+  });
+
+  // 右：关号区间 + 进度
+  const done = Math.max(0, Math.min(w.to - w.from + 1, st.maxLevel - w.from + 1));
+  const right = opened ? `${w.from}-${w.to}` : `${w.from}-${w.to}`;
+  clayText(ctx, right, gx + gw - 30, y - 12, 22, {
+    align: 'right',
+    weight: 600,
+    fill: opened ? 'rgba(255,246,233,0.86)' : 'rgba(255,246,233,0.55)',
+    outlineWidth: 0,
+    emboss: false,
+  });
+  clayText(ctx, cleared ? '已通关' : `${done} / ${w.to - w.from + 1}`, gx + gw - 30, y + 14, 20, {
+    align: 'right',
+    weight: 600,
+    fill: cleared ? CLAY.mint.light : 'rgba(255,246,233,0.62)',
+    outlineWidth: 0,
+    emboss: false,
+  });
 }
 
 /** 画单个地图节点。 */
@@ -242,16 +444,15 @@ function drawMapNode(
       outlineWidth: 0,
       emboss: false,
     });
-    return;
+  } else {
+    clayDisc(ctx, x, y, r, current ? CLAY.mustard : CLAY.mint, 900 + idx, { depth: 7, hi: 0.16 });
+
+    clayText(ctx, String(idx), x, y, current ? 34 : 28, {
+      fill: '#FFF6E9',
+      outline: current ? CLAY.mustard.shade : CLAY.mint.shade,
+      outlineWidth: current ? 6 : 5,
+    });
   }
-
-  clayDisc(ctx, x, y, r, current ? CLAY.mustard : CLAY.mint, 900 + idx, { depth: 7, hi: 0.16 });
-
-  clayText(ctx, String(idx), x, y, current ? 34 : 28, {
-    fill: '#FFF6E9',
-    outline: current ? CLAY.mustard.shade : CLAY.mint.shade,
-    outlineWidth: current ? 6 : 5,
-  });
 
   // 星级（已通关）
   if (!current && done && star > 0) {
@@ -269,29 +470,53 @@ function drawMapNode(
     }
   }
 
-  // 章节里程碑：每 10 关一面小旗
-  if (idx % 10 === 0) {
-    const fx = x + (x > DESIGN_W / 2 ? -r - 30 : r + 30);
-    ctx.strokeStyle = CLAY.cream.shade;
-    ctx.lineWidth = 4;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(fx, y - 26);
-    ctx.lineTo(fx, y + 18);
-    ctx.stroke();
-    ctx.fillStyle = CLAY.rose.dark;
-    ctx.beginPath();
-    ctx.moveTo(fx, y - 26);
-    ctx.lineTo(fx + 28, y - 16);
-    ctx.lineTo(fx, y - 6);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = CLAY.rose.base;
-    ctx.beginPath();
-    ctx.moveTo(fx, y - 25);
-    ctx.lineTo(fx + 26, y - 16);
-    ctx.lineTo(fx, y - 8);
-    ctx.closePath();
-    ctx.fill();
+  // 皮肤奖励关：右上角一颗小钻石（只标 premium，普通皮肤是广告解锁的）
+  if (SKIN_LEVELS.includes(idx)) {
+    drawDiamond(ctx, x + r * 0.78, y - r * 0.72, 10, CLAY.mustard.base);
   }
+
+  // 世界末关：一面小旗（旧版每 10 关一面，1000 关要插 100 面，反而没有重点）
+  if (WORLD_ENDS.includes(idx)) {
+    drawFlag(ctx, x, y, r, st.maxLevel >= idx);
+  }
+}
+
+/** 小菱形（品级 / 奖励标记）。 */
+function drawDiamond(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, color: string): void {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - r);
+  ctx.lineTo(cx + r * 0.78, cy);
+  ctx.lineTo(cx, cy + r);
+  ctx.lineTo(cx - r * 0.78, cy);
+  ctx.closePath();
+  ctx.fill();
+}
+
+/** 世界末关的小旗。 */
+function drawFlag(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, taken: boolean): void {
+  const fx = x + (x > DESIGN_W / 2 ? -r - 26 : r + 26);
+  ctx.strokeStyle = CLAY.cream.shade;
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(fx, y - 26);
+  ctx.lineTo(fx, y + 18);
+  ctx.stroke();
+
+  const c = taken ? CLAY.mint : CLAY.rose;
+  ctx.fillStyle = c.dark;
+  ctx.beginPath();
+  ctx.moveTo(fx, y - 26);
+  ctx.lineTo(fx + 28, y - 16);
+  ctx.lineTo(fx, y - 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = c.base;
+  ctx.beginPath();
+  ctx.moveTo(fx, y - 25);
+  ctx.lineTo(fx + 26, y - 16);
+  ctx.lineTo(fx, y - 8);
+  ctx.closePath();
+  ctx.fill();
 }

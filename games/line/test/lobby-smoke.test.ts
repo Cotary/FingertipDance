@@ -82,8 +82,10 @@ describe('大厅绘制冒烟', () => {
     const st = createMapState(7, 1000, { '1': 3, '2': 2 });
     st.scrollY = 300;
     const buttons = drawMapView(ctx, st, 1000);
-    expect(buttons.length).toBe(1);
-    expect(buttons[0].id).toBe('navHome');
+    const ids = buttons.map((b) => b.id);
+    expect(ids).toContain('navHome');
+    // 吸底的「继续」：一屏 16 关，不该让玩家自己找当前关
+    expect(ids).toContain('playCurrent');
     // 可视区里至少有节点能被点中
     expect(pickMapNode(375, 210 - 300 + 0, st)).toBeGreaterThanOrEqual(-1);
   });

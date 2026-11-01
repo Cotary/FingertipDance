@@ -114,11 +114,18 @@ async function main() {
   verify(args.out, args.solutions, version);
 }
 
-/** 皮肤解锁映射：见 04-美术规范.md 第 6.2 节。 */
+/**
+ * 皮肤解锁映射：见 04-美术规范.md 第 6.2 节。
+ *
+ * 2026-11-01 收敛：只保留 premium 三款（黄金 / 星尘 / 星河）。
+ * 其余普通皮肤改走广告解锁（见 `SKINS` 的 `unlockType`），关卡不再自动发放 ——
+ * 否则「打关卡」和「看广告」发的是同一批货，顶级皮肤就没有稀缺性可言了。
+ *
+ * 注意：改这张表必须重跑 level-gen 才会写进关卡表；在此之前旧表里
+ * 3/8/15…关仍带着 unlockSkin 字段，服务端照发。
+ */
 function skinForLevel(idx: number): string | null {
   const map: Array<[number, string]> = [
-    [3, 'graphite'], [8, 'slate'], [15, 'blush'], [25, 'amber'],
-    [40, 'marble'], [60, 'brushed'], [90, 'ice'], [130, 'neon'],
     [200, 'gold'], [500, 'stardust'], [900, 'galaxy'],
   ];
   for (const [level, skin] of map) if (idx === level) return skin;
