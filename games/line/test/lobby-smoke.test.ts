@@ -119,8 +119,19 @@ describe('大厅绘制冒烟', () => {
 
   it('皮肤页能画完并返回按钮', () => {
     const ctx = fakeCtx();
-    const buttons = drawSkinsPage(ctx, { equipped: 'wood', unlocked: new Set(['wood', 'mint']), page: 0 }, 1000);
+    const buttons = drawSkinsPage(
+      ctx,
+      { equipped: 'wood', selected: 'wood', unlocked: new Set(['wood', 'mint']), page: 0 },
+      1000,
+    );
     expect(buttons.every((b) => typeof b.id === 'string')).toBe(true);
+    // 选中的是「已装备」→ 没有按钮；换一个已解锁未装备的，才会出现装备按钮
+    const b2 = drawSkinsPage(
+      ctx,
+      { equipped: 'wood', selected: 'mint', unlocked: new Set(['wood', 'mint']), page: 0 },
+      1000,
+    );
+    expect(b2.map((b) => b.id)).toContain('equipSkin');
   });
 
   it('结算页 4 个按钮且全部落在加高后的面板内', () => {

@@ -64,6 +64,12 @@ export const CLAY = {
   paper: { base: '#FFFBF3', light: '#FFFFFF', dark: '#E6D8C6', shade: '#C2B09A' },
   /** 凹槽：进度条的槽、任何要「挖进底面」的长条。比沙色深两档，浅底上才读得出 */
   groove: { base: '#8E7053', light: '#A98B6C', dark: '#6E543B', shade: '#553F2A' },
+  /**
+   * 陈列台：一块烧过的深陶板。
+   * 彩色皮肤压在浅底上会互相打架，深陶底才托得住 —— 但必须偏**暖**，
+   * 用蓝灰（boardDark）会和皮肤的冷色撞成一片脏。
+   */
+  stage: { base: '#5A4436', light: '#7A5F4C', dark: '#3D2C21', shade: '#281C14' },
 } as const satisfies Record<string, ClayColor>;
 
 export type ClayKey = keyof typeof CLAY;
@@ -306,6 +312,12 @@ export interface ClayOpts {
   round?: number;
   /** 是否画亮面 */
   lit?: boolean;
+  /**
+   * 大块平板（≥300px）。
+   * 亮面的常规做法是「缩到 90% 的同形」，在 396 的样品板上会变成一块突兀的中央亮斑；
+   * 打开这个开关后亮面几乎满幅，只留一圈窄色阶 —— 读作「一整块料的受光」，不是「贴了块亮片」。
+   */
+  plate?: boolean;
 }
 
 /**
@@ -345,7 +357,16 @@ export function clayBlock(
   tracePts(ctx, pts, 0, -lift, 0.992, cx, cy);
   ctx.fill();
 
-  if (opts.lit === false) return;
+  if (opts.lit === false) {
+    // `lit` 只该关掉**亮面**，不该连材质一起关掉。
+    // 大块（≥28000，皮肤页的样品板就是这个尺寸）靠颗粒和指压痕才不像一张色卡；
+    // 小块跳过是因为几十个格子各画一遍颗粒太贵，而且小尺寸上一颗砂就是一块脏点。
+    if (w * h >= 28000) {
+      fillGrain(ctx, x, y, w, h, grainAlphaFor(c));
+      clayPress(ctx, cx, cy, w, h, seed);
+    }
+    return;
+  }
 
   // 亮面：clip 后画缩放的同形，边界是硬的 → 硬边色阶
   ctx.save();
@@ -354,7 +375,7 @@ export function clayBlock(
 
   const hiShift = (opts.hi ?? 0.10) * h;
   ctx.fillStyle = c.light;
-  tracePts(ctx, pts, -w * 0.015, -lift - hiShift, 0.90, cx, cy);
+  tracePts(ctx, pts, -w * 0.015, -lift - hiShift, opts.plate ? 0.985 : 0.90, cx, cy);
   ctx.fill();
 
   // 哑光反光：大范围、低 alpha、两圈
@@ -414,7 +435,11 @@ export function clayDisc(
   const lift = Math.max(1.5, r * 0.09);
   fillRing(c.base, 0, -lift, 0.988);
 
-  if (opts.lit === false) return;
+  if (opts.lit === false) {
+    // 圆片同理：`lit` 只关亮面，材质照画。小圆点上颗粒等于长麻子，只在够大时补
+    if (r >= 56) fillGrain(ctx, cx - r, cy - r, r * 2, r * 2, grainAlphaFor(c));
+    return;
+  }
 
   ctx.save();
   tracePts(ctx, pts, 0, -lift, 0.988, cx, cy);
@@ -519,7 +544,11 @@ export function clayStar(
   tracePts(ctx, pts, 0, -lift, 0.975, cx, cy);
   ctx.fill();
 
-  if (opts.lit === false) return;
+  if (opts.lit === false) {
+    // 圆片同理：`lit` 只关亮面，材质照画。小圆点上颗粒等于长麻子，只在够大时补
+    if (r >= 56) fillGrain(ctx, cx - r, cy - r, r * 2, r * 2, grainAlphaFor(c));
+    return;
+  }
 
   ctx.save();
   tracePts(ctx, pts, 0, -lift, 0.975, cx, cy);

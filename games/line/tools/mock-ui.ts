@@ -75,7 +75,7 @@ export const profileState: ProfilePageState = {
   totalSteps: 1284,
   totalTimeMs: 2_460_000,
   adWatchCnt: 9,
-  unlockedSkins: ['wood', 'mint', 'graphite', 'slate', 'blush', 'amber'],
+  unlockedSkins: ['wood', 'mint', 'graphite', 'slate', 'blush', 'amber', 'marble'],
   totalSkins: 16,
   soundOn: true,
   vibrateOn: true,
@@ -84,7 +84,8 @@ export const profileState: ProfilePageState = {
 // ── 皮肤 ──
 export const skinsState: SkinsPageState = {
   equipped: 'mint',
-  unlocked: new Set(['wood', 'mint', 'graphite', 'slate', 'blush', 'amber']),
+  selected: 'marble',
+  unlocked: new Set(['wood', 'mint', 'graphite', 'slate', 'blush', 'amber', 'marble']),
   page: 0,
 };
 

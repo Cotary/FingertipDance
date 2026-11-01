@@ -64,6 +64,7 @@ let pendingLevel = 1;
 
 let skinsPage: SkinsPageState = {
   equipped: 'wood',
+  selected: 'wood',
   unlocked: new Set(['wood', 'mint']),
   page: 0,
 };
@@ -356,6 +357,19 @@ async function useSkip() {
   void onWin(st.level.shortest, 0, [], true);
 }
 
+/**
+ * 装备当前选中（展台上）的皮肤。
+ * 只有已解锁才生效 —— 未解锁时展台显示的是「拿不到的目标」，不是可装备项。
+ */
+function equipSelectedSkin() {
+  const id = skinsPage.selected;
+  if (!skinsPage.unlocked.has(id) || skinsPage.equipped === id) return;
+  skinsPage.equipped = id;
+  progress.equipSkin(id);
+  audio.light();
+  reportEvent('skin_equip', { skin_id: id });
+}
+
 /** 广告解锁皮肤。 */
 async function unlockByAd(skinId: string) {
   const ok = await ads.showRewarded('skin_unlock');
@@ -536,17 +550,12 @@ function onDown(clientX: number, clientY: number) {
     return;
   }
   if (phase === 'skins') {
+    // 点陶片只「选中」—— 装备留给展台上的按钮。
+    // 两件事挤在一次点击里，挑的过程就被跳过了，也容易误换皮肤。
     const skin = pickSkinCard(d.x, d.y, skinsPage);
     if (skin) {
-      if (skinsPage.unlocked.has(skin.id)) {
-        // 装备
-        skinsPage.equipped = skin.id;
-        progress.equipSkin(skin.id);
-        audio.unlock();
-        reportEvent('skin_equip', { skin_id: skin.id });
-      } else if (skin.unlockType === 'ad') {
-        void unlockByAd(skin.id);
-      }
+      skinsPage.selected = skin.id;
+      audio.light();
       return;
     }
     for (const b of skinButtons) {
@@ -649,6 +658,8 @@ function onUp() {
     else if (id === 'back') { phase = 'home'; ads.hideBanner(); }
     else if (id === 'prevPage') skinsPage.page = Math.max(0, skinsPage.page - 1);
     else if (id === 'nextPage') skinsPage.page = Math.min(Math.ceil(SKINS.length / PER_PAGE) - 1, skinsPage.page + 1);
+    else if (id === 'equipSkin') equipSelectedSkin();
+    else if (id === 'unlockByAd') void unlockByAd(skinsPage.selected);
     return;
   }
   if (phase === 'playing') {
