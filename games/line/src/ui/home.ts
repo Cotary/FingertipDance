@@ -31,10 +31,12 @@ export interface HomePageState {
 const PLANET = { x: DESIGN_W / 2, y: 540, r: 170 };
 
 /** 轨道定义（半径比、倾角、起始相位、配色）。 */
+// k 必须 > 1：k=1.0 时最内圈轨道半径正好等于球半径，节点会半嵌进球面，
+// 看起来像球体的一部分而不是卫星。整体外推到 1.14 起，最外圈仍留在 750 宽度内。
 const ORBITS = [
-  { k: 1.0, tilt: -0.22, phase: 0.0, color: CANDY.green },
-  { k: 1.34, tilt: 0.18, phase: 1.1, color: CANDY.orange },
-  { k: 1.66, tilt: -0.1, phase: 2.3, color: CANDY.blue },
+  { k: 1.14, tilt: -0.22, phase: 0.0, color: CANDY.green },
+  { k: 1.44, tilt: 0.18, phase: 1.1, color: CANDY.orange },
+  { k: 1.72, tilt: -0.1, phase: 2.3, color: CANDY.blue },
 ];
 
 /**
@@ -57,21 +59,29 @@ export function drawHomePage(ctx: CanvasRenderingContext2D, st: HomePageState, n
   // ── 进度条 ──
   const ratio = st.levelCount > 0 ? Math.min(1, st.maxLevel / st.levelCount) : 0;
   const barX = 60, barY = 994, barW = DESIGN_W - 120, barH = 14;
+  // 轨道要比底色亮：深色轨道在夜空上等于隐形
   glass(ctx, barX, barY, barW, barH, barH / 2, {
-    fill: 'rgba(10,6,35,0.55)',
+    fill: 'rgba(255,255,255,0.13)',
     shadow: false,
     inner: false,
   });
-  if (ratio > 0.005) {
-    const g = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+  // 1/1000 = 0.1%，阈值不能再卡 0.5%，否则第 1 关的条是空的
+  if (ratio > 0) {
+    const fillW = Math.max(barH, barW * ratio);
+    const g = ctx.createLinearGradient(barX, 0, barX + fillW, 0);
     g.addColorStop(0, CANDY.green.base);
     g.addColorStop(0.5, CANDY.blue.base);
     g.addColorStop(1, CANDY.purple.base);
     ctx.fillStyle = g;
-    roundRect(ctx, barX, barY, Math.max(barH, barW * ratio), barH, barH / 2);
+    roundRect(ctx, barX, barY, fillW, barH, barH / 2);
     ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.40)';
-    roundRect(ctx, barX + 5, barY + 4, Math.max(barH, barW * ratio) - 10, barH * 0.30, barH * 0.15);
+    roundRect(ctx, barX + 4, barY + 4, Math.max(0, fillW - 8), barH * 0.30, barH * 0.15);
+    ctx.fill();
+    // 进度头：早期关卡填充只有十几像素，加一颗白珠才读得出「有进度」
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(barX + fillW - barH / 2, barY + barH / 2, barH * 0.36, 0, Math.PI * 2);
     ctx.fill();
   }
   strokeText(ctx, `第 ${st.maxLevel} 关`, barX, barY + 44, 22, {
@@ -175,11 +185,14 @@ function drawPlanet(ctx: CanvasRenderingContext2D, now: number): void {
   halo(ctx, x, y, r * 1.15, 'rgba(179,136,255,0.18)');
 
   // 星球底：径向渐变（左上受光，右下入紫）
-  const g = ctx.createRadialGradient(x - r * 0.34, y - r * 0.40, r * 0.1, x, y, r);
-  g.addColorStop(0, '#C8F2FF');
-  g.addColorStop(0.34, '#63C8F5');
-  g.addColorStop(0.68, '#4A7BE8');
-  g.addColorStop(1, '#4B3AB0');
+  // 亮部必须收窄：原来 stop 0 的 #C8F2FF 一路铺到 0.34，整半个球都是雾白，
+  // 叠上云带后中心糊成一团。改成亮部只占左上约 1/5，其余走饱和的糖果蓝。
+  const g = ctx.createRadialGradient(x - r * 0.36, y - r * 0.44, r * 0.04, x, y, r * 1.02);
+  g.addColorStop(0, '#E8FAFF');
+  g.addColorStop(0.20, '#8FDBF7');
+  g.addColorStop(0.52, '#4FA6EC');
+  g.addColorStop(0.80, '#4A63D8');
+  g.addColorStop(1, '#3B2C9C');
   ctx.fillStyle = g;
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -191,8 +204,9 @@ function drawPlanet(ctx: CanvasRenderingContext2D, now: number): void {
   ctx.clip();
 
   // 糖果云带（3 条，倾斜，双层）
+  // alpha 收薄：0.26/0.15 叠三条会在球心堆出白雾，0.16/0.09 才有「球面上的带」的层次
   for (let i = -1; i <= 1; i++) {
-    ctx.fillStyle = i === 0 ? 'rgba(255,255,255,0.26)' : 'rgba(255,255,255,0.15)';
+    ctx.fillStyle = i === 0 ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.09)';
     ctx.beginPath();
     ctx.ellipse(x, y + i * r * 0.44, r * 1.02, r * 0.15, -0.12, 0, Math.PI * 2);
     ctx.fill();
@@ -201,15 +215,15 @@ function drawPlanet(ctx: CanvasRenderingContext2D, now: number): void {
   // 底部暗面
   const sh = ctx.createLinearGradient(0, y + r * 0.1, 0, y + r);
   sh.addColorStop(0, 'rgba(20,12,70,0)');
-  sh.addColorStop(1, 'rgba(20,12,70,0.48)');
+  sh.addColorStop(1, 'rgba(20,12,70,0.52)');
   ctx.fillStyle = sh;
   ctx.fillRect(x - r, y - r, r * 2, r * 2);
 
-  // 高光（会呼吸的柔光斑）
-  const pulse = 0.30 + 0.10 * Math.sin(now / 1300);
+  // 高光（会呼吸的柔光斑）——压在左上，不侵入球心
+  const pulse = 0.26 + 0.08 * Math.sin(now / 1300);
   ctx.fillStyle = `rgba(255,255,255,${pulse.toFixed(3)})`;
   ctx.beginPath();
-  ctx.ellipse(x - r * 0.34, y - r * 0.42, r * 0.30, r * 0.19, -0.5, 0, Math.PI * 2);
+  ctx.ellipse(x - r * 0.42, y - r * 0.46, r * 0.26, r * 0.15, -0.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
