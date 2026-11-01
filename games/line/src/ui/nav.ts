@@ -1,11 +1,13 @@
 /**
  * 底部导航栏。主页 / 地图 / 皮肤 / 排行 / 我的 五个 Tab。
- * 深色玻璃背板 + 选中态糖果果冻胶囊，全部 Canvas 绘制，零 DOM。
+ *
+ * 黏土版：奶油黏土板做底栏（顶部两角圆、左右圆角藏在屏幕外），
+ * 选中项是一块**翘起来的陶土片**，把图标和文字一起包进去 —— 不再是发光的果冻胶囊。
+ * 全部 Canvas 绘制，零 DOM。
  */
 import { DESIGN_W, DESIGN_H } from '../render/layout';
 import { roundRect } from '../render/board';
-import { CANDY } from './theme';
-import { jelly, strokeText } from './draw';
+import { CLAY, CLAY_UI, clayBlock, clayText } from './clay';
 
 /** 导航页签。 */
 export type NavTab = 'home' | 'map' | 'skins' | 'rank' | 'profile';
@@ -68,24 +70,23 @@ export function pickNavTab(x: number, y: number): NavTab | null {
  * @param now 当前时间戳（ms），用于图标动画
  */
 export function drawNav(ctx: CanvasRenderingContext2D, active: NavTab, now: number): void {
-  // 栏上方的柔和过渡（避免背板出现硬边）
-  const fade = ctx.createLinearGradient(0, NAV_TOP - 46, 0, NAV_TOP);
-  fade.addColorStop(0, 'rgba(10,6,32,0)');
-  fade.addColorStop(1, 'rgba(10,6,32,0.88)');
+  // 内容区在导航上沿的落影（导航是浮在内容之上的，所以影子朝上）
+  const fade = ctx.createLinearGradient(0, NAV_TOP - 40, 0, NAV_TOP);
+  fade.addColorStop(0, 'rgba(74,51,39,0)');
+  fade.addColorStop(1, 'rgba(74,51,39,0.16)');
   ctx.fillStyle = fade;
-  ctx.fillRect(0, NAV_TOP - 46, DESIGN_W, 46);
+  ctx.fillRect(0, NAV_TOP - 40, DESIGN_W, 40);
 
-  // 背板
-  ctx.fillStyle = 'rgba(14,9,44,0.94)';
-  ctx.fillRect(0, NAV_TOP, DESIGN_W, NAV_H);
+  // 背板：横向外扩 40，让左右圆角藏在屏幕外，只留顶部两角
+  clayBlock(ctx, -40, NAV_TOP - 6, DESIGN_W + 80, NAV_H + 80, 34, CLAY.cream, 601, { depth: 0 });
 
-  // 顶部边光
-  const edge = ctx.createLinearGradient(0, NAV_TOP, DESIGN_W, NAV_TOP);
-  edge.addColorStop(0, 'rgba(255,255,255,0.04)');
-  edge.addColorStop(0.5, 'rgba(255,255,255,0.26)');
-  edge.addColorStop(1, 'rgba(255,255,255,0.04)');
-  ctx.fillStyle = edge;
-  ctx.fillRect(0, NAV_TOP, DESIGN_W, 2);
+  // 上沿一道浅色高光，把背板从内容区里「切」出来
+  ctx.strokeStyle = 'rgba(255,251,243,0.85)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, NAV_TOP + 1.5);
+  ctx.lineTo(DESIGN_W, NAV_TOP + 1.5);
+  ctx.stroke();
 
   navHitAreas().forEach((h, i) => {
     const cx = h.x + h.w / 2;
@@ -93,23 +94,22 @@ export function drawNav(ctx: CanvasRenderingContext2D, active: NavTab, now: numb
     const iconY = NAV_TOP + 38;
     const labelY = NAV_TOP + 93;
 
-    // 选中态：糖果胶囊 + 果冻体积
+    // 选中态：一整块翘起的陶土片（把图标和文字一起包住）
     if (on) {
-      jelly(ctx, cx - 38, NAV_TOP + 6, 76, 64, CANDY.blue, { radius: 24, depth: 5 });
+      clayBlock(ctx, cx - 59, NAV_TOP + 6, 118, 106, 28, CLAY.terracotta, 611 + i, { depth: 9 });
     }
 
-    // 图标
     ctx.save();
-    ctx.translate(cx, iconY + (on ? -4 : 0));
-    drawNavIcon(ctx, h.tab, on ? '#FFFFFF' : 'rgba(255,255,255,0.55)', now + i * 120, on);
+    ctx.translate(cx, iconY + (on ? -3 : 0));
+    drawNavIcon(ctx, h.tab, on ? '#FFF6E9' : CLAY_UI.inkSoft, now + i * 120, on);
     ctx.restore();
 
-    // 文案
-    strokeText(ctx, NAV_LABELS[h.tab], cx, labelY, on ? 23 : 21, {
+    clayText(ctx, NAV_LABELS[h.tab], cx, labelY, on ? 23 : 21, {
       weight: on ? 800 : 600,
-      fill: on ? '#FFFFFF' : 'rgba(214,210,255,0.62)',
-      stroke: on ? CANDY.blue.dark : undefined,
-      strokeWidth: 4,
+      fill: on ? '#FFF6E9' : CLAY_UI.inkSoft,
+      outline: on ? 'rgba(118,50,22,0.55)' : undefined,
+      outlineWidth: on ? 4 : 0,
+      emboss: false,
     });
   });
 }

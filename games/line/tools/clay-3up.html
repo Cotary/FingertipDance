@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>黏土工坊 · 两屏落地效果</title>
+<style>
+  :root{ --bg:#2A211B; --ink:#F3E6D6; --ink2:#A89078; --line:#42352B; --terra:#E07A4F; --mustard:#E0B33C; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+       padding:36px 28px 56px;-webkit-font-smoothing:antialiased}
+  header{max-width:1200px;margin:0 auto 26px}
+  h1{font-size:23px;font-weight:800;letter-spacing:.4px}
+  h1 em{font-style:normal;color:var(--mustard)}
+  p.sub{margin-top:9px;color:var(--ink2);font-size:13.5px;line-height:1.7;max-width:880px}
+  .row{display:flex;gap:22px;justify-content:center;align-items:flex-start;max-width:1200px;margin:0 auto}
+  figure{margin:0;flex:0 0 356px}
+  .phone{border-radius:22px;overflow:hidden;background:#000;box-shadow:0 20px 46px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.08)}
+  .phone img{display:block;width:100%;height:auto}
+  figcaption{margin-top:11px;text-align:center;font-size:13px;color:#CDB79E;letter-spacing:.4px}
+  footer{max-width:1200px;margin:30px auto 0;padding-top:20px;border-top:1px solid var(--line);
+         color:var(--ink2);font-size:12.5px;line-height:1.9}
+  footer b{color:var(--ink)} .k{color:var(--mustard)} .w{color:var(--terra)}
+</style>
+</head>
+<body>
+<header>
+  <h1>黏土工坊 · <em>已落地 2 屏</em>（+ 结算页）</h1>
+  <p class="sub">
+    都是真实 Canvas 绘制代码跑出来的画面（主页那张是浏览器里真跑的，另两张是同一份代码离线渲染）。
+    换掉的是<b>材质语言</b>：体积从「平滑渐变 + 锐利高光条」改成「硬边色阶 + 软投影 + 手捏轮廓」，所有发光已删除。
+  </p>
+</header>
+
+<div class="row">
+  <figure>
+    <div class="phone"><img src="clay-home-live.png" alt="主页"></div>
+    <figcaption>主页大厅</figcaption>
+  </figure>
+  <figure>
+    <div class="phone"><img src="clay-game.png" alt="游戏内"></div>
+    <figcaption>游戏内棋盘</figcaption>
+  </figure>
+  <figure>
+    <div class="phone"><img src="clay-result.png" alt="结算"></div>
+    <figcaption>通关结算</figcaption>
+  </figure>
+</div>
+
+<footer>
+  <b>做到的：</b>不规则轮廓（固定 seed，每帧一致不闪）、硬边色阶做体积、三层错位叠出软投影（不用 shadowBlur）、哑光反光代替高光条、<span class="k">全屏零发光</span>。<br>
+  <b>还没做的：</b><span class="w">地图 / 皮肤 / 排行 / 我的 / 好友榜 5 屏仍是旧的深紫夜空</span>，现在切换会有明显断层 —— 等你确认这个方向再全量改。<br>
+  <b>已知短板：</b>整体色调偏暖灰、不够跳；黏土的指纹颗粒纹理没做（需要预渲染贴图，微信端要过 wx.createCanvas）。
+</footer>
+</body>
+</html>

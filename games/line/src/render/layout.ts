@@ -2,9 +2,14 @@
 export const DESIGN_W = 750;
 export const DESIGN_H = 1334;
 
-/** 棋盘区域在设计坐标系里的边界。 */
-export const BOARD_TOP = 220;
-export const BOARD_BOTTOM = 1000;
+/**
+ * 棋盘区域在设计坐标系里的边界。
+ *
+ * 上下界是按「HUD 底 200 → 进度条顶 1176」的视觉可用区取的，
+ * 让棋盘在这个区间里居中 —— 小棋盘（7×7）在浅色页面上才不会显得孤零零漂在上半屏。
+ */
+export const BOARD_TOP = 200;
+export const BOARD_BOTTOM = 1176;
 export const BOARD_SIDE = 40;
 
 /** 棋盘布局信息。 */

@@ -1,7 +1,7 @@
 import { DESIGN_W, DESIGN_H } from '../render/layout';
-import { roundRect } from '../render/board';
 import { CANDY, THEME, type CandyKey, type Theme } from './theme';
-import { candyStar, glass, jelly, pill, starRow, strokeText, halo, font } from './draw';
+import { candyStar, starRow, halo, font } from './draw';
+import { CLAY, CLAY_UI, clayBlock, clayDisc, clayText, rrectPts, tracePts, type ClayColor } from './clay';
 
 /** 游戏内配色。保留此名以兼容既有引用（现与大厅同一套糖果夜空色板）。 */
 export const COLORS = THEME;
@@ -28,17 +28,6 @@ export function starOf(steps: number, shortest: number): number {
   return 1;
 }
 
-/** kind → 默认糖果色。 */
-function toneOf(b: Button): CandyColor {
-  if (b.tone) return CANDY[b.tone];
-  if (b.kind === 'primary') return CANDY.green;
-  if (b.kind === 'secondary') return CANDY.blue;
-  return CANDY.purple;
-}
-
-/** 便捷取色，避免每处写 CANDY.xxx。 */
-type CandyColor = (typeof CANDY)[CandyKey];
-
 /**
  * 画一个按钮（果冻质感）。
  * @param theme 主题，默认糖果夜空（既有调用点无需改）
@@ -49,25 +38,24 @@ export function drawButton(
   pressed: boolean,
   theme: Theme = COLORS,
 ): void {
-  if (b.kind === 'ghost') {
-    // 幽灵按钮：半透明玻璃 + 白字，不抢主次
-    glass(ctx, b.x, b.y, b.w, b.h, Math.min(b.h / 2, 26), {
-      fill: pressed ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.10)',
-      shadow: false,
-    });
-    strokeText(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2, Math.min(b.h * 0.40, 30), {
-      fill: theme.text,
-      stroke: 'rgba(10,6,35,0.55)',
-      strokeWidth: 3,
-    });
-    return;
-  }
+  void theme;
 
-  jelly(ctx, b.x, b.y, b.w, b.h, toneOf(b), {
-    pressed,
-    radius: Math.min(b.h / 2, 34),
-    label: b.label,
-    fontSize: Math.min(b.h * 0.40, 34),
+  // 黏土块：体积靠色阶 + 软投影，不靠渐变；按下时整块下沉
+  // ghost 不能用奶油：它要压在奶油面板上，同色等于看不见。用深一档的沙色
+  const c: ClayColor = b.kind === 'primary' ? CLAY.terracotta : b.kind === 'secondary' ? CLAY.mustard : CLAY.sand;
+  const seed = b.id.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0);
+  const sink = pressed ? 3 : 0;
+  clayBlock(ctx, b.x, b.y + sink, b.w, b.h, Math.min(b.h * 0.42, 30), c, seed, {
+    depth: pressed ? 3 : b.kind === 'primary' ? 11 : 8,
+    hi: b.kind === 'ghost' ? 0.05 : 0.065,
+  });
+
+  const fs = Math.min(b.h * 0.40, 34);
+  clayText(ctx, b.label, b.x + b.w / 2, b.y + sink + b.h / 2, fs, {
+    fill: b.kind === 'ghost' ? CLAY_UI.ink : '#FFF6E9',
+    outline: b.kind === 'ghost' ? undefined : 'rgba(90,38,16,0.5)',
+    outlineWidth: b.kind === 'ghost' ? 0 : Math.max(2, fs * 0.16),
+    emboss: false,
   });
 }
 
@@ -86,60 +74,58 @@ export function drawHud(
   skinCount: number,
   totalSkins: number,
 ): void {
-  // 关号胶囊
+  // 关号：一块陶土胶囊，压在棋盘上方
   const pw = 250, ph = 68, px = (DESIGN_W - pw) / 2, py = 88;
-  glass(ctx, px, py, pw, ph, ph / 2, { fill: 'rgba(30,22,80,0.72)' });
-  strokeText(ctx, `第 ${levelIdx} 关`, DESIGN_W / 2, py + ph / 2 + 1, 34, {
-    stroke: 'rgba(8,4,30,0.6)',
-    strokeWidth: 5,
+  clayBlock(ctx, px, py, pw, ph, ph * 0.5, CLAY.terracotta, 71, { depth: 9, hi: 0.08 });
+  clayText(ctx, `第 ${levelIdx} 关`, DESIGN_W / 2, py + ph / 2, 34, {
+    fill: '#FFF6E9',
+    outline: 'rgba(90,38,16,0.5)',
+    outlineWidth: 5,
   });
 
-  // 皮肤信息：左右各一行小字
-  strokeText(ctx, `皮肤 ${skinCount}/${totalSkins}`, 40, 182, 22, {
-    weight: 600,
-    fill: THEME.subText,
+  // 皮肤信息：左右各一行小字（浅底上用深棕，别再用浅紫）
+  clayText(ctx, `皮肤 ${skinCount}/${totalSkins}`, 40, 182, 22, {
     align: 'left',
+    fill: CLAY_UI.inkSoft,
+    outlineWidth: 0,
+    emboss: false,
   });
-  strokeText(ctx, skinName, DESIGN_W - 40, 182, 22, {
-    weight: 600,
-    fill: THEME.subText,
+  clayText(ctx, skinName, DESIGN_W - 40, 182, 22, {
     align: 'right',
+    fill: CLAY_UI.inkSoft,
+    outlineWidth: 0,
+    emboss: false,
   });
 }
 
 /** 画关卡进度条（糖果胶囊）。 */
 export function drawProgressBar(ctx: CanvasRenderingContext2D, current: number, total: number): void {
-  const x = 40, y = 1042, w = DESIGN_W - 80, h = 18;
+  const x = 40, y = 1196, w = DESIGN_W - 80, h = 20;
 
-  // 轨道：必须比底色「亮」才看得见。原先 rgba(10,6,35,0.55) 在深色底上等于隐形。
-  glass(ctx, x, y, w, h, h / 2, { fill: 'rgba(255,255,255,0.13)', shadow: false, inner: false });
+  // 凹槽：浅底上要「深一档」才读得出是条槽（旧版用的是亮轨道，那是给深色底的解法）
+  ctx.fillStyle = '#C2A284';
+  tracePts(ctx, rrectPts(x, y, w, h, h / 2, 511, 0.003));
+  ctx.fill();
 
   const ratio = total > 0 ? Math.min(1, current / total) : 0;
   const fillW = Math.max(0, w * ratio);
-  if (fillW > 8) {
-    const g = ctx.createLinearGradient(x, 0, x + fillW, 0);
-    g.addColorStop(0, CANDY.pink.base);
-    g.addColorStop(0.5, CANDY.purple.base);
-    g.addColorStop(1, CANDY.blue.base);
-    ctx.fillStyle = g;
-    roundRect(ctx, x, y, fillW, h, h / 2);
+  if (fillW > 6) {
+    const fw = Math.max(h, fillW);
+    ctx.fillStyle = CLAY.terracotta.dark;
+    tracePts(ctx, rrectPts(x, y, fw, h, h / 2, 512, 0.003));
     ctx.fill();
-    // 高光
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    roundRect(ctx, x + 4, y + 4, Math.max(0, fillW - 8), h * 0.32, h * 0.16);
+    ctx.fillStyle = CLAY.terracotta.base;
+    tracePts(ctx, rrectPts(x, y - 2, fw, h, h / 2, 512, 0.003));
     ctx.fill();
-    // 进度头：早期关卡填充只有几像素，加一颗亮珠才读得出「这里有进度」
-    ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath();
-    ctx.arc(x + fillW - h / 2, y + h / 2, h * 0.34, 0, Math.PI * 2);
-    ctx.fill();
+    clayDisc(ctx, x + fw - h / 2, y + h / 2, h * 0.46, CLAY.mustard, 513, { depth: 3 });
   }
 
-  strokeText(ctx, `${current} / ${total} 关`, x, y + 44, 22, {
-    weight: 600,
-    fill: THEME.subText,
+  clayText(ctx, `${current} / ${total} 关`, x, y + 34, 22, {
     align: 'left',
     baseline: 'top',
+    fill: CLAY_UI.inkSoft,
+    outlineWidth: 0,
+    emboss: false,
   });
 }
 
@@ -153,95 +139,81 @@ export function drawResult(
   unlockedSkin: { id: string; name: string } | null,
   progressRatio: number,
 ): Button[] {
-  // 遮罩
-  ctx.fillStyle = 'rgba(6,3,24,0.78)';
+  // 遮罩：陶土棕的暗，不是夜空的紫黑
+  ctx.fillStyle = 'rgba(58,38,24,0.62)';
   ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
 
-  // 面板：深紫渐变 + 金色发光边
-  // 高度 732 是按「8 行内容 + 上下各留 18~26 的呼吸」倒推出来的，py 居中于 1334
-  const pw = DESIGN_W - 100, ph = 732, px = 50;
+  // 面板：一块奶油黏土板。高度 732 是按「8 行内容 + 上下各留 18~26 的呼吸」倒推的
+  const pw = DESIGN_W - 100, ph = 748, px = 50;
   const py = Math.round((DESIGN_H - ph) / 2);
   const cx = px + pw / 2;
 
-  ctx.fillStyle = 'rgba(255,213,79,0.18)';
-  roundRect(ctx, px - 6, py - 6, pw + 12, ph + 12, 50);
-  ctx.fill();
+  clayBlock(ctx, px, py, pw, ph, 44, CLAY.cream, 801, { depth: 22, hi: 0.035, jitter: 0.002 });
 
-  const pg = ctx.createLinearGradient(0, py, 0, py + ph);
-  pg.addColorStop(0, '#3A2E92');
-  pg.addColorStop(0.55, '#2A2178');
-  pg.addColorStop(1, '#1C1658');
-  ctx.fillStyle = pg;
-  roundRect(ctx, px, py, pw, ph, 44);
-  ctx.fill();
-
-  // 顶部内高光
-  ctx.save();
-  roundRect(ctx, px, py, pw, ph, 44);
-  ctx.clip();
-  const hg = ctx.createLinearGradient(0, py, 0, py + 200);
-  hg.addColorStop(0, 'rgba(255,255,255,0.22)');
-  hg.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = hg;
-  ctx.fillRect(px, py, pw, 200);
-  ctx.restore();
-
-  // 金边
-  ctx.strokeStyle = 'rgba(255,213,79,0.75)';
-  ctx.lineWidth = 3;
-  roundRect(ctx, px + 1.5, py + 1.5, pw - 3, ph - 3, 43);
-  ctx.stroke();
-
-  // 标题
-  strokeText(ctx, `第 ${levelIdx} 关 通关！`, cx, py + 58, 48, {
-    stroke: '#160F45',
-    strokeWidth: 5,
+  // 标题带：压在面板顶部的一条陶土
+  clayBlock(ctx, px + 22, py + 20, pw - 44, 82, 30, CLAY.terracotta, 802, { depth: 7, hi: 0.06 });
+  clayText(ctx, `第 ${levelIdx} 关 通关！`, cx, py + 61, 46, {
+    fill: '#FFF6E9',
+    outline: 'rgba(90,38,16,0.45)',
+    outlineWidth: 5,
   });
 
-  // 三星
+  // 三星（金色黏土星，在奶油底上最跳）
   const stars = starOf(steps, shortest);
-  starRow(ctx, cx, py + 148, 34, stars);
+  starRow(ctx, cx, py + 152, 34, stars);
 
-  // 关卡进度：文字 → 细胶囊条 → 数据胶囊，三段各留 14/24 的间距。
-  // 早期关卡填充只有几像素，靠进度头那颗白珠才读得出「有进度」。
+  // 关卡进度：文字 → 细胶囊条 → 数据胶囊
   const pr = Math.min(1, Math.max(0, progressRatio));
-  strokeText(ctx, `关卡进度 ${(pr * 100).toFixed(1)}%`, cx, py + 212, 20, {
-    weight: 600,
-    fill: THEME.subText,
+  clayText(ctx, `关卡进度 ${(pr * 100).toFixed(1)}%`, cx, py + 212, 21, {
+    fill: CLAY_UI.inkSoft,
+    outlineWidth: 0,
+    emboss: false,
   });
-  const barW = 420, barX = cx - barW / 2, barY = py + 238, barH = 14;
-  glass(ctx, barX, barY, barW, barH, barH / 2, { fill: 'rgba(255,255,255,0.13)', shadow: false, inner: false });
+  const barW = 420, barX = cx - barW / 2, barY = py + 236, barH = 16;
+  ctx.fillStyle = '#C2A284';
+  tracePts(ctx, rrectPts(barX, barY, barW, barH, barH / 2, 803, 0.003));
+  ctx.fill();
   if (pr > 0.002) {
-    const fillW = Math.max(barH, barW * pr);
-    const bg = ctx.createLinearGradient(barX, 0, barX + fillW, 0);
-    bg.addColorStop(0, CANDY.pink.base);
-    bg.addColorStop(1, CANDY.blue.base);
-    ctx.fillStyle = bg;
-    roundRect(ctx, barX, barY, fillW, barH, barH / 2);
+    const fw = Math.max(barH, barW * pr);
+    ctx.fillStyle = CLAY.terracotta.dark;
+    tracePts(ctx, rrectPts(barX, barY, fw, barH, barH / 2, 804, 0.003));
     ctx.fill();
-    ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath();
-    ctx.arc(barX + fillW - barH / 2, barY + barH / 2, barH * 0.36, 0, Math.PI * 2);
+    ctx.fillStyle = CLAY.terracotta.base;
+    tracePts(ctx, rrectPts(barX, barY - 2, fw, barH, barH / 2, 804, 0.003));
     ctx.fill();
+    clayDisc(ctx, barX + fw - barH / 2, barY + barH / 2, barH * 0.44, CLAY.mustard, 805, { depth: 3 });
   }
 
-  // 数据胶囊（两个并排）
-  const sW = 278, sH = 80, sY = py + 272;
+  // 两块沙色数据块（在奶油面板上用「深一档」而不是玻璃）
+  const sW = 278, sH = 80, sY = py + 268;
   const stats: Array<[string, string]> = [
     ['步数', `${steps} / 最短 ${shortest}`],
     ['用时', `${(timeMs / 1000).toFixed(1)}s`],
   ];
   stats.forEach(([k, v], i) => {
     const sx = px + 30 + i * (sW + 14);
-    glass(ctx, sx, sY, sW, sH, 22, { fill: 'rgba(255,255,255,0.10)' });
-    strokeText(ctx, k, sx + sW / 2, sY + 26, 20, { weight: 600, fill: THEME.subText });
-    strokeText(ctx, v, sx + sW / 2, sY + 56, 26);
+    clayBlock(ctx, sx, sY, sW, sH, 22, CLAY.sand, 810 + i, { depth: 4, lit: false, jitter: 0.004 });
+    clayText(ctx, k, sx + sW / 2, sY + 26, 20, {
+      fill: 'rgba(74,51,39,0.62)',
+      outlineWidth: 0,
+      emboss: false,
+    });
+    clayText(ctx, v, sx + sW / 2, sY + 56, 27, {
+      fill: CLAY_UI.ink,
+      outlineWidth: 0,
+      emboss: false,
+    });
   });
 
   // 解锁皮肤
   if (unlockedSkin) {
-    const bw = 420, bh = 56, bx = cx - bw / 2, by = py + 380;
-    pill(ctx, bx, by, bw, bh, CANDY.purple, `解锁新皮肤 · ${unlockedSkin.name}`, 24);
+    const bw = 420, bh = 58, bx = cx - bw / 2, by = py + 372;
+    clayBlock(ctx, bx, by, bw, bh, 28, CLAY.mustard, 820, { depth: 6, hi: 0.07 });
+    clayText(ctx, `解锁新皮肤 · ${unlockedSkin.name}`, cx, by + bh / 2, 25, {
+      fill: '#5C4208',
+      outlineWidth: 0,
+      emboss: false,
+    });
   }
 
   // 按钮组

@@ -21,6 +21,7 @@ import { drawProfilePage, type ProfilePageState } from './ui/profile';
 import { drawNav, pickNavTab, type NavTab } from './ui/nav';
 import { LOBBY_THEME } from './ui/theme';
 import { nightSky, glass, strokeText } from './ui/draw';
+import { CLAY, clayBackdrop } from './ui/clay';
 import { CANDY } from './ui/theme';
 import { publishProfile } from './platform/openData';
 import { parseChallenge, buildShareQuery } from './game/challenge';
@@ -726,8 +727,13 @@ function frame() {
   ctx.scale(dpr * scale, dpr * scale);
   ctx.translate(offsetX / dpr, offsetY / dpr);
 
-  // 全应用统一背景（夜空 + 星 + 山影），各页面不再自己画背景
-  nightSky(ctx, now);
+  // 背景分两套，按页面切换（黏土改造进行中，见 docs/23-UI风格方案.md）：
+  // 已迁移 → 陶土桌面；未迁移 → 夜空。全量迁移完成后只留 clayBackdrop。
+  if (phase === 'home' || phase === 'playing' || phase === 'result') {
+    clayBackdrop(ctx);
+  } else {
+    nightSky(ctx, now);
+  }
 
   const st = session.state;
   if (st && session.layout && (phase === 'playing' || phase === 'result')) {
@@ -742,7 +748,7 @@ function frame() {
       shakeAt: st.shakeAt,
     }, skinById(progress.current.currentSkin), now);
 
-    drawTrail(ctx, st.path, st.level.w, session.layout, '#4FC3F7', 'rgba(79,195,247,0.42)');
+    drawTrail(ctx, st.path, st.level.w, session.layout, CLAY.terracotta);
     // 端点圆片必须在连线之后，否则线头会横穿圆片、把「起」「终」压成一团
     drawEndpoints(ctx, st.level, session.layout);
 

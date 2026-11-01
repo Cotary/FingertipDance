@@ -12,6 +12,7 @@ import { resolve } from 'node:path';
 import { RecordingCtx } from './canvas2svg';
 import { DESIGN_W, DESIGN_H, computeLayout } from '../src/render/layout';
 import { nightSky } from '../src/ui/draw';
+import { CLAY, clayBackdrop } from '../src/ui/clay';
 import { drawHomePage, type HomePageState } from '../src/ui/home';
 import { drawMapView, createMapState, scrollToLevel } from '../src/ui/mapview';
 import { drawRankPage, createRankState } from '../src/ui/leaderboard';
@@ -31,16 +32,17 @@ const NOW = 1_700_000_000_000;
 
 type Ctx = CanvasRenderingContext2D;
 
-/** 开一张画布并铺夜空背景。 */
-function begin(): RecordingCtx {
+/** 开一张画布并铺背景。clay=true 用陶土桌面（已迁移的页面），否则夜空。 */
+function begin(clay = false): RecordingCtx {
   const c = new RecordingCtx();
-  nightSky(c as unknown as Ctx, NOW);
+  if (clay) clayBackdrop(c as unknown as Ctx);
+  else nightSky(c as unknown as Ctx, NOW);
   return c;
 }
 
 /** 渲染一页并返回 SVG。 */
-function render(page: (ctx: Ctx) => void, nav?: NavTab): string {
-  const c = begin();
+function render(page: (ctx: Ctx) => void, nav?: NavTab, clay = false): string {
+  const c = begin(clay);
   page(c as unknown as Ctx);
   if (nav) drawNav(c as unknown as Ctx, nav, NOW);
   return c.toSvg(DESIGN_W, DESIGN_H);
@@ -133,7 +135,7 @@ const gameScreen = (ctx: Ctx): void => {
   const lit = new Set(realPath.map(([x, y]) => y * level.w + x));
   const path = realPath.map(([x, y]) => y * level.w + x);
   drawBoard(ctx, level, layout, { lit, path, hint: new Set([3 * level.w + 3]), shakeCell: -1, shakeAt: 0 }, skinById('mint'), NOW);
-  drawTrail(ctx, path, level.w, layout, '#4FC3F7', 'rgba(79,195,247,0.42)');
+  drawTrail(ctx, path, level.w, layout, CLAY.terracotta);
   drawEndpoints(ctx, level, layout);
   drawHud(ctx, 37, '薄荷', 6, 16);
   drawProgressBar(ctx, 37, 1000);
@@ -158,13 +160,13 @@ interface Panel {
 }
 
 const panels: Panel[] = [
-  { title: '主页大厅', svg: render((c) => void drawHomePage(c, homeState, NOW), 'home') },
+  { title: '主页大厅', svg: render((c) => void drawHomePage(c, homeState, NOW), 'home', true) },
   { title: '关卡地图', svg: render((c) => void drawMapView(c, mapState, NOW), 'map') },
   { title: '排行榜 · 总榜', svg: render((c) => void drawRankPage(c, rankState, NOW), 'rank') },
   { title: '我的', svg: render((c) => void drawProfilePage(c, profileState, NOW), 'profile') },
   { title: '皮肤', svg: render((c) => void drawSkinsPage(c, skinsState, NOW), 'skins') },
-  { title: '游戏内', svg: render(gameScreen) },
-  { title: '通关结算', svg: render(resultScreen) },
+  { title: '游戏内', svg: render(gameScreen, undefined, true) },
+  { title: '通关结算', svg: render(resultScreen, undefined, true) },
 ];
 
 /** 只渲染指定界面并 1:1 输出（调细节用）：npm run ui:gallery -- game */

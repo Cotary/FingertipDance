@@ -2,6 +2,7 @@ import type { LevelData } from '../core/levelTable';
 import { CellType } from '../core/types';
 import type { BoardLayout } from './layout';
 import { paintSkin, paletteOf, type Skin } from './skins';
+import { CLAY, clayBlock, clayDisc, clayText, type ClayColor } from '../ui/clay';
 
 export interface BoardRenderState {
   /** 已点亮的格子索引集合 */
@@ -16,12 +17,18 @@ export interface BoardRenderState {
   shakeAt: number;
 }
 
-/** 未点亮砖块 / 阻挡块的夜空白，与主题夜空同一族。 */
-// 可通行格必须一眼看出边界：0.085 在深色底板上几乎不可见，提到 0.13 + 0.22 边
-const TILE_EMPTY = 'rgba(255,255,255,0.13)';
-const TILE_EMPTY_EDGE = 'rgba(255,255,255,0.22)';
-const TILE_BLOCK = 'rgba(12,7,38,0.94)';
-const TILE_BLOCK_EDGE = 'rgba(255,255,255,0.16)';
+/**
+ * 棋盘配色 —— 黏土版。
+ *
+ * 页面整体是浅陶土色，棋盘是沉在里面的一块**深灰蓝黏土板**：
+ * 深板 + 浅砖才有对比，连线也才压得住。这是浅底方案能成立的关键。
+ */
+const TILE_BLOCK_EDGE = 'rgba(255,246,233,0.55)';
+
+/** 把皮肤调色板映射成黏土四色阶。 */
+function skinClay(p: ReturnType<typeof paletteOf>): ClayColor {
+  return { base: p.base, light: p.light, dark: p.dark, shade: p.border };
+}
 
 /**
  * 绘制棋盘与所有格子。
@@ -42,15 +49,11 @@ export function drawBoard(
   const size = cell - gap * 2;
   const p = paletteOf(skin);
 
-  // 棋盘底板：把棋盘从夜空中「抬」起来，避免星星透过半透明格子形成噪点
-  // 0.62 仍会漏星点，0.80 才真正读作「一块板」
-  roundRect(ctx, originX - 14, originY - 14, layout.boardW + 28, layout.boardH + 28, 34);
-  ctx.fillStyle = 'rgba(9,5,30,0.80)';
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
-  ctx.lineWidth = 2;
-  roundRect(ctx, originX - 13, originY - 13, layout.boardW + 26, layout.boardH + 26, 33);
-  ctx.stroke();
+  // 棋盘：一块厚黏土板（不是半透明玻璃 —— 黏土是不透明的哑光材料）
+  clayBlock(ctx, originX - 18, originY - 18, layout.boardW + 36, layout.boardH + 36, 40, CLAY.board, 77, {
+    depth: 16,
+    jitter: 0.003,
+  });
 
   for (let y = 0; y < level.h; y++) {
     for (let x = 0; x < level.w; x++) {
@@ -92,9 +95,9 @@ export function drawEndpoints(
       const cx = originX + x * cell + gap + size / 2;
       const cy = originY + y * cell + gap + size / 2;
       if (type === CellType.START) {
-        drawEndpoint(ctx, cx, cy, size / 2, '#7ED957', '#3E9A2A', '#CDF7B0', '起');
+        drawEndpoint(ctx, cx, cy, size / 2, CLAY.mint, '起');
       } else {
-        drawEndpoint(ctx, cx, cy, size / 2, '#FF6B6B', '#BE2F2F', '#FFB5B5', '终');
+        drawEndpoint(ctx, cx, cy, size / 2, CLAY.rose, '终');
       }
     }
   }
@@ -120,148 +123,84 @@ function drawCell(
   ctx.save();
   switch (type) {
     case CellType.BLOCK: {
-      // 阻挡：近乎黑的实心块 + 白色叉，读作「这里是墙」
-      ctx.fillStyle = TILE_BLOCK;
-      roundRect(ctx, x, y, size, size, r);
-      ctx.fill();
+      // 阻挡：比棋盘更深一号的黏土块，压着一道奶油色叉
+      clayBlock(ctx, x, y, size, size, r, CLAY.boardDark, idx + 31, { depth: 3, lit: false, jitter: 0.005 });
       ctx.strokeStyle = TILE_BLOCK_EDGE;
-      ctx.lineWidth = 2;
-      roundRect(ctx, x + 1, y + 1, size - 2, size - 2, r);
-      ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,255,255,0.22)';
-      ctx.lineWidth = Math.max(3, size * 0.075);
+      ctx.lineWidth = Math.max(3, size * 0.072);
       ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.moveTo(x + size * 0.30, y + size * 0.30);
-      ctx.lineTo(x + size * 0.70, y + size * 0.70);
-      ctx.moveTo(x + size * 0.70, y + size * 0.30);
-      ctx.lineTo(x + size * 0.30, y + size * 0.70);
+      ctx.moveTo(x + size * 0.32, y + size * 0.32);
+      ctx.lineTo(x + size * 0.68, y + size * 0.68);
+      ctx.moveTo(x + size * 0.68, y + size * 0.32);
+      ctx.lineTo(x + size * 0.32, y + size * 0.68);
       ctx.stroke();
       break;
     }
     case CellType.BRICK: {
       if (lit) {
-        // 点亮：糖果砖块 —— 贴纸描边 + 顶部光泽 + 底部厚度
-        ctx.fillStyle = p.border;
-        roundRect(ctx, x, y + size * 0.06, size, size, r);
-        ctx.fill();
-
-        paintSkin(ctx, skin, x, y, size, size, idx + 1, now);
-
-        // 顶部光泽
+        // 点亮：一块彩色黏土砖，表面印着皮肤纹理。
+        // 纹理以 0.42 半透叠加 —— 全不透明会把黏土的色阶体积整个盖掉，就变回贴纸了。
+        clayBlock(ctx, x, y, size, size, r, skinClay(p), idx + 17, { depth: 4, jitter: 0.005 });
         ctx.save();
         roundRect(ctx, x, y, size, size, r);
         ctx.clip();
-        ctx.fillStyle = 'rgba(255,255,255,0.26)';
-        roundRect(ctx, x + size * 0.10, y + size * 0.08, size * 0.80, size * 0.30, r * 0.8);
-        ctx.fill();
-        // 底部内侧压暗，做出厚度
-        const sh = ctx.createLinearGradient(0, y + size * 0.66, 0, y + size);
-        sh.addColorStop(0, 'rgba(0,0,0,0)');
-        sh.addColorStop(1, 'rgba(0,0,0,0.22)');
-        ctx.fillStyle = sh;
-        ctx.fillRect(x, y + size * 0.66, size, size * 0.34);
+        ctx.globalAlpha = 0.42;
+        paintSkin(ctx, skin, x, y, size, size, idx + 1, now);
+        ctx.globalAlpha = 1;
         ctx.restore();
-
-        // 白色贴纸边
-        ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+        // 奶油色贴纸边
+        ctx.strokeStyle = 'rgba(255,251,243,0.62)';
         ctx.lineWidth = 2;
         roundRect(ctx, x + 1, y + 1, size - 2, size - 2, r);
         ctx.stroke();
       } else {
-        // 未点亮：夜空玻璃块（可通行，等待被点亮）
-        ctx.fillStyle = TILE_EMPTY;
-        roundRect(ctx, x, y, size, size, r);
-        ctx.fill();
-        ctx.strokeStyle = TILE_EMPTY_EDGE;
-        ctx.lineWidth = 2;
-        roundRect(ctx, x + 1, y + 1, size - 2, size - 2, r);
-        ctx.stroke();
+        // 未点亮：一块奶油黏土砖（可通行，等着被点亮）
+        // 不画亮面色阶 —— 49 格全画会多出上百次 clip，而这层砖本来就不该抢戏
+        clayBlock(ctx, x, y, size, size, r, CLAY.cream, idx + 3, { depth: 2, lit: false, jitter: 0.005 });
       }
       break;
     }
     case CellType.ONEWAY: {
-      ctx.fillStyle = TILE_EMPTY;
-      roundRect(ctx, x, y, size, size, r);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,169,64,0.30)';
-      ctx.lineWidth = 2;
-      roundRect(ctx, x + 1, y + 1, size - 2, size - 2, r);
-      ctx.stroke();
-      drawArrow(ctx, x + size / 2, y + size / 2, size * 0.27, dir, '#FFA940');
+      clayBlock(ctx, x, y, size, size, r, CLAY.cream, idx + 5, { depth: 2, lit: false, jitter: 0.005 });
+      drawArrow(ctx, x + size / 2, y + size / 2, size * 0.27, dir, CLAY.terracotta.dark);
       break;
     }
     case CellType.START:
     case CellType.END: {
-      // 只铺底板，圆片延后到 drawEndpoints() 画（避免被连线横穿）
-      ctx.fillStyle = TILE_EMPTY;
-      roundRect(ctx, x, y, size, size, r);
-      ctx.fill();
+      // 只铺砖，圆片延后到 drawEndpoints() 画（避免被连线横穿）
+      clayBlock(ctx, x, y, size, size, r, CLAY.cream, idx + 7, { depth: 2, lit: false, jitter: 0.005 });
       break;
     }
   }
 
   if (hinted) {
     const pulse = 0.55 + 0.45 * Math.abs(Math.sin(now / 260));
-    ctx.strokeStyle = `rgba(255,213,79,${pulse.toFixed(2)})`;
-    ctx.lineWidth = 4;
+    ctx.strokeStyle = `rgba(255,236,140,${pulse.toFixed(2)})`;
+    ctx.lineWidth = 4.5;
     roundRect(ctx, x + 2, y + 2, size - 4, size - 4, r);
     ctx.stroke();
   }
   ctx.restore();
 }
 
-/** 起终点：糖果圆片（厚底边 + 竖向渐变 + 高光 + 描边文字）。 */
+/** 起终点：压进黏土板的一枚手捏圆片。 */
 function drawEndpoint(
   ctx: CanvasRenderingContext2D,
   cx: number,
   cy: number,
   r: number,
-  base: string,
-  dark: string,
-  light: string,
+  c: ClayColor,
   label: string,
 ): void {
-  // 底边
-  ctx.fillStyle = dark;
-  ctx.beginPath();
-  ctx.arc(cx, cy + r * 0.12, r, 0, Math.PI * 2);
-  ctx.fill();
+  clayDisc(ctx, cx, cy, r * 0.96, c, 900 + label.charCodeAt(0), { depth: 6, hi: 0.15 });
 
-  // 顶面
-  const g = ctx.createLinearGradient(cx, cy - r, cx, cy + r);
-  g.addColorStop(0, light);
-  g.addColorStop(0.45, base);
-  g.addColorStop(1, base);
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 高光：必须压在圆的上缘。「起」「终」笔画密集，高光落在中部会直接把字洗白。
-  ctx.fillStyle = 'rgba(255,255,255,0.32)';
-  ctx.beginPath();
-  ctx.ellipse(cx - r * 0.16, cy - r * 0.62, r * 0.40, r * 0.16, -0.30, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 白描边
-  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-  ctx.lineWidth = Math.max(2, r * 0.12);
-  ctx.beginPath();
-  ctx.arc(cx, cy, r * 0.94, 0, Math.PI * 2);
-  ctx.stroke();
-
-  // 文字：深色实心字，不描边。
-  // CJK 密集笔画（起/终）叠一层深色描边只会把内部空隙填死、糊成墨块；
-  // 圆片顶面本就偏浅（light 打头），深色字对比足够，也更像「贴纸印刷」而非发光字。
-  // 基线走 alphabetic + 手动补偿，与 ui/draw.ts 的 strokeText 保持同一视觉位置。
-  const fs = Math.floor(r * 0.62);
-  const dy = fs * 0.36;
-  ctx.font = `800 ${fs}px "PingFang SC", "Microsoft YaHei", system-ui, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = dark;
-  ctx.fillText(label, cx, cy + dy);
+  // 「起」「终」笔画密集，必须深色实心、不描边 —— 描边会把内部空隙填死成墨块
+  clayText(ctx, label, cx, cy, Math.floor(r * 0.72), {
+    fill: '#FFFBF3',
+    outline: c.shade,
+    outlineWidth: Math.max(2, r * 0.085),
+    emboss: false,
+  });
 }
 
 /** 绘制箭头。dir: 0=上 1=下 2=左 3=右 */

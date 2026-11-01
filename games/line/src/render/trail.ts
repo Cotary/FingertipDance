@@ -1,16 +1,25 @@
 import type { BoardLayout } from './layout';
 
+/** 一条黏土连线需要的三个色阶（从 CLAY.terracotta / CLAY.mustard 取）。 */
+export interface TrailClay {
+  base: string;
+  dark: string;
+  light: string;
+}
+
 /**
- * 绘制玩家路径连线。
- * 三层结构：外发光 → 糖果主线 → 白色内芯，交叉处点一颗白点（像串起来的糖珠）。
+ * 绘制玩家路径连线 —— 黏土版。
+ *
+ * 三层结构换成「压痕 → 暗层 → 主色（上移）→ 亮芯」，
+ * 读起来是一条**挤在黏土板上、被光从上方照到的黏土条**，而不是发光的能量线。
+ * 转折处放一颗小黏土珠，呼应手工感。
  */
 export function drawTrail(
   ctx: CanvasRenderingContext2D,
   path: number[],
   w: number,
   layout: BoardLayout,
-  color: string,
-  glow: string,
+  c: TrailClay,
 ): void {
   if (path.length === 0) return;
   const { cell, originX, originY } = layout;
@@ -32,33 +41,46 @@ export function drawTrail(
     });
   };
 
-  // 外发光（宽而透，不用 shadowBlur，逐帧更省）
+  // ① 压痕：线压在黏土板上留下的槽
   trace();
-  ctx.strokeStyle = glow;
+  ctx.strokeStyle = 'rgba(74,51,39,0.20)';
   ctx.lineWidth = cell * 0.30;
   ctx.stroke();
 
-  // 主线：竖向糖果渐变
+  // ② 暗层：黏土条的侧壁
   trace();
-  const g = ctx.createLinearGradient(0, pts[0].y, 0, pts[pts.length - 1].y);
-  g.addColorStop(0, '#7ED957');
-  g.addColorStop(0.5, color);
-  g.addColorStop(1, '#B388FF');
-  ctx.strokeStyle = g;
-  ctx.lineWidth = cell * 0.18;
+  ctx.strokeStyle = c.dark;
+  ctx.lineWidth = cell * 0.205;
   ctx.stroke();
 
-  // 白色内芯
+  // ③ 主色 + ④ 亮芯：整体上移，模拟光从上方来
+  ctx.save();
+  ctx.translate(0, -cell * 0.028);
   trace();
-  ctx.strokeStyle = 'rgba(255,255,255,0.70)';
-  ctx.lineWidth = cell * 0.06;
+  ctx.strokeStyle = c.base;
+  ctx.lineWidth = cell * 0.17;
   ctx.stroke();
 
-  // 转折点糖珠
+  trace();
+  ctx.strokeStyle = c.light;
+  ctx.lineWidth = cell * 0.055;
+  ctx.stroke();
+  ctx.restore();
+
+  // 转折点：一颗小黏土珠
   for (let i = 1; i < pts.length - 1; i++) {
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    const r = cell * 0.062;
+    ctx.fillStyle = c.dark;
     ctx.beginPath();
-    ctx.arc(pts[i].x, pts[i].y, cell * 0.055, 0, Math.PI * 2);
+    ctx.arc(pts[i].x, pts[i].y + r * 0.35, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = c.base;
+    ctx.beginPath();
+    ctx.arc(pts[i].x, pts[i].y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = c.light;
+    ctx.beginPath();
+    ctx.arc(pts[i].x - r * 0.25, pts[i].y - r * 0.30, r * 0.42, 0, Math.PI * 2);
     ctx.fill();
   }
 
