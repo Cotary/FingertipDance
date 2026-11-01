@@ -1,0 +1,20 @@
+# 生产环境配置模板。复制为 config.prod.yaml 并填入真实值，切勿提交到仓库。
+server:
+  port: 8080
+  addr: ":8080"
+
+db:
+  dsn: "root:STRONG_PASSWORD@tcp(mysql:3306)/fgame?charset=utf8mb4&parseTime=true&loc=Local&multiStatements=true"
+
+redis:
+  addr: "redis:6379"
+  db: 0
+
+jwt:
+  secret: "用 openssl rand -hex 32 生成"
+  ttl_hours: 720
+
+wechat:
+  appid: "wx真实AppID"
+  secret: "真实Secret"
+  mock: false

@@ -1,0 +1,44 @@
+# 生产 docker-compose（环境变量注入，密码/密钥不进仓库）。
+# 用法：在 server/ 目录执行
+#   docker compose -f deploy/docker-compose.prod.yml up -d --build
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: fgame
+    volumes:
+      - mysql-data:/var/lib/mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: always
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      DB_DSN: "root:${DB_PASSWORD}@tcp(mysql:3306)/fgame?charset=utf8mb4&parseTime=true&loc=Local&multiStatements=true"
+      REDIS_ADDR: "redis:6379"
+      JWT_SECRET: "${JWT_SECRET}"
+      WECHAT_APPID: "${WECHAT_APPID}"
+      WECHAT_SECRET: "${WECHAT_SECRET}"
+      WECHAT_MOCK: "false"
+    depends_on:
+      - mysql
+      - redis
+    volumes:
+      - ../data:/app/data
+
+volumes:
+  mysql-data:
+  redis-data:
