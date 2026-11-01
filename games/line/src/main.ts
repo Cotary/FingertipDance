@@ -1,9 +1,14 @@
 import { platform } from './platform';
-import { login, fetchConfig, fetchLevels } from './net/api';
-import { createState, findStart, tryMove, release, type GameState } from './game/state';
-import { computeLayout, DESIGN_W, DESIGN_H, type BoardLayout } from './render/layout';
+import { login, fetchConfig, reportProgress, reportSkip, reportEvent } from './net/api';
+import { Session } from './game/session';
+import { LevelStore, ProgressStore } from './game/progressStore';
+import { DESIGN_W, DESIGN_H } from './render/layout';
 import { drawBoard, type Palette } from './render/board';
 import { drawTrail } from './render/trail';
+import { drawHud, drawProgressBar, drawResult, drawButton, hitButton, type Button } from './ui/hud';
+import { findHint } from './core/solver';
+import { CellType } from './core/types';
+import type { GameState } from './game/state';
 
 const PALETTE: Palette = {
   block: '#39415C',
@@ -17,19 +22,24 @@ const PALETTE: Palette = {
 const { canvas, width, height, dpr } = platform.getCanvas();
 const ctx = canvas.getContext('2d')!;
 
-/** 缩放与偏移。 */
 const scale = Math.min(width / DESIGN_W, height / DESIGN_H);
 const offsetX = (width - DESIGN_W * scale) / 2;
 const offsetY = (height - DESIGN_H * scale) / 2;
 
-let state: GameState | null = null;
-let layout: BoardLayout | null = null;
-let pointerDown = false;
+const session = new Session();
+const levels = new LevelStore();
+const progress = new ProgressStore();
 
-/** 画布坐标 → 设计坐标系坐标。 */
+let config: any = null;
+let phase: 'loading' | 'playing' | 'result' = 'loading';
+let resultButtons: Button[] = [];
+let resultData: { levelIdx: number; steps: number; shortest: number; timeMs: number; unlockedSkin: any } | null = null;
+let pressedBtn: string | null = null;
+let pendingLevel = 1;
+
+/** 画布坐标 → 设计坐标。 */
 function toDesign(clientX: number, clientY: number): { x: number; y: number } {
   if (platform.name === 'wechat') {
-    // 微信触摸事件给的是逻辑像素，直接用
     return { x: (clientX - offsetX) / scale, y: (clientY - offsetY) / scale };
   }
   const rect = canvas.getBoundingClientRect();
@@ -38,47 +48,131 @@ function toDesign(clientX: number, clientY: number): { x: number; y: number } {
   return { x: (px / dpr - offsetX) / scale, y: (py / dpr - offsetY) / scale };
 }
 
-/** 设计坐标 → 最近的格子索引。 */
-function pickCell(dx: number, dy: number): number {
-  if (!state || !layout) return -1;
-  const { cell, originX, originY } = layout;
-  const x = Math.floor((dx - originX) / cell);
-  const y = Math.floor((dy - originY) / cell);
-  if (x < 0 || y < 0 || x >= state.level.w || y >= state.level.h) return -1;
-  return y * state.level.w + x;
-}
+/** 顶部操作按钮。 */
+const hintBtn: Button = { x: DESIGN_W - 210, y: 100, w: 90, h: 60, label: '提示', kind: 'ghost', id: 'hint' };
+const skipBtn: Button = { x: DESIGN_W - 110, y: 100, w: 90, h: 60, label: '跳过', kind: 'ghost', id: 'skip' };
 
-/** 触摸事件处理。 */
-function onDown(clientX: number, clientY: number) {
-  if (!state || state.phase !== 'idle') return;
-  const d = toDesign(clientX, clientY);
-  const idx = pickCell(d.x, d.y);
-  if (idx !== findStart(state.level)) return;
-  state.phase = 'dragging';
-  state.path = [idx];
-  state.lit.add(idx);
-  pointerDown = true;
-}
+session.on((e) => {
+  if (e.type === 'won') void onWin(e.steps, e.timeMs, e.path);
+  if (e.type === 'break') platform.vibrate();
+  if (e.type === 'moved') reportEvent('tile_light', { level_idx: session.state?.level.idx });
+});
 
-function onMove(clientX: number, clientY: number) {
-  if (!state || !pointerDown) return;
-  const d = toDesign(clientX, clientY);
-  const idx = pickCell(d.x, d.y);
-  if (idx < 0) return;
-  const result = tryMove(state, idx);
-  if (result === 'break') {
-    platform.vibrate();
+/** 通关处理：上报成绩。 */
+async function onWin(steps: number, timeMs: number, path: number[]) {
+  const level = session.state!.level;
+  phase = 'result';
+  reportEvent('level_pass', { level_idx: level.idx, steps, time_ms: timeMs, skipped: false });
+
+  let unlockedSkin: any = null;
+  try {
+    const res = await reportProgress(level.idx, steps, timeMs, path);
+    unlockedSkin = res.unlockedSkin;
+    if (res.unlockedSkin) {
+      progress.unlockSkin(res.unlockedSkin.id);
+      platform.vibrate();
+    }
+    progress.sync({ maxLevel: res.maxLevel, unlockedSkins: res.unlockedSkins });
+  } catch (e) {
+    console.error('上报成绩失败', e);
   }
+
+  resultData = {
+    levelIdx: level.idx,
+    steps,
+    shortest: level.shortest,
+    timeMs,
+    unlockedSkin,
+  };
+  pendingLevel = level.idx + 1;
 }
 
+/** 进入关卡。 */
+async function enterLevel(idx: number) {
+  const lv = await levels.ensure(idx, config.levelVersion);
+  if (!lv) {
+    console.error('关卡加载失败', idx);
+    return;
+  }
+  session.load(lv);
+  phase = 'playing';
+  reportEvent('level_start', { level_idx: idx, diff: lv.diff, w: lv.w, h: lv.h });
+}
+
+/** 使用提示。 */
+async function useHint() {
+  const st = session.state;
+  if (!st || (st.phase !== 'idle' && st.phase !== 'dragging')) return;
+  const head = st.path.length ? st.path[st.path.length - 1] : findStartIdx(st);
+  const hint = findHint(st.level.grid, { x: head % st.level.w, y: Math.floor(head / st.level.w) }, 2);
+  if (hint.length === 0) {
+    console.log('当前无法给出提示');
+    return;
+  }
+  // 广告逻辑在 T17 接入；当前直接给提示
+  session.setHint(hint);
+  reportEvent('hint_use', { level_idx: st.level.idx, via_ad: false });
+}
+
+/** 跳过关卡。 */
+async function useSkip() {
+  const st = session.state;
+  if (!st) return;
+  // 广告逻辑在 T17 接入
+  await reportSkip(st.level.idx);
+  session.markSkipped();
+  await onWin(st.level.shortest, 0, []);
+  reportEvent('skip_use', { level_idx: st.level.idx, via_ad: true });
+}
+
+/** 找起点索引。 */
+function findStartIdx(st: GameState): number {
+  for (let y = 0; y < st.level.h; y++) {
+    for (let x = 0; x < st.level.w; x++) {
+      if (st.level.grid[y][x].type === CellType.START) return y * st.level.w + x;
+    }
+  }
+  return 0;
+}
+
+/** 指针按下。 */
+function onDown(clientX: number, clientY: number) {
+  const d = toDesign(clientX, clientY);
+  if (phase === 'result') {
+    for (const b of resultButtons) {
+      if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
+    }
+    return;
+  }
+  if (phase !== 'playing') return;
+  if (hitButton(hintBtn, d.x, d.y)) { pressedBtn = 'hint'; return; }
+  if (hitButton(skipBtn, d.x, d.y)) { pressedBtn = 'skip'; return; }
+  session.pointerDown(d.x, d.y);
+}
+
+/** 指针移动。 */
+function onMove(clientX: number, clientY: number) {
+  if (phase !== 'playing') return;
+  const d = toDesign(clientX, clientY);
+  session.pointerMove(d.x, d.y);
+}
+
+/** 指针抬起。 */
 function onUp() {
-  if (!state || !pointerDown) return;
-  pointerDown = false;
-  const won = release(state);
-  if (won) console.log('通关！步数', state.path.length - 1);
+  if (pressedBtn) {
+    const id = pressedBtn;
+    pressedBtn = null;
+    if (id === 'hint') void useHint();
+    else if (id === 'skip') void useSkip();
+    else if (id === 'next') void enterLevel(pendingLevel);
+    else if (id === 'share') { void platform.share({ title: `我卡在第 ${session.state?.level.idx ?? 1} 关` }); reportEvent('share_click', {}); }
+    else if (id === 'skins') { /* T16 实现皮肤页 */ }
+    return;
+  }
+  if (phase === 'playing') session.pointerUp();
 }
 
-// Web 端事件绑定
+// Web 事件绑定
 if (platform.name === 'web') {
   canvas.addEventListener('pointerdown', (e) => onDown(e.clientX, e.clientY));
   canvas.addEventListener('pointermove', (e) => onMove(e.clientX, e.clientY));
@@ -92,38 +186,58 @@ function frame() {
   ctx.scale(dpr * scale, dpr * scale);
   ctx.translate(offsetX / dpr, offsetY / dpr);
 
-  // 背景
   ctx.fillStyle = '#141824';
   ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
 
-  if (state && layout) {
-    drawBoard(ctx, state.level, layout, {
-      lit: state.lit,
-      path: state.path,
-      hint: state.hint,
-      shakeCell: state.shakeCell,
-      shakeAt: state.shakeAt,
+  const st = session.state;
+  if (st && session.layout) {
+    drawBoard(ctx, st.level, session.layout, {
+      lit: st.lit,
+      path: st.path,
+      hint: st.hint,
+      shakeCell: st.shakeCell,
+      shakeAt: st.shakeAt,
     }, PALETTE, Date.now());
 
-    drawTrail(ctx, state.path, state.level.w, layout, '#6692F5', 'rgba(102,146,245,0.35)');
+    drawTrail(ctx, st.path, st.level.w, session.layout, '#6692F5', 'rgba(102,146,245,0.35)');
+
+    drawHud(ctx, st.level.idx, progress.current.currentSkin, progress.current.unlockedSkins.length, config?.skins?.length ?? 13);
+    drawProgressBar(ctx, progress.current.maxLevel, config?.levelCount ?? 1000);
+
+    // 顶部按钮
+    drawButton(ctx, hintBtn, pressedBtn === 'hint');
+    drawButton(ctx, skipBtn, pressedBtn === 'skip');
+  }
+
+  if (phase === 'result' && resultData) {
+    resultButtons = drawResult(
+      ctx, resultData.levelIdx, resultData.steps, resultData.shortest,
+      resultData.timeMs, resultData.unlockedSkin,
+      progress.current.maxLevel / (config?.levelCount ?? 1000),
+    );
   }
 
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
-/** 启动流程。 */
+/** 启动。 */
 async function boot() {
+  progress.restore();
   try {
-    await login();
-    const cfg = await fetchConfig();
-    const levels = await fetchLevels(1, 20);
-    if (levels.length === 0) throw new Error('关卡表为空');
-    state = createState(levels[0]);
-    layout = computeLayout(levels[0].w, levels[0].h);
-    console.log('启动成功，关卡版本', cfg.levelVersion);
+    const loginRes = await login();
+    progress.sync({
+      maxLevel: loginRes.maxLevel || 1,
+      unlockedSkins: loginRes.unlockedSkins,
+    });
+    config = await fetchConfig();
+    await levels.init(config.levelVersion);
+    const startIdx = Math.min(progress.current.maxLevel || 1, levels.loadedMax || 1);
+    await enterLevel(startIdx);
+    reportEvent('app_start', {});
   } catch (e) {
     console.error('启动失败', e);
+    phase = 'loading';
   }
 }
 boot();

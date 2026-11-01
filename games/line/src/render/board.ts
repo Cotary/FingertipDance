@@ -1,4 +1,4 @@
-import type { Level } from '../core/types';
+import type { LevelData } from '../core/levelTable';
 import { CellType } from '../core/types';
 import type { BoardLayout } from './layout';
 
@@ -29,7 +29,7 @@ export interface Palette {
  */
 export function drawBoard(
   ctx: CanvasRenderingContext2D,
-  level: Level,
+  level: LevelData,
   layout: BoardLayout,
   state: BoardRenderState,
   palette: Palette,

@@ -1,11 +1,12 @@
-import { CellType, type Level } from '../core/types';
+import { CellType } from '../core/types';
+import type { LevelData } from '../core/levelTable';
 import { idxOf, canEnter } from '../core/grid';
 
 export type Phase = 'idle' | 'dragging' | 'won' | 'lost';
 
 /** 关内状态。 */
 export interface GameState {
-  level: Level;
+  level: LevelData;
   phase: Phase;
   /** 当前路径（格子索引序列） */
   path: number[];
@@ -26,7 +27,7 @@ export interface GameState {
 }
 
 /** 创建初始状态。 */
-export function createState(level: Level): GameState {
+export function createState(level: LevelData): GameState {
   return {
     level,
     phase: 'idle',
@@ -42,7 +43,7 @@ export function createState(level: Level): GameState {
 }
 
 /** 找到起点索引。 */
-export function findStart(level: Level): number {
+export function findStart(level: LevelData): number {
   for (let y = 0; y < level.h; y++) {
     for (let x = 0; x < level.w; x++) {
       if (level.grid[y][x].type === CellType.START) return idxOf(x, y, level.w);
