@@ -1,13 +1,11 @@
 /**
- * 关卡地图页。对应参考图 52_2.jpg。
- * 夜空背景 + 发光糖果路径 + 编号糖果节点 + 星级 + 锁 + 章节里程碑。
+ * 关卡地图页。
+ * 陶土桌面 + 一条嵌进桌面的黏土路 + 手捏关号圆片 + 星级 + 锁 + 章节里程碑。
  * 1000 关用虚拟滚动，只渲染可视区附近节点。
  */
 import { DESIGN_W, DESIGN_H } from '../render/layout';
-import { roundRect } from '../render/board';
 import { drawButton, type Button } from './hud';
-import { CANDY } from './theme';
-import { candyStar, glass, halo, strokeText } from './draw';
+import { CLAY, CLAY_UI, clayBlock, clayDisc, clayStar, clayText } from './clay';
 
 /** 相邻节点的垂直间距（设计坐标系）。 */
 export const NODE_GAP = 132;
@@ -99,16 +97,18 @@ export function scrollToLevel(idx: number): number {
 export function drawMapView(ctx: CanvasRenderingContext2D, st: MapViewState, now: number): Button[] {
   const { first, last } = visibleRange(st.scrollY, st.levelCount);
 
-  // ── 路线：深色底槽 + 糖果渐变芯 ──
+  // ── 路线：嵌进桌面的一道凹槽 + 压上去的黏土条（已走 / 未走两种色） ──
+  // 注意：路径点在 moveTo/lineTo 时就按当时的变换定死了，先建路径再 translate 是无效的。
+  // 所有垂直偏移必须直接算进坐标（dy 参数）。
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  const trace = (): void => {
+  const trace = (from: number, to: number, dy = 0): void => {
     let started = false;
-    for (let i = first; i <= last + 1; i++) {
+    for (let i = from; i <= to; i++) {
       const p = mapNodePos(i);
-      const cy = p.y - st.scrollY;
+      const cy = p.y - st.scrollY + dy;
       if (!started) {
         ctx.moveTo(p.x, cy);
         started = true;
@@ -118,28 +118,47 @@ export function drawMapView(ctx: CanvasRenderingContext2D, st: MapViewState, now
     }
   };
 
+  const lastSeg = last + 1;
+  // 已走过的最后一段：关号 maxLevel 之后就是没走的路
+  const doneSeg = Math.min(lastSeg, st.maxLevel);
+
+  // 凹槽：比桌面深一档，路才像「被按进桌面」
   ctx.beginPath();
-  trace();
-  ctx.strokeStyle = 'rgba(8,4,30,0.55)';
-  ctx.lineWidth = 18;
+  trace(first, lastSeg);
+  ctx.strokeStyle = CLAY.sand.shade;
+  ctx.lineWidth = 22;
   ctx.stroke();
 
-  ctx.beginPath();
-  trace();
-  const rg = ctx.createLinearGradient(0, 0, 0, VIEW_BOTTOM);
-  rg.addColorStop(0, CANDY.green.base);
-  rg.addColorStop(0.5, CANDY.blue.base);
-  rg.addColorStop(1, CANDY.purple.base);
-  ctx.strokeStyle = rg;
-  ctx.lineWidth = 13;
-  ctx.stroke();
+  // 未走的路：浅棕，像还没压实的土
+  if (doneSeg < lastSeg) {
+    ctx.beginPath();
+    trace(Math.max(first, doneSeg), lastSeg);
+    ctx.strokeStyle = CLAY.cream.dark;
+    ctx.lineWidth = 15;
+    ctx.stroke();
+  }
 
-  // 线上的一道细高光（不做白色覆盖，避免把糖果色冲淡）
-  ctx.beginPath();
-  trace();
-  ctx.strokeStyle = 'rgba(255,255,255,0.42)';
-  ctx.lineWidth = 3;
-  ctx.stroke();
+  // 已走的路：一条陶土条（先画下移 5px 的暗面，再画主色 → 底边露暗）
+  if (doneSeg > first) {
+    ctx.beginPath();
+    trace(first, doneSeg, 5);
+    ctx.strokeStyle = CLAY.terracotta.dark;
+    ctx.lineWidth = 15;
+    ctx.stroke();
+
+    ctx.beginPath();
+    trace(first, doneSeg);
+    ctx.strokeStyle = CLAY.terracotta.base;
+    ctx.lineWidth = 15;
+    ctx.stroke();
+
+    // 大范围低 alpha 柔光（黏土不许有高光条，只能这样提亮上缘）
+    ctx.beginPath();
+    trace(first, doneSeg, -3);
+    ctx.strokeStyle = 'rgba(255,246,233,0.22)';
+    ctx.lineWidth = 5;
+    ctx.stroke();
+  }
   ctx.restore();
 
   // ── 节点 ──
@@ -148,19 +167,23 @@ export function drawMapView(ctx: CanvasRenderingContext2D, st: MapViewState, now
     drawMapNode(ctx, i, p.x, p.y - st.scrollY, st, now);
   }
 
-  // ── 顶部标题栏（渐变遮罩 + 玻璃胶囊） ──
-  const fade = ctx.createLinearGradient(0, 0, 0, 132);
-  fade.addColorStop(0, 'rgba(10,6,32,0.95)');
-  fade.addColorStop(0.55, 'rgba(10,6,32,0.40)');
-  fade.addColorStop(1, 'rgba(10,6,32,0)');
+  // ── 顶部标题栏：陶土色渐隐遮罩 + 关号胶囊 ──
+  // 遮罩：0~150 完全实（盖住滚出去的节点和它下方的星星），150~204 淡出。
+  // 星星画在节点下方 54px 处，遮罩只到 150 的话星星会从半透明段透出来，
+  // 和「第 37 关」胶囊叠在一起，看起来像胶囊上沾了脏东西。
+  const fade = ctx.createLinearGradient(0, 0, 0, 204);
+  fade.addColorStop(0, CLAY_UI.bgTop);
+  fade.addColorStop(0.82, CLAY_UI.bgTop);
+  fade.addColorStop(1, 'rgba(236,217,196,0)');
   ctx.fillStyle = fade;
-  ctx.fillRect(0, 0, DESIGN_W, 132);
+  ctx.fillRect(0, 0, DESIGN_W, 204);
 
   const pw = 240, ph = 64, px = (DESIGN_W - pw) / 2, py = 90;
-  glass(ctx, px, py, pw, ph, ph / 2, { fill: 'rgba(255,255,255,0.14)' });
-  strokeText(ctx, `第 ${st.maxLevel} 关`, DESIGN_W / 2, py + ph / 2 + 1, 32, {
-    stroke: 'rgba(8,4,30,0.55)',
-    strokeWidth: 5,
+  clayBlock(ctx, px, py, pw, ph, ph * 0.5, CLAY.terracotta, 771, { depth: 9, hi: 0.07 });
+  clayText(ctx, `第 ${st.maxLevel} 关`, DESIGN_W / 2, py + ph / 2, 32, {
+    fill: '#FFF6E9',
+    outline: 'rgba(90,38,16,0.5)',
+    outlineWidth: 5,
   });
 
   const back: Button = { x: 30, y: 92, w: 96, h: 60, label: '返回', kind: 'ghost', id: 'navHome' };
@@ -170,10 +193,11 @@ export function drawMapView(ctx: CanvasRenderingContext2D, st: MapViewState, now
   if (st.toast && now - st.toastAt < 1800) {
     const alpha = Math.min(1, (1800 - (now - st.toastAt)) / 400);
     ctx.globalAlpha = alpha;
-    glass(ctx, DESIGN_W / 2 - 210, 176, 420, 80, 26, { fill: 'rgba(255,107,107,0.92)', edge: 'rgba(255,255,255,0.6)' });
-    strokeText(ctx, st.toast, DESIGN_W / 2, 216, 26, {
-      stroke: CANDY.coral.dark,
-      strokeWidth: 4,
+    clayBlock(ctx, DESIGN_W / 2 - 210, 176, 420, 80, 26, CLAY.rose, 772, { depth: 8, hi: 0.06 });
+    clayText(ctx, st.toast, DESIGN_W / 2, 216, 26, {
+      fill: '#FFF6E9',
+      outline: 'rgba(88,24,24,0.45)',
+      outlineWidth: 4,
     });
     ctx.globalAlpha = 1;
   }
@@ -197,112 +221,77 @@ function drawMapNode(
 
   const r = current ? 40 : 34;
 
-  // 当前关：双层呼吸光环
+  // 当前关：脉冲描边环（黏土不做发光，用「有人在敲这块土」的描边代替）
   if (current) {
     const pulse = (Math.sin(now / 400) + 1) / 2;
-    ctx.strokeStyle = `rgba(255,255,255,${(0.25 + pulse * 0.45).toFixed(3)})`;
+    ctx.strokeStyle = `rgba(255,246,233,${(0.30 + pulse * 0.45).toFixed(3)})`;
     ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.arc(x, y, r + 10 + pulse * 7, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.strokeStyle = `rgba(126,217,87,${(0.18 + pulse * 0.32).toFixed(3)})`;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(x, y, r + 22 + pulse * 9, 0, Math.PI * 2);
+    ctx.arc(x, y, r + 12 + pulse * 8, 0, Math.PI * 2);
     ctx.stroke();
   }
 
   if (locked) {
-    // 未解锁：深紫实心片 + 关号 + 小锁（比纯玻璃片更容易识别为「关卡」）
-    ctx.fillStyle = 'rgba(40,30,92,0.85)';
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.34)';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.stroke();
-    strokeText(ctx, String(idx), x, y - 4, 24, {
+    // 未解锁：一块深蓝黏土片。比球面/桌面都深，才能读作「压在上面但关着」
+    clayDisc(ctx, x, y, r, CLAY.lockTile, 900 + idx, { depth: 3, hi: 0.08 });
+    // 不放锁：34px 的圆装不下能读清的挂锁，会变成一个白点。
+    // 未解锁的表达交给「更深 + 更沉（depth 小）+ 灰字」。
+    clayText(ctx, String(idx), x, y, 24, {
       weight: 600,
-      fill: 'rgba(255,255,255,0.66)',
+      fill: 'rgba(255,246,233,0.66)',
+      outlineWidth: 0,
+      emboss: false,
     });
-    const lx = x, ly = y + r * 0.56;
-    ctx.fillStyle = 'rgba(255,255,255,0.66)';
-    roundRect(ctx, lx - 8, ly - 2, 16, 12, 3);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.66)';
-    ctx.lineWidth = 2.4;
-    ctx.beginPath();
-    ctx.arc(lx, ly - 3, 5.5, Math.PI, 0);
-    ctx.stroke();
     return;
   }
 
-  const c = current ? CANDY.green : CANDY.gold;
-  halo(ctx, x, y, r * 2.1, current ? 'rgba(126,217,87,0.35)' : 'rgba(255,213,79,0.20)');
+  clayDisc(ctx, x, y, r, current ? CLAY.mustard : CLAY.mint, 900 + idx, { depth: 7, hi: 0.16 });
 
-  // 厚底边
-  ctx.fillStyle = c.dark;
-  ctx.beginPath();
-  ctx.arc(x, y + 6, r, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 顶面
-  const g = ctx.createLinearGradient(x, y - r, x, y + r);
-  g.addColorStop(0, c.light);
-  g.addColorStop(0.48, c.base);
-  g.addColorStop(1, c.base);
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 顶部高光
-  ctx.fillStyle = 'rgba(255,255,255,0.40)';
-  ctx.beginPath();
-  ctx.ellipse(x - r * 0.22, y - r * 0.48, r * 0.46, r * 0.24, -0.35, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 白描边
-  ctx.strokeStyle = 'rgba(255,255,255,0.90)';
-  ctx.lineWidth = current ? 4 : 3;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.stroke();
-
-  // 关号
-  strokeText(ctx, String(idx), x, y + 1, current ? 34 : 28, {
-    stroke: c.dark,
-    strokeWidth: current ? 6 : 5,
+  clayText(ctx, String(idx), x, y, current ? 34 : 28, {
+    fill: '#FFF6E9',
+    outline: current ? CLAY.mustard.shade : CLAY.mint.shade,
+    outlineWidth: current ? 6 : 5,
   });
 
   // 星级（已通关）
   if (!current && done && star > 0) {
     for (let i = 0; i < 3; i++) {
-      candyStar(ctx, x + (i - 1) * 24, y + r + 18, 10, i < star);
+      const on = i < star;
+      clayStar(
+        ctx,
+        x + (i - 1) * 25,
+        y + r + 20,
+        11,
+        on ? CLAY.mustard : CLAY.sand,
+        950 + i,
+        { depth: 3, lit: on },
+      );
     }
   }
 
-  // 章节里程碑：每 10 关一个糖果旗帜
+  // 章节里程碑：每 10 关一面小旗
   if (idx % 10 === 0) {
     const fx = x + (x > DESIGN_W / 2 ? -r - 30 : r + 30);
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = CLAY.cream.shade;
+    ctx.lineWidth = 4;
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(fx, y - 24);
-    ctx.lineTo(fx, y + 16);
+    ctx.moveTo(fx, y - 26);
+    ctx.lineTo(fx, y + 18);
     ctx.stroke();
-    ctx.fillStyle = CANDY.pink.base;
+    ctx.fillStyle = CLAY.rose.dark;
     ctx.beginPath();
-    ctx.moveTo(fx, y - 24);
-    ctx.lineTo(fx + 26, y - 15);
+    ctx.moveTo(fx, y - 26);
+    ctx.lineTo(fx + 28, y - 16);
     ctx.lineTo(fx, y - 6);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    ctx.fillStyle = CLAY.rose.base;
+    ctx.beginPath();
+    ctx.moveTo(fx, y - 25);
+    ctx.lineTo(fx + 26, y - 16);
+    ctx.lineTo(fx, y - 8);
+    ctx.closePath();
+    ctx.fill();
   }
 }

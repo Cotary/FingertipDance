@@ -11,7 +11,7 @@
  */
 import { DESIGN_W } from '../render/layout';
 import { roundRect } from '../render/board';
-import type { Button } from './hud';
+import { drawAvatar, type Button } from './hud';
 import {
   CLAY,
   CLAY_UI,
@@ -23,7 +23,7 @@ import {
   type ClayColor,
 } from './clay';
 
-export { drawAvatar } from './hud';
+export { drawAvatar };
 
 /** 主页状态。 */
 export interface HomePageState {
@@ -45,13 +45,25 @@ export interface HomePageState {
 // 球要足够大才撑得住页面；上移到 486 是为了压掉玩家条到球之间那段 226px 的空
 const PLANET = { x: DESIGN_W / 2, y: 486, r: 178 };
 
-/** 轨道定义（半径比、倾角、起始相位、配色）。 */
-// k 必须 > 1：k=1.0 时最内圈轨道半径正好等于球半径，节点会半嵌进球面
+/**
+ * 轨道定义（半径比、倾角、起始相位）。
+ *
+ * 两条硬约束，改这里之前先看：
+ * 1. **短轴必须 > 球半径 + 节点半径**。旧版 `ry = rx * 0.34` 太扁，6 个节点里有 3 个
+ *    落在球面内，和球糊成一片。这里把扁度提到 0.86，短轴才能托住节点。
+ * 2. **长轴不能出屏**：`k` 上限约 1.85，否则最外圈节点会切到 750 宽之外。
+ */
+// phase 取 120° 均分（0 / 2π/3 / 4π/3）：这样只有 3 个节点时是正三角，
+// 6 个节点时（第二圈 +π）正好补成 60° 均分。旧值 0/1.1/2.3 会让 3 个节点全挤在下半圈。
+const TAU = Math.PI * 2;
 const ORBITS = [
-  { k: 1.14, tilt: -0.22, phase: 0.0 },
-  { k: 1.44, tilt: 0.18, phase: 1.1 },
-  { k: 1.72, tilt: -0.1, phase: 2.3 },
+  { k: 1.42, tilt: -0.22, phase: 0 },
+  { k: 1.62, tilt: 0.18, phase: TAU / 3 },
+  { k: 1.82, tilt: -0.1, phase: (TAU * 2) / 3 },
 ];
+
+/** 轨道的短轴比例。低于 0.8 就会有节点落进球面。 */
+const ORBIT_FLAT = 0.86;
 
 /** 星球表面的黏土大陆（相对球心的偏移与半径）。 */
 const CONTINENTS = [
@@ -92,13 +104,8 @@ export function drawHomePage(ctx: CanvasRenderingContext2D, st: HomePageState, n
 function drawPlayerBar(ctx: CanvasRenderingContext2D, st: HomePageState): void {
   clayBlock(ctx, 28, 40, DESIGN_W - 56, 104, 36, CLAY.cream, 3, { depth: 10 });
 
-  // 头像：薄荷黏土球
-  clayDisc(ctx, 84, 92, 38, CLAY.mint, 5, { depth: 6 });
-  clayText(ctx, (st.nickname || '玩').slice(0, 1), 84, 92, 34, {
-    fill: '#FFFBF3',
-    outlineWidth: 5,
-    outline: 'rgba(56,107,87,0.6)',
-  });
+  // 头像：与「我的」页同一套（蓝黏土圆片 + 压印首字）
+  drawAvatar(ctx, 84, 92, 38, st.avatar, st.nickname);
 
   clayText(ctx, st.nickname || '玩家', 140, 74, 32, {
     align: 'left',
@@ -176,18 +183,19 @@ function drawOrbits(ctx: CanvasRenderingContext2D): void {
     ctx.save();
     ctx.rotate(o.tilt);
     const rx = PLANET.r * o.k;
-    const ry = PLANET.r * o.k * 0.34;
+    const ry = PLANET.r * o.k * ORBIT_FLAT;
 
-    ctx.strokeStyle = 'rgba(74,51,39,0.26)';
-    ctx.lineWidth = 7;
+    // 轨道是布景，不是主角：0.26 会和三圈叠成一只靶子，压到 0.15 让它退到背景去
+    ctx.strokeStyle = 'rgba(74,51,39,0.15)';
+    ctx.lineWidth = 6;
     ctx.beginPath();
     ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
     ctx.stroke();
 
-    ctx.strokeStyle = 'rgba(255,246,233,0.42)';
-    ctx.lineWidth = 2.2;
+    ctx.strokeStyle = 'rgba(255,246,233,0.36)';
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.ellipse(0, -1.8, rx, ry, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, -1.6, rx, ry, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }
@@ -218,7 +226,7 @@ export function satelliteLevels(st: HomePageState): Satellite[] {
     const lap = Math.floor(slot / ORBITS.length);
     const ang = o.phase + lap * Math.PI;
     const rx = PLANET.r * o.k;
-    const ry = PLANET.r * o.k * 0.34;
+    const ry = PLANET.r * o.k * ORBIT_FLAT;
     out.push({
       level: lv,
       x: PLANET.x + Math.cos(ang) * rx,
@@ -243,7 +251,8 @@ function drawSatellite(ctx: CanvasRenderingContext2D, s: Satellite, now: number)
     ctx.stroke();
   }
 
-  clayDisc(ctx, s.x, s.y, r, c, 100 + s.level, { depth: 8, lit: s.state !== 'locked' });
+  // depth 必须够重：节点会压在球面上，投影是它「浮在球前面」的唯一证据
+  clayDisc(ctx, s.x, s.y, r, c, 100 + s.level, { depth: 15, lit: s.state !== 'locked' });
 
   // 关号：压印
   clayText(ctx, String(s.level), s.x, s.y - 1, s.state === 'current' ? 30 : 22, {
@@ -372,9 +381,10 @@ function drawProgress(ctx: CanvasRenderingContext2D, st: HomePageState): void {
   const bw = DESIGN_W - 120;
   const bh = 22;
 
-  // 凹槽：比底色深一档的"压进桌面的槽"
+  // 凹槽：比底色深一档的"压进桌面的槽"。
+  // #C2A284 在 #E3C9AE 的桌面上只差一点点，37/1000 时整条槽会读成「没有」
   const groove = rrectPts(bx, by, bw, bh, bh / 2, 501, 0.004);
-  ctx.fillStyle = '#C2A284';
+  ctx.fillStyle = CLAY.sand.shade;
   tracePts(ctx, groove);
   ctx.fill();
   // 槽内上缘暗线（凹进去的签名）

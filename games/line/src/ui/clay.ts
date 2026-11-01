@@ -243,8 +243,9 @@ export function clayBlock(
   tracePts(ctx, pts);
   ctx.fill();
 
-  // 主色：上移 + 微缩，底边露出一条 dark
-  const lift = Math.max(1.5, h * 0.05);
+  // 主色：上移 + 微缩，底边露出一条 dark。
+  // 上限 11px：h*0.05 在 380 高的大块上会露出 19px 的深色横带，读作「一条黑边」而不是厚度。
+  const lift = Math.max(1.5, Math.min(h * 0.05, 11));
   ctx.fillStyle = c.base;
   tracePts(ctx, pts, 0, -lift, 0.992, cx, cy);
   ctx.fill();
@@ -313,6 +314,90 @@ export function clayDisc(
   ctx.ellipse(cx - r * 0.26, cy - r * 0.34, r * 0.34, r * 0.24, -0.42, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+}
+
+/** 五角星的抖动手捏轮廓（顺时针）。 */
+export function starPts(cx: number, cy: number, r: number, seed: number, jitter = 0.008): Pt[] {
+  const pts: Pt[] = [];
+  const inner = r * 0.47;
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+    const base = i % 2 === 0 ? r : inner;
+    const rr = base * (1 + (h1(seed, i) - 0.5) * 2 * jitter);
+    pts.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]);
+  }
+  return pts;
+}
+
+/** 黏土星：暗底 + 主色上移 + 亮面。用于星级、里程碑。 */
+export function clayStar(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+  c: ClayColor,
+  seed: number,
+  opts: ClayOpts = {},
+): void {
+  const pts = starPts(cx, cy, r, seed, opts.jitter ?? 0.008);
+  const depth = opts.depth ?? 5;
+
+  if (depth > 0) softShadow(ctx, pts, depth, 0.085, cx, cy);
+
+  ctx.fillStyle = c.dark;
+  tracePts(ctx, pts);
+  ctx.fill();
+
+  const lift = Math.max(1.2, r * 0.10);
+  ctx.fillStyle = c.base;
+  tracePts(ctx, pts, 0, -lift, 0.975, cx, cy);
+  ctx.fill();
+
+  if (opts.lit === false) return;
+
+  ctx.save();
+  tracePts(ctx, pts, 0, -lift, 0.975, cx, cy);
+  ctx.clip();
+  ctx.fillStyle = c.light;
+  tracePts(ctx, pts, -r * 0.06, -lift - (opts.hi ?? 0.20) * r, 0.72, cx, cy);
+  ctx.fill();
+  ctx.restore();
+}
+
+// ────────────────────────────── 通用小零件 ──────────────────────────────
+
+/**
+ * 黏土锁：一枚压在格子上的小挂锁（锁体 + 锁梁）。
+ * 地图 / 皮肤 / 我的 三处皮肤墙共用，避免各写一套画法导致形状不一致。
+ */
+export function clayLock(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  scale = 1,
+  c: ClayColor = CLAY.cream,
+): void {
+  const bw = 24 * scale;
+  const bh = 20 * scale;
+  const r = bw * 0.30;
+  const by = cy - bh * 0.28;
+
+  // 锁体
+  clayBlock(ctx, cx - bw / 2, by, bw, bh, r, c, 941, { depth: 3 * scale, hi: 0.10, jitter: 0.004 });
+
+  // 锁梁：粗半圆，压在锁体上沿
+  ctx.strokeStyle = c.shade;
+  ctx.lineWidth = 4.5 * scale;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(cx, by + 1, bw * 0.27, Math.PI, 0);
+  ctx.stroke();
+
+  // 锁孔
+  ctx.fillStyle = c.shade;
+  ctx.beginPath();
+  ctx.arc(cx, by + bh * 0.48, 2.6 * scale, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 // ────────────────────────────── 文字 ──────────────────────────────

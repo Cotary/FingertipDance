@@ -11,7 +11,6 @@ import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { RecordingCtx } from './canvas2svg';
 import { DESIGN_W, DESIGN_H, computeLayout } from '../src/render/layout';
-import { nightSky } from '../src/ui/draw';
 import { CLAY, clayBackdrop } from '../src/ui/clay';
 import { drawHomePage, type HomePageState } from '../src/ui/home';
 import { drawMapView, createMapState, scrollToLevel } from '../src/ui/mapview';
@@ -32,17 +31,16 @@ const NOW = 1_700_000_000_000;
 
 type Ctx = CanvasRenderingContext2D;
 
-/** 开一张画布并铺背景。clay=true 用陶土桌面（已迁移的页面），否则夜空。 */
-function begin(clay = false): RecordingCtx {
+/** 开一张画布并铺陶土桌面。 */
+function begin(): RecordingCtx {
   const c = new RecordingCtx();
-  if (clay) clayBackdrop(c as unknown as Ctx);
-  else nightSky(c as unknown as Ctx, NOW);
+  clayBackdrop(c as unknown as Ctx);
   return c;
 }
 
 /** 渲染一页并返回 SVG。 */
-function render(page: (ctx: Ctx) => void, nav?: NavTab, clay = false): string {
-  const c = begin(clay);
+function render(page: (ctx: Ctx) => void, nav?: NavTab): string {
+  const c = begin();
   page(c as unknown as Ctx);
   if (nav) drawNav(c as unknown as Ctx, nav, NOW);
   return c.toSvg(DESIGN_W, DESIGN_H);
@@ -160,13 +158,13 @@ interface Panel {
 }
 
 const panels: Panel[] = [
-  { title: '主页大厅', svg: render((c) => void drawHomePage(c, homeState, NOW), 'home', true) },
+  { title: '主页大厅', svg: render((c) => void drawHomePage(c, homeState, NOW), 'home') },
   { title: '关卡地图', svg: render((c) => void drawMapView(c, mapState, NOW), 'map') },
   { title: '排行榜 · 总榜', svg: render((c) => void drawRankPage(c, rankState, NOW), 'rank') },
   { title: '我的', svg: render((c) => void drawProfilePage(c, profileState, NOW), 'profile') },
   { title: '皮肤', svg: render((c) => void drawSkinsPage(c, skinsState, NOW), 'skins') },
-  { title: '游戏内', svg: render(gameScreen, undefined, true) },
-  { title: '通关结算', svg: render(resultScreen, undefined, true) },
+  { title: '游戏内', svg: render(gameScreen) },
+  { title: '通关结算', svg: render(resultScreen) },
 ];
 
 /** 只渲染指定界面并 1:1 输出（调细节用）：npm run ui:gallery -- game */
@@ -177,7 +175,7 @@ const html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>连连看 · UI 设计稿（真实渲染）</title>
+<title>连连看 · UI 设计稿（黏土工坊）</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -201,7 +199,7 @@ const html = `<!DOCTYPE html>
 </style>
 </head>
 <body>
-${only ? '' : `<h1>连连看 · 糖果夜空 UI</h1>
+${only ? '' : `<h1>连连看 · 黏土工坊 UI</h1>
 <p class="sub">由真实 Canvas 绘制代码离线渲染（Canvas2D → SVG），非手绘设计稿</p>`}
 <div class="grid">
 ${shown

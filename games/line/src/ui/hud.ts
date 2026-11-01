@@ -1,9 +1,8 @@
 import { DESIGN_W, DESIGN_H } from '../render/layout';
-import { CANDY, THEME, type CandyKey, type Theme } from './theme';
-import { candyStar, starRow, halo, font } from './draw';
-import { CLAY, CLAY_UI, clayBlock, clayDisc, clayText, rrectPts, tracePts, type ClayColor } from './clay';
+import { THEME, type Theme } from './theme';
+import { CLAY, CLAY_UI, clayBlock, clayDisc, clayStar, clayText, rrectPts, tracePts, type ClayColor } from './clay';
 
-/** 游戏内配色。保留此名以兼容既有引用（现与大厅同一套糖果夜空色板）。 */
+/** 游戏内配色。保留此名以兼容既有引用（黏土版内部不读颜色，只用黏土 token）。 */
 export const COLORS = THEME;
 
 /** 矩形按钮。 */
@@ -12,8 +11,6 @@ export interface Button {
   label: string;
   kind: 'primary' | 'secondary' | 'ghost';
   id: string;
-  /** 糖果色（不传则按 kind 推导） */
-  tone?: CandyKey;
 }
 
 /**
@@ -103,7 +100,7 @@ export function drawProgressBar(ctx: CanvasRenderingContext2D, current: number, 
   const x = 40, y = 1196, w = DESIGN_W - 80, h = 20;
 
   // 凹槽：浅底上要「深一档」才读得出是条槽（旧版用的是亮轨道，那是给深色底的解法）
-  ctx.fillStyle = '#C2A284';
+  ctx.fillStyle = CLAY.sand.shade;
   tracePts(ctx, rrectPts(x, y, w, h, h / 2, 511, 0.003));
   ctx.fill();
 
@@ -160,7 +157,13 @@ export function drawResult(
 
   // 三星（金色黏土星，在奶油底上最跳）
   const stars = starOf(steps, shortest);
-  starRow(ctx, cx, py + 152, 34, stars);
+  for (let i = 0; i < 3; i++) {
+    const on = i < stars;
+    clayStar(ctx, cx + (i - 1) * 78, py + 152, i === 1 ? 39 : 34, on ? CLAY.mustard : CLAY.sand, 861 + i, {
+      depth: on ? 7 : 3,
+      lit: on,
+    });
+  }
 
   // 关卡进度：文字 → 细胶囊条 → 数据胶囊
   const pr = Math.min(1, Math.max(0, progressRatio));
@@ -170,7 +173,7 @@ export function drawResult(
     emboss: false,
   });
   const barW = 420, barX = cx - barW / 2, barY = py + 236, barH = 16;
-  ctx.fillStyle = '#C2A284';
+  ctx.fillStyle = CLAY.sand.shade;
   tracePts(ctx, rrectPts(barX, barY, barW, barH, barH / 2, 803, 0.003));
   ctx.fill();
   if (pr > 0.002) {
@@ -185,7 +188,7 @@ export function drawResult(
   }
 
   // 两块沙色数据块（在奶油面板上用「深一档」而不是玻璃）
-  const sW = 278, sH = 80, sY = py + 268;
+  const sW = 288, sH = 80, sY = py + 268;
   const stats: Array<[string, string]> = [
     ['步数', `${steps} / 最短 ${shortest}`],
     ['用时', `${(timeMs / 1000).toFixed(1)}s`],
@@ -217,9 +220,9 @@ export function drawResult(
   }
 
   // 按钮组
-  const nextBtn: Button = { x: 120, y: py + 456, w: DESIGN_W - 240, h: 88, label: '下一关', kind: 'primary', id: 'next', tone: 'green' };
-  const shareBtn: Button = { x: 120, y: py + 562, w: (DESIGN_W - 260) / 2, h: 64, label: '分享', kind: 'secondary', id: 'share', tone: 'blue' };
-  const skinBtn: Button = { x: 140 + (DESIGN_W - 260) / 2, y: py + 562, w: (DESIGN_W - 260) / 2, h: 64, label: '皮肤', kind: 'secondary', id: 'skins', tone: 'purple' };
+  const nextBtn: Button = { x: 120, y: py + 456, w: DESIGN_W - 240, h: 88, label: '下一关', kind: 'primary', id: 'next' };
+  const shareBtn: Button = { x: 120, y: py + 562, w: (DESIGN_W - 260) / 2, h: 64, label: '分享', kind: 'secondary', id: 'share' };
+  const skinBtn: Button = { x: 140 + (DESIGN_W - 260) / 2, y: py + 562, w: (DESIGN_W - 260) / 2, h: 64, label: '皮肤', kind: 'secondary', id: 'skins' };
   const homeBtn: Button = { x: 120, y: py + 642, w: DESIGN_W - 240, h: 64, label: '返回大厅', kind: 'ghost', id: 'home' };
 
   drawButton(ctx, nextBtn, false);
@@ -233,11 +236,12 @@ export function drawResult(
 /** 画一个「三星」小图标行（地图节点、列表用，尺寸小）。 */
 export function miniStars(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, stars: number): void {
   for (let i = 0; i < 3; i++) {
-    candyStar(ctx, cx + (i - 1) * r * 2.4, cy, r, i < stars);
+    const on = i < stars;
+    clayStar(ctx, cx + (i - 1) * r * 2.4, cy, r, on ? CLAY.mustard : CLAY.sand, 871 + i, { depth: 2, lit: on });
   }
 }
 
-/** 圆形头像（程序化渐变 + 首字），带糖果描边。 */
+/** 圆形头像：一枚蓝黏土圆片 + 压印首字。 */
 export function drawAvatar(
   ctx: CanvasRenderingContext2D,
   cx: number,
@@ -246,32 +250,12 @@ export function drawAvatar(
   _url: string,
   name: string,
 ): void {
-  halo(ctx, cx, cy, r * 1.5, 'rgba(179,136,255,0.35)');
+  clayDisc(ctx, cx, cy, r, CLAY.blue, 661, { depth: 6, hi: 0.14 });
 
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.clip();
-  const g = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
-  g.addColorStop(0, CANDY.blue.base);
-  g.addColorStop(1, CANDY.purple.base);
-  ctx.fillStyle = g;
-  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
-  // 顶部高光
-  ctx.fillStyle = 'rgba(255,255,255,0.28)';
-  ctx.beginPath();
-  ctx.ellipse(cx - r * 0.3, cy - r * 0.5, r * 0.55, r * 0.3, -0.4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.font = font(r * 0.95, 800);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillText((name || '玩').slice(0, 1), cx, cy + 1);
-  ctx.restore();
-
-  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.stroke();
+  const initial = (name || '玩').trim().slice(0, 1) || '玩';
+  clayText(ctx, initial, cx, cy, Math.floor(r * 0.92), {
+    fill: '#FFF6E9',
+    outline: 'rgba(28,42,56,0.50)',
+    outlineWidth: Math.max(2, r * 0.09),
+  });
 }

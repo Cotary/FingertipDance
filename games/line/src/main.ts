@@ -4,7 +4,7 @@ import { fetchFriends, fetchLeaderboard, fetchProfile, fetchStars, login, fetchC
 import { Session } from './game/session';
 import { LevelStore, ProgressStore } from './game/progressStore';
 import { DESIGN_W, DESIGN_H } from './render/layout';
-import { drawBoard, drawEndpoints, roundRect } from './render/board';
+import { drawBoard, drawEndpoints } from './render/board';
 import { drawTrail } from './render/trail';
 import { Fx } from './render/fx';
 import { audio } from './render/audio';
@@ -20,9 +20,7 @@ import { drawRankPage, createRankState, type RankPageState } from './ui/leaderbo
 import { drawProfilePage, type ProfilePageState } from './ui/profile';
 import { drawNav, pickNavTab, type NavTab } from './ui/nav';
 import { LOBBY_THEME } from './ui/theme';
-import { nightSky, glass, strokeText } from './ui/draw';
-import { CLAY, clayBackdrop } from './ui/clay';
-import { CANDY } from './ui/theme';
+import { CLAY, CLAY_UI, clayBackdrop, clayBlock, clayText } from './ui/clay';
 import { publishProfile } from './platform/openData';
 import { parseChallenge, buildShareQuery } from './game/challenge';
 import { renderPoster, shareCopy } from './ui/share';
@@ -416,55 +414,50 @@ function doShare() {
 
 /** 绘制挑战结算面板。 */
 function drawChallengeResult(ctx: CanvasRenderingContext2D, r: { win: boolean; mySteps: number; bestSteps: number; fromName: string; isNewBest: boolean }): Button[] {
-  ctx.fillStyle = 'rgba(6,3,24,0.80)';
+  // 遮罩：陶土棕的暗，不是夜空的紫黑
+  ctx.fillStyle = 'rgba(58,38,24,0.62)';
   ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
 
-  const px = 50, py = 380, pw = DESIGN_W - 100, ph = 480;
+  const pw = DESIGN_W - 100, ph = 500, px = 50;
+  const py = Math.round((DESIGN_H - ph) / 2);
+  const cx = px + pw / 2;
+  const accent = r.win ? CLAY.mint : CLAY.rose;
 
-  // 面板：胜负两种色调
-  const accent = r.win ? CANDY.green : CANDY.coral;
-  ctx.fillStyle = r.win ? 'rgba(126,217,87,0.20)' : 'rgba(255,107,107,0.20)';
-  roundRect(ctx, px - 6, py - 6, pw + 12, ph + 12, 50);
-  ctx.fill();
+  // 面板：一块奶油黏土板
+  clayBlock(ctx, px, py, pw, ph, 44, CLAY.cream, 841, { depth: 22, hi: 0.035, jitter: 0.002 });
 
-  const pg = ctx.createLinearGradient(0, py, 0, py + ph);
-  pg.addColorStop(0, '#3A2E92');
-  pg.addColorStop(1, '#1C1658');
-  ctx.fillStyle = pg;
-  roundRect(ctx, px, py, pw, ph, 44);
-  ctx.fill();
-
-  ctx.strokeStyle = accent.base;
-  ctx.lineWidth = 3;
-  roundRect(ctx, px + 1.5, py + 1.5, pw - 3, ph - 3, 43);
-  ctx.stroke();
-
-  strokeText(ctx, r.win ? '挑战成功！' : '惜败', DESIGN_W / 2, py + 66, 48, {
-    fill: r.win ? CANDY.green.light : CANDY.coral.light,
-    stroke: '#160F45',
-    strokeWidth: 7,
+  // 标题带：胜=薄荷，负=玫瑰
+  clayBlock(ctx, px + 22, py + 20, pw - 44, 88, 30, accent, 842, { depth: 8, hi: 0.06 });
+  clayText(ctx, r.win ? '挑战成功！' : '惜败', cx, py + 64, 46, {
+    fill: '#FFF6E9',
+    outline: accent.shade,
+    outlineWidth: 5,
   });
 
-  strokeText(ctx, `${r.fromName} 的挑战`, DESIGN_W / 2, py + 140, 26, {
+  clayText(ctx, `${r.fromName} 的挑战`, cx, py + 158, 26, {
     weight: 600,
-    fill: '#D6D2FF',
+    fill: CLAY_UI.inkSoft,
+    outlineWidth: 0,
+    emboss: false,
   });
-  strokeText(ctx, `我的步数 ${r.mySteps} · 最佳 ${r.bestSteps}`, DESIGN_W / 2, py + 190, 26, {
+  clayText(ctx, `我的步数 ${r.mySteps} · 最佳 ${r.bestSteps}`, cx, py + 208, 26, {
     weight: 600,
-    fill: '#D6D2FF',
+    fill: CLAY_UI.ink,
+    outlineWidth: 0,
+    emboss: false,
   });
 
   if (r.isNewBest) {
-    glass(ctx, DESIGN_W / 2 - 160, py + 222, 320, 52, 26, { fill: 'rgba(255,213,79,0.22)' });
-    strokeText(ctx, '刷新最佳纪录！', DESIGN_W / 2, py + 248, 26, {
-      fill: CANDY.gold.light,
-      stroke: CANDY.gold.dark,
-      strokeWidth: 4,
+    clayBlock(ctx, cx - 160, py + 240, 320, 56, 28, CLAY.mustard, 843, { depth: 6, hi: 0.08 });
+    clayText(ctx, '刷新最佳纪录！', cx, py + 268, 26, {
+      fill: '#5C4208',
+      outlineWidth: 0,
+      emboss: false,
     });
   }
 
-  const retry: Button = { x: 120, y: py + 300, w: DESIGN_W - 240, h: 80, label: '再试一次', kind: 'primary', id: 'retry', tone: 'green' };
-  const shareBtn: Button = { x: 120, y: py + 400, w: DESIGN_W - 240, h: 64, label: '分享', kind: 'secondary', id: 'share', tone: 'blue' };
+  const retry: Button = { x: 120, y: py + 322, w: DESIGN_W - 240, h: 80, label: '再试一次', kind: 'primary', id: 'retry' };
+  const shareBtn: Button = { x: 120, y: py + 414, w: DESIGN_W - 240, h: 64, label: '分享', kind: 'secondary', id: 'share' };
   drawButton(ctx, retry, false);
   drawButton(ctx, shareBtn, false);
   return [retry, shareBtn];
@@ -727,13 +720,8 @@ function frame() {
   ctx.scale(dpr * scale, dpr * scale);
   ctx.translate(offsetX / dpr, offsetY / dpr);
 
-  // 背景分两套，按页面切换（黏土改造进行中，见 docs/23-UI风格方案.md）：
-  // 已迁移 → 陶土桌面；未迁移 → 夜空。全量迁移完成后只留 clayBackdrop。
-  if (phase === 'home' || phase === 'playing' || phase === 'result') {
-    clayBackdrop(ctx);
-  } else {
-    nightSky(ctx, now);
-  }
+  // 背景：全站统一陶土桌面（黏土工坊），各页面不再自己画背景
+  clayBackdrop(ctx);
 
   const st = session.state;
   if (st && session.layout && (phase === 'playing' || phase === 'result')) {
@@ -760,12 +748,15 @@ function frame() {
     drawButton(ctx, skipBtn, pressedBtn === 'skip');
     drawButton(ctx, backHomeBtn, pressedBtn === 'backHome');
 
-    // 挑战模式横幅
+    // 挑战模式横幅：直接盖在关号胶囊上（原来的全宽横幅会同时压住
+    // 左右三颗顶部按钮和关号，视觉上三者糊成一团）
     if (challenge) {
-      glass(ctx, 40, 60, DESIGN_W - 80, 64, 32, { fill: 'rgba(179,136,255,0.85)', edge: 'rgba(255,255,255,0.55)' });
-      strokeText(ctx, `${challenge.fromName} 的挑战 · 第 ${challenge.levelIdx} 关`, DESIGN_W / 2, 92, 26, {
-        stroke: CANDY.purple.dark,
-        strokeWidth: 4,
+      const name = challenge.fromName.length > 6 ? `${challenge.fromName.slice(0, 6)}…` : challenge.fromName;
+      clayBlock(ctx, 185, 84, 380, 76, 32, CLAY.mustard, 881, { depth: 9, hi: 0.08 });
+      clayText(ctx, `${name} 的挑战 · 第 ${challenge.levelIdx} 关`, DESIGN_W / 2, 122, 24, {
+        fill: '#4A3327',
+        outlineWidth: 0,
+        emboss: false,
       });
     }
   }

@@ -1,13 +1,11 @@
 /**
  * 我的页。数据统计 + 皮肤收藏墙 + 功能设置。
- * 视觉语言：渐变头卡 + 玻璃统计卡 + 糖果开关。
+ * 视觉语言：压扁的蓝黏土头卡 + 奶油黏土统计块 + 黏土滑轨开关。
  */
 import { DESIGN_W, DESIGN_H } from '../render/layout';
-import { roundRect } from '../render/board';
 import { type Button } from './hud';
-import { CANDY, THEME, type CandyColor } from './theme';
 import { drawAvatar } from './hud';
-import { glass, halo, pill, strokeText } from './draw';
+import { CLAY, CLAY_UI, clayBlock, clayDisc, clayLock, clayText, rrectPts, tracePts, type ClayColor } from './clay';
 import { SKINS, paintSkin } from '../render/skins';
 
 /** 我的页状态。 */
@@ -33,81 +31,84 @@ const ROW_PITCH = 82;
  * @returns 可点击按钮列表
  */
 export function drawProfilePage(ctx: CanvasRenderingContext2D, st: ProfilePageState, now: number): Button[] {
-  // ── 顶部头卡：紫→蓝渐变，底部大圆角 ──
-  const hg = ctx.createLinearGradient(0, 0, DESIGN_W, 320);
-  hg.addColorStop(0, '#6E4BE0');
-  hg.addColorStop(0.55, '#4E6BE8');
-  hg.addColorStop(1, '#3AA8E8');
-  ctx.fillStyle = hg;
-  roundRect(ctx, -40, -80, DESIGN_W + 80, 380, 60);
-  ctx.fill();
+  // ── 顶部头卡：一整块压扁的蓝黏土，左右圆角藏在屏幕外 ──
+  clayBlock(ctx, -40, -80, DESIGN_W + 80, 380, 60, CLAY.blue, 701, { depth: 14, hi: 0.03, jitter: 0.002 });
 
-  // 头卡内高光
+  // 头卡内的一道暖光（黏土是哑光的，只能大范围低 alpha）
   ctx.save();
-  roundRect(ctx, -40, -80, DESIGN_W + 80, 380, 60);
+  tracePts(ctx, rrectPts(-40, -80, DESIGN_W + 80, 380, 60, 701, 0.002));
   ctx.clip();
-  ctx.fillStyle = 'rgba(255,255,255,0.16)';
+  ctx.fillStyle = 'rgba(255,247,229,0.14)';
   ctx.beginPath();
-  ctx.ellipse(150, 24, 260, 110, -0.3, 0, Math.PI * 2);
+  ctx.ellipse(160, 30, 280, 120, -0.3, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  halo(ctx, 110, 140, 96, 'rgba(255,255,255,0.12)');
+  // 头像底座：一枚奶油圆片，把头像「托」在头卡上
+  clayDisc(ctx, 110, 140, 70, CLAY.cream, 702, { depth: 8, hi: 0.08 });
   drawAvatar(ctx, 110, 140, 62, st.avatar, st.nickname);
 
-  strokeText(ctx, st.nickname || '玩家', 200, 116, 36, {
+  clayText(ctx, st.nickname || '玩家', 200, 116, 36, {
     align: 'left',
-    stroke: 'rgba(30,16,80,0.35)',
-    strokeWidth: 3,
+    fill: '#FFF6E9',
+    outline: 'rgba(28,42,56,0.45)',
+    outlineWidth: 4,
   });
 
-  // 等级 + 皮肤数：两颗糖果胶囊
-  pill(ctx, 200, 150, 118, 36, CANDY.gold, `Lv.${st.maxLevel}`, 21);
+  // 等级徽章：芥末黏土片
+  clayBlock(ctx, 200, 150, 118, 38, 19, CLAY.mustard, 703, { depth: 5, hi: 0.10 });
+  clayText(ctx, `Lv.${st.maxLevel}`, 259, 169, 21, {
+    fill: '#4A3327',
+    outlineWidth: 0,
+    emboss: false,
+  });
   const skinLabel = `皮肤 ${st.unlockedSkins.length}/${st.totalSkins}`;
-  strokeText(ctx, skinLabel, 336, 168, 24, {
+  clayText(ctx, skinLabel, 336, 169, 24, {
     weight: 600,
-    fill: 'rgba(255,255,255,0.92)',
     align: 'left',
+    fill: 'rgba(255,246,233,0.90)',
+    outlineWidth: 0,
+    emboss: false,
   });
 
-  // ── 数据统计卡 ──
-  const stats: Array<[string, string, CandyColor]> = [
-    ['最高关卡', String(st.maxLevel), CANDY.orange],
-    ['总步数', String(st.totalSteps), CANDY.green],
-    ['总用时', `${Math.floor(st.totalTimeMs / 60000)} 分`, CANDY.blue],
-    ['看广告', `${st.adWatchCnt} 次`, CANDY.purple],
+  // ── 数据统计卡：四块奶油黏土 ──
+  const stats: Array<[string, string, ClayColor]> = [
+    ['最高关卡', String(st.maxLevel), CLAY.terracotta],
+    ['总步数', String(st.totalSteps), CLAY.mint],
+    ['总用时', `${Math.floor(st.totalTimeMs / 60000)} 分`, CLAY.blue],
+    ['看广告', `${st.adWatchCnt} 次`, CLAY.mustard],
   ];
+  const cardW = (DESIGN_W - 80 - 20) / 2;
   stats.forEach(([label, value, c], i) => {
-    const col = i % 2;
-    const row = Math.floor(i / 2);
-    const x = 40 + col * ((DESIGN_W - 100) / 2 + 10);
-    const y = 320 + row * 118;
-    const w = (DESIGN_W - 100) / 2;
+    const x = 40 + (i % 2) * (cardW + 20);
+    const y = 320 + Math.floor(i / 2) * 118;
 
-    glass(ctx, x, y, w, 100, 24, { fill: 'rgba(255,255,255,0.10)' });
-    // 左侧糖果圆点
-    ctx.fillStyle = c.base;
-    ctx.beginPath();
-    ctx.arc(x + 30, y + 34, 9, 0, Math.PI * 2);
-    ctx.fill();
+    clayBlock(ctx, x, y, cardW, 100, 24, CLAY.cream, 710 + i, { depth: 8, hi: 0.045, jitter: 0.004 });
 
-    strokeText(ctx, label, x + 50, y + 32, 21, {
+    // 左侧色点
+    clayDisc(ctx, x + 30, y + 34, 10, c, 720 + i, { depth: 2, hi: 0.16 });
+
+    clayText(ctx, label, x + 50, y + 34, 21, {
       weight: 600,
-      fill: THEME.subText,
       align: 'left',
+      fill: CLAY_UI.inkSoft,
+      outlineWidth: 0,
+      emboss: false,
     });
-    strokeText(ctx, value, x + 26, y + 68, 36, {
+    clayText(ctx, value, x + 50, y + 70, 36, {
       align: 'left',
-      stroke: c.dark,
-      strokeWidth: 5,
+      fill: c.dark,
+      outlineWidth: 0,
+      emboss: false,
     });
   });
 
-  // ── 皮肤收藏墙（16 个皮肤排成 8×2，避免和下方功能行粘连） ──
-  strokeText(ctx, '皮肤收藏', 40, 570, 30, {
+  // ── 皮肤收藏墙（16 个皮肤排成 8×2） ──
+  clayText(ctx, '皮肤收藏', 40, 570, 30, {
     align: 'left',
-    stroke: 'rgba(8,4,30,0.5)',
-    strokeWidth: 5,
+    fill: CLAY_UI.ink,
+    outlineWidth: 0,
+    emboss: false,
   });
 
   const cell = 74;
@@ -122,21 +123,28 @@ export function drawProfilePage(ctx: CanvasRenderingContext2D, st: ProfilePageSt
     const row = Math.floor(i / cols);
     const x = startX + col * stepX;
     const cy = wallTop + row * stepY;
+    const has = owned.has(skin.id);
 
-    if (owned.has(skin.id)) {
+    // 格子底板：已拥有 = 奶油，未拥有 = 沙色（压暗一档）
+    clayBlock(ctx, x, cy, cell, cell, 16, has ? CLAY.cream : CLAY.sand, 730 + i, {
+      depth: has ? 5 : 2,
+      hi: 0.05,
+      jitter: 0.004,
+    });
+
+    if (has) {
+      // 皮肤纹理半透叠在黏土上（全不透明会把黏土的色阶体积盖掉）
+      ctx.save();
+      tracePts(ctx, rrectPts(x, cy, cell, cell, 16, 730 + i, 0.004));
+      ctx.clip();
+      ctx.globalAlpha = 0.88;
       paintSkin(ctx, skin, x, cy, cell, cell, i + 1, now);
-      ctx.strokeStyle = 'rgba(255,255,255,0.90)';
+      ctx.globalAlpha = 1;
+      ctx.restore();
     } else {
-      ctx.fillStyle = 'rgba(255,255,255,0.10)';
-      roundRect(ctx, x, cy, cell, cell, 16);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+      // 锁必须用深色：奶油锁画在沙色格子上等于没有，第一版就是这么翻车的
+      clayLock(ctx, x + cell / 2, cy + cell / 2 + 2, 0.92, CLAY.board);
     }
-    ctx.lineWidth = 2;
-    roundRect(ctx, x, cy, cell, cell, 16);
-    ctx.stroke();
-
-    if (!owned.has(skin.id)) drawLock(ctx, x + cell / 2, cy + cell / 2, 0.8);
   });
 
   // ── 功能行 ──
@@ -153,43 +161,27 @@ export function drawProfilePage(ctx: CanvasRenderingContext2D, st: ProfilePageSt
     // 不允许压到底部导航
     if (ry + ROW_H > DESIGN_H - 120) return;
 
-    glass(ctx, 40, ry, DESIGN_W - 80, ROW_H, 20, { fill: 'rgba(255,255,255,0.09)', shadow: false });
+    clayBlock(ctx, 40, ry, DESIGN_W - 80, ROW_H, 20, CLAY.cream, 750 + i, { depth: 5, hi: 0.04, jitter: 0.004 });
 
-    strokeText(ctx, r.label, 70, ry + ROW_H / 2, 26, {
+    clayText(ctx, r.label, 70, ry + ROW_H / 2, 26, {
       align: 'left',
-      stroke: 'rgba(8,4,30,0.45)',
-      strokeWidth: 4,
+      fill: CLAY_UI.ink,
+      outlineWidth: 0,
+      emboss: false,
     });
 
     if (r.value !== undefined) {
-      // 糖果开关
+      // 黏土滑轨开关
       const sw = 84, sh = 40, sx = DESIGN_W - 70 - sw, sy = ry + (ROW_H - sh) / 2;
       const on = r.on === true;
-      ctx.fillStyle = 'rgba(8,4,30,0.45)';
-      roundRect(ctx, sx, sy + 3, sw, sh, sh / 2);
-      ctx.fill();
-      const g = ctx.createLinearGradient(0, sy, 0, sy + sh);
-      if (on) {
-        g.addColorStop(0, CANDY.green.light);
-        g.addColorStop(0.5, CANDY.green.base);
-        g.addColorStop(1, CANDY.green.base);
-      } else {
-        g.addColorStop(0, 'rgba(255,255,255,0.28)');
-        g.addColorStop(1, 'rgba(255,255,255,0.16)');
-      }
-      ctx.fillStyle = g;
-      roundRect(ctx, sx, sy, sw, sh, sh / 2);
-      ctx.fill();
-      // 滑块
+      clayBlock(ctx, sx, sy, sw, sh, sh / 2, on ? CLAY.mint : CLAY.sand, 760 + i, {
+        depth: 3,
+        hi: 0.06,
+        lit: false,
+      });
+      // 滑块：一枚压在上面的奶油圆片
       const knobX = on ? sx + sw - sh / 2 : sx + sh / 2;
-      ctx.fillStyle = 'rgba(8,4,30,0.30)';
-      ctx.beginPath();
-      ctx.arc(knobX, sy + sh / 2 + 2, sh / 2 - 6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#FFFFFF';
-      ctx.beginPath();
-      ctx.arc(knobX, sy + sh / 2, sh / 2 - 6, 0, Math.PI * 2);
-      ctx.fill();
+      clayDisc(ctx, knobX, sy + sh / 2, sh / 2 - 5, CLAY.cream, 770 + i, { depth: 4, hi: 0.14 });
     }
 
     const btn: Button = { x: 40, y: ry, w: DESIGN_W - 80, h: ROW_H, label: '', kind: 'ghost', id: r.id };
@@ -197,20 +189,4 @@ export function drawProfilePage(ctx: CanvasRenderingContext2D, st: ProfilePageSt
   });
 
   return buttons;
-}
-
-/** 画一把小锁（替代 emoji，跨端一致）。 */
-function drawLock(ctx: CanvasRenderingContext2D, cx: number, cy: number, scale: number): void {
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.scale(scale, scale);
-  ctx.strokeStyle = 'rgba(255,255,255,0.62)';
-  ctx.fillStyle = 'rgba(255,255,255,0.62)';
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.arc(0, -6, 11, Math.PI, 0);
-  ctx.stroke();
-  roundRect(ctx, -16, -4, 32, 24, 6);
-  ctx.fill();
-  ctx.restore();
 }

@@ -5,8 +5,7 @@
 import { DESIGN_W, DESIGN_H } from '../render/layout';
 import { drawButton, type Button } from './hud';
 import { getOpenDataCanvas } from '../platform/openData';
-import { CANDY, THEME, type CandyColor } from './theme';
-import { glass, strokeText } from './draw';
+import { CLAY, CLAY_UI, clayBlock, clayDisc, clayText, type ClayColor } from './clay';
 import type { FriendItem, FriendStats } from '../net/api';
 
 /** 好友页状态。 */
@@ -38,52 +37,59 @@ export function drawFriendsBoard(
   topY: number,
   height: number,
 ): void {
-  // ── 统计面板 ──
+  // ── 统计面板：一块奶油黏土板，压在桌面上 ──
   const panelY = topY;
-  glass(ctx, 40, panelY, DESIGN_W - 80, PANEL_H, 28, { fill: 'rgba(255,255,255,0.10)' });
+  clayBlock(ctx, 40, panelY, DESIGN_W - 80, PANEL_H, 28, CLAY.cream, 541, { depth: 11, hi: 0.045 });
 
-  const statItems: Array<{ label: string; value: string; c: CandyColor }> = [
-    { label: '好友数', value: String(st.stats.friendCount), c: CANDY.blue },
-    { label: '好友平均进度', value: `${st.stats.avgLevel} 关`, c: CANDY.green },
-    { label: '好友最高进度', value: `${st.stats.maxLevel} 关`, c: CANDY.orange },
-    { label: '我的名次', value: st.myRank > 0 ? `第 ${st.myRank} 名` : '未上榜', c: CANDY.gold },
+  // 两列在 670 宽里严格对称（旧版 150/450 + 分隔线 300 是偏的）
+  const COL_L = 40 + (DESIGN_W - 80) / 4;
+  const COL_R = 40 + ((DESIGN_W - 80) * 3) / 4;
+
+  const statItems: Array<{ label: string; value: string; c: ClayColor }> = [
+    { label: '好友数', value: String(st.stats.friendCount), c: CLAY.blue },
+    { label: '好友平均进度', value: `${st.stats.avgLevel} 关`, c: CLAY.mint },
+    { label: '好友最高进度', value: `${st.stats.maxLevel} 关`, c: CLAY.terracotta },
+    { label: '我的名次', value: st.myRank > 0 ? `第 ${st.myRank} 名` : '未上榜', c: CLAY.mustard },
   ];
   statItems.forEach((s, i) => {
-    const col = i % 2;
-    const row = Math.floor(i / 2);
-    const x = 150 + col * 300;
-    const y = panelY + 34 + row * 78;
-    strokeText(ctx, s.label, x, y, 21, {
+    const x = i % 2 === 0 ? COL_L : COL_R;
+    const y = panelY + 46 + Math.floor(i / 2) * 64;
+    clayText(ctx, s.label, x, y, 21, {
       weight: 600,
-      fill: THEME.subText,
+      fill: CLAY_UI.inkSoft,
+      outlineWidth: 0,
+      emboss: false,
     });
-    strokeText(ctx, s.value, x, y + 34, 32, {
-      fill: s.c.light,
-      stroke: 'rgba(8,4,30,0.45)',
-      strokeWidth: 4,
+    clayText(ctx, s.value, x, y + 34, 32, {
+      fill: s.c.dark,
+      outlineWidth: 0,
+      emboss: false,
     });
   });
 
-  // 面板中间的分隔线
-  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+  // 面板中间的隔断：一道压进黏土的细缝
+  ctx.strokeStyle = CLAY.sand.shade;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(300, panelY + 26);
-  ctx.lineTo(300, panelY + PANEL_H - 26);
+  ctx.moveTo(DESIGN_W / 2, panelY + 30);
+  ctx.lineTo(DESIGN_W / 2, panelY + PANEL_H - 30);
   ctx.stroke();
 
   // ── 好友榜 ──
   const boardY = panelY + PANEL_TO_BOARD;
-  strokeText(ctx, '好友榜', 40, boardY + 12, 28, {
+  clayText(ctx, '好友榜', 40, boardY + 12, 28, {
     align: 'left',
-    stroke: 'rgba(8,4,30,0.5)',
-    strokeWidth: 5,
+    fill: CLAY_UI.ink,
+    outlineWidth: 0,
+    emboss: false,
   });
   if (st.loadingOpenData) {
-    strokeText(ctx, '加载中…', DESIGN_W - 40, boardY + 12, 22, {
+    clayText(ctx, '加载中…', DESIGN_W - 40, boardY + 12, 22, {
       weight: 600,
-      fill: THEME.subText,
       align: 'right',
+      fill: CLAY_UI.inkSoft,
+      outlineWidth: 0,
+      emboss: false,
     });
   }
 
@@ -102,12 +108,14 @@ export function drawFriendsBoard(
   }
 
   // Web 版用服务端好友列表兜底绘制
-  glass(ctx, 40, boardBoxY, DESIGN_W - 80, boardBoxH, 28, { fill: 'rgba(255,255,255,0.08)' });
+  clayBlock(ctx, 40, boardBoxY, DESIGN_W - 80, boardBoxH, 28, CLAY.cream, 542, { depth: 9, hi: 0.035 });
   const list = st.friends.slice(0, 12);
   if (list.length === 0) {
-    strokeText(ctx, '还没有好友，分享给好友一起来玩吧', DESIGN_W / 2, boardBoxY + boardBoxH / 2, 26, {
+    clayText(ctx, '还没有好友，分享给好友一起来玩吧', DESIGN_W / 2, boardBoxY + boardBoxH / 2, 26, {
       weight: 600,
-      fill: THEME.subText,
+      fill: CLAY_UI.inkSoft,
+      outlineWidth: 0,
+      emboss: false,
     });
     return;
   }
@@ -116,34 +124,28 @@ export function drawFriendsBoard(
     const y = boardBoxY + 40 + i * 52;
     if (y > boardBoxY + boardBoxH - 24) return;
 
-    // 名次糖果圆片
-    const medal = i === 0 ? CANDY.gold : i === 1 ? CANDY.blue : i === 2 ? CANDY.orange : CANDY.purple;
-    ctx.fillStyle = medal.dark;
-    ctx.beginPath();
-    ctx.arc(82, y + 2, 17, 0, Math.PI * 2);
-    ctx.fill();
-    const g = ctx.createLinearGradient(82, y - 15, 82, y + 17);
-    g.addColorStop(0, medal.light);
-    g.addColorStop(0.5, medal.base);
-    g.addColorStop(1, medal.base);
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(82, y, 17, 0, Math.PI * 2);
-    ctx.fill();
-    strokeText(ctx, String(i + 1), 82, y + 1, 18, {
-      stroke: medal.dark,
-      strokeWidth: 3,
+    // 名次片：前三名金/蓝/陶土，其余沙色
+    const medal = i === 0 ? CLAY.mustard : i === 1 ? CLAY.blue : i === 2 ? CLAY.terracotta : CLAY.sand;
+    clayDisc(ctx, 82, y, 17, medal, 550 + i, { depth: 3, hi: i < 3 ? 0.16 : 0 });
+    clayText(ctx, String(i + 1), 82, y, 18, {
+      fill: i < 3 ? '#FFF6E9' : CLAY_UI.inkSoft,
+      outline: i < 3 ? medal.shade : undefined,
+      outlineWidth: i < 3 ? 3 : 0,
+      emboss: false,
     });
 
-    strokeText(ctx, f.nickname || '玩家', 116, y, 24, {
+    clayText(ctx, f.nickname || '玩家', 116, y, 24, {
       align: 'left',
-      stroke: 'rgba(8,4,30,0.45)',
-      strokeWidth: 4,
+      fill: CLAY_UI.ink,
+      outlineWidth: 0,
+      emboss: false,
     });
-    strokeText(ctx, `第 ${f.maxLevel} 关`, DESIGN_W - 70, y, 24, {
+    clayText(ctx, `第 ${f.maxLevel} 关`, DESIGN_W - 70, y, 24, {
       weight: 600,
-      fill: CANDY.blue.light,
       align: 'right',
+      fill: CLAY.terracotta.dark,
+      outlineWidth: 0,
+      emboss: false,
     });
   });
 }
@@ -153,14 +155,15 @@ export function drawFriendsBoard(
  * 排行榜页内嵌时不走这个函数，直接调 `drawFriendsBoard`。
  */
 export function drawFriendsPage(ctx: CanvasRenderingContext2D, st: FriendsPageState): Button[] {
-  strokeText(ctx, '好友', DESIGN_W / 2, 76, 40, {
-    stroke: 'rgba(8,4,30,0.6)',
-    strokeWidth: 7,
+  clayText(ctx, '好友', DESIGN_W / 2, 76, 40, {
+    fill: CLAY_UI.ink,
+    outline: 'rgba(255,251,243,0.55)',
+    outlineWidth: 6,
   });
 
   drawFriendsBoard(ctx, st, 130, 900);
 
-  const back: Button = { x: 40, y: DESIGN_H - 220, w: 160, h: 72, label: '返回', kind: 'secondary', id: 'back', tone: 'blue' };
+  const back: Button = { x: 40, y: DESIGN_H - 220, w: 160, h: 72, label: '返回', kind: 'secondary', id: 'back' };
   drawButton(ctx, back, false);
   return [back];
 }
