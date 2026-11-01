@@ -59,8 +59,10 @@ export function solve(
 
   const total = w * h;
   const dist = new Int32Array(total * 4).fill(-1);
-  const parent = new Int32Array(total * 4).fill(-1);
-  // 到达每个状态的最短路径条数（简化方案：一次 BFS 内 DP 累加）
+  // 多前驱：parents[k] = 到达状态 k 的所有前驱状态 key 列表（用于枚举多条最短路径）
+  const parents: number[][] = new Array(total * 4);
+  for (let i = 0; i < parents.length; i++) parents[i] = [];
+  // 到达每个状态的最短路径条数（一次 BFS 内 DP 累加）
   const pathCountAt = new Map<number, number>();
 
   interface QItem { idx: number; enterDir: number }
@@ -97,11 +99,12 @@ export function solve(
 
       if (dist[nKey] === -1) {
         dist[nKey] = cand;
-        parent[nKey] = curKey;
+        parents[nKey].push(curKey);
         pathCountAt.set(nKey, curCount);
         queue.push({ idx: nIdx, enterDir: d });
       } else if (dist[nKey] === cand) {
-        // 以相同最短距离再次到达 → 累加等价路径条数
+        // 以相同最短距离再次到达 → 累加等价路径条数 + 记录额外前驱
+        parents[nKey].push(curKey);
         const acc = (pathCountAt.get(nKey) ?? 0) + curCount;
         pathCountAt.set(nKey, acc > maxPaths ? maxPaths : acc);
       }
@@ -122,17 +125,49 @@ export function solve(
   for (const k of endKeys) pathCount += pathCountAt.get(k) ?? 0;
   if (pathCount > maxPaths) pathCount = maxPaths;
 
-  // 回溯出所有最短路径（每个终点进入方向各回溯一条）
-  const paths: number[][] = [];
-  for (const k of endKeys) {
-    if (paths.length >= maxPaths) break;
-    paths.push(reconstruct(parent, k));
-  }
+  // 从所有终点状态 DFS 枚举多条最短路径（去重，最多 maxPaths 条）
+  const paths = enumeratePaths(parents, startKey, endKeys, maxPaths);
 
   return { solvable: true, steps: endDist, paths, pathCount, visited: queue.length };
 }
 
-/** 从终点状态回溯出路径（格子索引序列）。 */
+/** 从终点状态沿多前驱 DFS 回溯，枚举最多 limit 条最短路径（去重）。 */
+function enumeratePaths(
+  parents: number[][],
+  startKey: number,
+  endKeys: number[],
+  limit: number,
+): number[][] {
+  const paths: number[][] = [];
+  const seen = new Set<string>();
+  const buf: number[] = [];
+
+  const dfs = (k: number): boolean => {
+    buf.push(Math.floor(k / 4));
+    if (k === startKey) {
+      const p = buf.slice().reverse();
+      const sig = p.join(',');
+      if (!seen.has(sig)) {
+        seen.add(sig);
+        paths.push(p);
+      }
+      buf.pop();
+      return paths.length >= limit;
+    }
+    for (const pk of parents[k]) {
+      if (dfs(pk)) { buf.pop(); return true; }
+    }
+    buf.pop();
+    return false;
+  };
+
+  for (const ek of endKeys) {
+    if (dfs(ek)) break;
+  }
+  return paths;
+}
+
+/** 从终点状态沿单前驱回溯出路径（格子索引序列）。 */
 function reconstruct(parent: Int32Array, endKey: number): number[] {
   const path: number[] = [];
   let k = endKey;

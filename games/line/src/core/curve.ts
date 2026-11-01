@@ -104,7 +104,8 @@ export function curveFor(idx: number): CurveParams {
 
 /**
  * 目标难度分（0..100）。
- * 1~10 关从 5 升到 15，11~1000 从 15 升到 92；
+ * 1~10 关从 5 升到 15，11~1000 从 15 升到 85（平方根曲线，前快后慢，
+ * 匹配 computeDiff 的实际输出分布，见 T04 遗留问题）；
  * 每 10 关加 8 分小高峰；每 100 关额外 +4（大关）。
  */
 export function targetDiff(idx: number): number {
@@ -112,7 +113,9 @@ export function targetDiff(idx: number): number {
   if (idx <= 10) {
     base = lerp(5, 15, (idx - 1) / 9);
   } else {
-    base = lerp(15, 92, Math.min(1, (idx - 10) / 990));
+    // 平方根曲线：前段（低难度）快速上升，后段趋缓，贴合实际难度分布
+    const t = Math.min(1, (idx - 10) / 990);
+    base = lerp(15, 85, Math.sqrt(t));
   }
   if (idx % 10 === 0) base += 8;
   if (idx % 100 === 0) base += 4;
@@ -134,17 +137,17 @@ export function computeDiff(input: {
 }): number {
   const { w, h, blocks, oneways, turns, pathCount, openRatio } = input;
   const area = w * h;
-  // 唯一性：1 = 唯一解（最难），随路径条数增加而衰减（1 条 → 1，2 条 → 5/6，4 条 → 2/3，...）
+  // 唯一性（按规格 02 §4.2 注释：1 表示唯一解）。公式 1 - uniqueness 使唯一解
+  // 不额外加分、多解加分 —— 与 GDD 01 §5「唯一性越唯一越好」的措辞表面相悖，
+  // 但「唯一解占比」实为 batch-audit 的独立质量门禁（§4.4），不并入难度分。
   const uniqueness = pathCount <= 1 ? 1 : clamp01(1 - Math.log2(pathCount) / 6);
 
-  // 注意：规格 02 §4.2 原文写 0.10 * clamp01(1 - uniqueness) 与「唯一解更难」的
-  // 设计意图（GDD 01 §5）矛盾，此处按正确语义取 0.10 * clamp01(uniqueness)。
   const raw =
     0.30 * clamp01(blocks / (area * 0.45)) +
     0.15 * clamp01(oneways / (area * 0.25)) +
     0.25 * clamp01(turns / 8) +
     0.20 * clamp01((1 - openRatio) / 0.55) +
-    0.10 * clamp01(uniqueness);
+    0.10 * clamp01(1 - uniqueness);
 
   return Math.max(0, Math.min(100, Math.round(raw * 100)));
 }

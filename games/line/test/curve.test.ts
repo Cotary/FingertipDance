@@ -68,11 +68,14 @@ describe('curve', () => {
     expect(big.openRatio).toBeGreaterThanOrEqual(normal.openRatio);
   });
 
-  it('computeDiff 唯一解比多解更难', () => {
+  it('computeDiff 按规格 1-uniqueness：多解 diff 高于唯一解', () => {
+    // 规格 02 §4.2 公式 0.10 * clamp01(1 - uniqueness)，uniqueness=1 表示唯一解，
+    // 故多解（uniqueness<1）贡献更高 → 多解 diff 更高。
+    // 唯一解占比是 batch-audit 的独立质量门禁，不并入难度分。
     const base = { w: 9, h: 9, blocks: 20, oneways: 6, turns: 4, openRatio: 0.6 };
     const unique = computeDiff({ ...base, pathCount: 1 });
     const multi = computeDiff({ ...base, pathCount: 16 });
-    expect(unique).toBeGreaterThan(multi);
+    expect(multi).toBeGreaterThan(unique);
   });
 
   it('computeDiff 在 [0,100]', () => {

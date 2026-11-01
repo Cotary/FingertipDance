@@ -553,3 +553,15 @@ console.log('平均偏差', (sum / 100).toFixed(2));
 ## 产出物
 - `src/core/generator.ts`
 - `test/generator.test.ts`
+
+---
+
+## 遗留问题
+
+| 日期 | 问题 | 处理方式 |
+|---|---|---|
+| 2026-11-01 | 任务书 5.1 的「情况 C 收窄」要求 `res2.pathCount > 1` 就 `continue`，但早期教学关（blocks 少）天然多解，导致第 1~11 关全部 fallback | 改为「尽力收窄、不强求唯一解」：narrowBranches 收窄后只要可解就用收窄结果（pathCount 可能仍 >1），由 computeDiff 的 uniqueness 项自然体现多解更易 |
+| 2026-11-01 | 任务书 5.2 步骤 4「放阻挡块后立即验证可达性」未实现，导致高 blocks 关卡（如 idx=901 需求 57 blocks）随机放块把 START→END 通路堵死（37/40 次不可解）→ fallback | 逐个放阻挡块，每放一个 solve 验证可达，堵死就回滚跳过该位置 |
+| 2026-11-01 | 任务书 `pickStart/pickEnd`（5.6）未保证 START/END 距离，且 `growPath`（5.3）在「长度/转弯不够」时仍允许直接进入终点 → 距离近时（idx=1 曼哈顿距离 2）无法绕出 minPathLen 步，100% 失败 | pickStart 限定左/上边、pickEnd 限定右/下边并保证曼哈顿距离 ≥ minPathLen；growPath 在长度/转弯未达标时禁止进入终点（逼它绕行），并加入绕行评分 |
+| 2026-11-01 | 任务书 5.1 用 `res.steps < minPathLen`（最短步数）判断「太短」，但 growPath 造的是「绕行路径」，最短步数可能 < 正解路径长度 → 绕行关卡被误杀 | 保留该检查（配合 pickEnd 距离约束后最短步数 ≥ minPathLen 可满足）；minPathLen 语义按「最短路径下限」理解 |
+| 2026-11-01 | 任务书 5.4 依赖 `res.paths` 多条最短路径做分叉收窄，但 T03 原实现每条终点进入方向只回溯一条 | T03 solve 改为「多前驱 + DFS 枚举」真正收集多条最短路径（见 T03 遗留问题） |

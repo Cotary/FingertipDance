@@ -195,7 +195,7 @@ I:\work\f-game\
 | T02 core: rng + grid | ☑ | 2026-11-01 | src/core/{types,rng,grid,codec}.ts + 3 测试文件（14 用例全过）；统一二维 Cell[][] 表示 |
 | T03 solver（BFS） | ☑ | 2026-11-01 | src/core/solver.ts（solve/isPathLegal/countTurns/findHint/solveFrom）+ 10 用例；5×5 全通自检 steps=8 pathCount=8 |
 | T04 难度曲线 curve | ☑ | 2026-11-01 | src/core/curve.ts（curveFor/targetDiff/computeDiff）+ 9 用例；修正 computeDiff 唯一性项语义笔误 |
-| T05 generator | ☐ | | |
+| T05 generator | ☑ | 2026-11-01 | src/core/generator.ts + 8 用例；修复 fallback（放块可达性验证、起终点距离、growPath 绕行）；100 关平均偏差 4.96 |
 | T06 关卡表流水线 + 体检 CLI | ☐ | | |
 | T07 单元测试 + 难度校准 | ☐ | | |
 | T08 Go 后端骨架 | ☐ | | |
