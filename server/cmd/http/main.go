@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/tupss/f-game/server/internal/core"
+	"github.com/tupss/f-game/server/internal/games/line"
 	"github.com/tupss/f-game/server/internal/modules/leaderboard"
 	"github.com/tupss/f-game/server/internal/modules/profile"
 )
@@ -50,6 +51,18 @@ func main() {
 		log.Fatalf("数据库迁移失败: %v", err)
 	}
 
+	// 加载关卡表
+	if err := line.Levels.Load("data"); err != nil {
+		log.Fatalf("加载关卡表失败: %v", err)
+	}
+	if err := line.Levels.SelfCheck(50); err != nil {
+		log.Fatalf("关卡表自检失败: %v", err)
+	}
+	logger.Info("关卡表已加载",
+		zap.String("version", line.Levels.Version()),
+		zap.Int("count", line.Levels.Count()),
+	)
+
 	issuer := core.NewTokenIssuer(cfg.JWT.Secret, cfg.JWT.TTLHours)
 
 	gin.SetMode(gin.ReleaseMode)
@@ -63,9 +76,8 @@ func main() {
 	api := r.Group("/api")
 	{
 		api.POST("/login", profile.LoginHandler(cfg, issuer, db))
-		api.GET("/config", func(c *gin.Context) {
-			core.OK(c, gin.H{"levelVersion": "pending", "serverTime": time.Now().UnixMilli()})
-		})
+		api.GET("/config", line.ConfigHandler(line.DefaultSkins(), "adunit-mock"))
+		api.GET("/levels", line.LevelsHandler())
 
 		auth := api.Group("")
 		auth.Use(core.AuthMiddleware(issuer))

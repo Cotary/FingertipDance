@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "level:gen": "tsx tools/level-gen.ts",
     "level:audit": "tsx tools/batch-audit.ts",
+    "level:sync": "powershell -ExecutionPolicy Bypass -File scripts/sync-levels.ps1",
     "level:inspect": "vite --open /tools/level-inspector.html"
   },
   "devDependencies": {
