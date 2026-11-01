@@ -1,6 +1,8 @@
 import { platform } from '../platform';
 import type { Level } from '../core/types';
 import { deserializeLevel, type SerializedLevel } from '../core/levelTable';
+import { tracker } from '../analytics/tracker';
+import type { EventName } from '../analytics/tracker';
 
 const API = __API_BASE__;
 
@@ -87,8 +89,7 @@ export function fetchFriends(): Promise<{ list: any[]; stats: any }> {
   return authed('/api/friends', 'GET');
 }
 
-/** 上报埋点。 */
-export function reportEvent(name: string, params: Record<string, unknown> = {}): void {
-  authed('/api/report', 'POST', { events: [{ name, ts: Date.now(), params }] })
-    .catch(() => { /* 埋点失败不影响主流程 */ });
+/** 上报埋点（走 tracker，带本地缓冲 + 断网补传）。 */
+export function reportEvent(name: EventName, params: Record<string, unknown> = {}): void {
+  tracker.track(name, params);
 }

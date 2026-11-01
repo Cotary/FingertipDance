@@ -11,6 +11,7 @@ import { SKINS, skinById } from './render/skins';
 import { drawSkinsPage, pickSkinCard, PER_PAGE, type SkinsPageState } from './ui/skins';
 import { ads } from './ads/ads';
 import { needsAdForHint, canSkipToday, markSkippedToday } from './ads/rewardRules';
+import { tracker } from './analytics/tracker';
 import { drawHud, drawProgressBar, drawResult, drawButton, hitButton, type Button } from './ui/hud';
 import { findHint } from './core/solver';
 import { CellType } from './core/types';
@@ -207,6 +208,7 @@ function onDown(clientX: number, clientY: number) {
         skinsPage.equipped = skin.id;
         progress.equipSkin(skin.id);
         audio.unlock();
+        reportEvent('skin_equip', { skin_id: skin.id });
       } else if (skin.unlockType === 'ad') {
         // 广告解锁（T17 接广告）
         void unlockByAd(skin.id);
@@ -240,13 +242,20 @@ function onUp() {
     else if (id === 'skip') void useSkip();
     else if (id === 'next') void enterLevel(pendingLevel);
     else if (id === 'share') { void platform.share({ title: `我卡在第 ${session.state?.level.idx ?? 1} 关` }); reportEvent('share_click', {}); }
-    else if (id === 'skins') { phase = 'skins'; ads.showBanner(); }
+    else if (id === 'skins') { phase = 'skins'; ads.showBanner(); reportEvent('skin_page_view', { owned: skinsPage.unlocked.size, total: SKINS.length }); }
     else if (id === 'back') { phase = 'playing'; ads.hideBanner(); }
     else if (id === 'prevPage') skinsPage.page = Math.max(0, skinsPage.page - 1);
     else if (id === 'nextPage') skinsPage.page = Math.min(Math.ceil(SKINS.length / PER_PAGE) - 1, skinsPage.page + 1);
     return;
   }
-  if (phase === 'playing') session.pointerUp();
+  if (phase === 'playing') {
+    const wasDragging = session.state?.phase === 'dragging';
+    session.pointerUp();
+    // 松手未通关 → 记一次 level_fail
+    if (wasDragging && session.state && session.state.phase !== 'won') {
+      reportEvent('level_fail', { level_idx: session.state.level.idx, steps: session.state.path.length - 1 });
+    }
+  }
 }
 
 // Web 事件绑定
@@ -334,9 +343,11 @@ requestAnimationFrame(frame);
 
 /** 启动。 */
 async function boot() {
+  tracker.init();
   progress.restore();
   try {
     const loginRes = await login();
+    reportEvent('login_success', { uid: loginRes.uid, is_new: (loginRes.maxLevel || 1) <= 1 });
     progress.sync({
       maxLevel: loginRes.maxLevel || 1,
       unlockedSkins: loginRes.unlockedSkins,
