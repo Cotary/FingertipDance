@@ -197,7 +197,7 @@ I:\work\f-game\
 | T04 难度曲线 curve | ☑ | 2026-11-01 | src/core/curve.ts（curveFor/targetDiff/computeDiff）+ 9 用例；修正 computeDiff 唯一性项语义笔误 |
 | T05 generator | ☑ | 2026-11-01 | src/core/generator.ts + 8 用例；修复 fallback（放块可达性验证、起终点距离、growPath 绕行）；100 关平均偏差 4.96 |
 | T06 关卡表流水线 + 体检 CLI | ☑ | 2026-11-01 | level-gen/batch-audit/level-inspector + data/levels.json(1000关) + solutions.json；体检通过（不可解0 重复0 异常5） |
-| T07 单元测试 + 难度校准 | ☐ | | |
+| T07 单元测试 + 难度校准 | ☑ | 2026-11-01 | test/{pipeline,edge}.test.ts + rng 补 4 用例（63 测试全过）；难度校准重跑（不可解0 重复0 平均偏差4.31 唯一解94.6%）；新增 11-关卡生成算法.md + 14-数值与难度曲线.md |
 | T08 Go 后端骨架 | ☐ | | |
 | T09 关卡下发 + config | ☐ | | |
 | T10 登录 + profile | ☐ | | |
@@ -220,4 +220,5 @@ I:\work\f-game\
 
 | 日期 | 任务 | 问题 | 处理方式 |
 |---|---|---|---|
-| | | | |
+| 2026-11-01 | T07 | 「相邻档 diff 增量 ∈[3,12]」「步数增量 ∈[1,5]」两条标准数学上不可满足（diff 全程 ~0.7/档、步数 ~0.1/档，与 0-100/8-21 量纲矛盾） | 判定为规格 02 §4.4 内部不自洽；按不可解/重复/平均偏差/唯一解四条硬指标验收，记录于 14-数值与难度曲线.md |
+| 2026-11-01 | T07 | 规格 02 §4.3 targetDiff「分段线性 15→92」与 computeDiff 实际上限 ~84 不符 | 校准为平方根 15→85，平均偏差 4.31；记录于 14-数值与难度曲线.md §3 |

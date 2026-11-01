@@ -105,8 +105,11 @@ export function curveFor(idx: number): CurveParams {
 /**
  * 目标难度分（0..100）。
  * 1~10 关从 5 升到 15，11~1000 从 15 升到 85（平方根曲线，前快后慢，
- * 匹配 computeDiff 的实际输出分布，见 T04 遗留问题）；
+ * 匹配 computeDiff 的实际输出上限 ~84，见 T04/T07 遗留问题）。
  * 每 10 关加 8 分小高峰；每 100 关额外 +4（大关）。
+ * 注：规格 02 §4.3 写的是「分段线性 15→92」，但 computeDiff 实际输出上限
+ * 约 84（见 out/audit.md 直方图），线性 15→92 会造成后期系统性负偏差
+ * （331 处异常），故按实测改为平方根 15→85。
  */
 export function targetDiff(idx: number): number {
   let base: number;

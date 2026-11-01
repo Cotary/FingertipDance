@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mulberry32, levelSeed } from '../src/core/rng';
+import { mulberry32, levelSeed, hashSeed } from '../src/core/rng';
 
 describe('rng', () => {
   it('同种子产生同序列', () => {
@@ -31,5 +31,26 @@ describe('rng', () => {
   it('levelSeed 对不同关号产出不同种子', () => {
     expect(levelSeed(1, 1)).not.toBe(levelSeed(1, 2));
     expect(levelSeed(1, 1)).toBe(levelSeed(1, 1));
+  });
+
+  it('chance(1) 恒为 true，chance(0) 恒为 false', () => {
+    const r = mulberry32(5);
+    for (let i = 0; i < 100; i++) {
+      expect(r.chance(1)).toBe(true);
+      expect(r.chance(0)).toBe(false);
+    }
+  });
+
+  it('hashSeed 对相同字符串结果稳定', () => {
+    expect(hashSeed('abc')).toBe(hashSeed('abc'));
+    expect(hashSeed('abc')).not.toBe(hashSeed('abd'));
+  });
+
+  it('pick 抛错当数组为空', () => {
+    expect(() => mulberry32(1).pick([])).toThrow();
+  });
+
+  it('int 抛错当 max <= min', () => {
+    expect(() => mulberry32(1).int(5, 5)).toThrow();
   });
 });
