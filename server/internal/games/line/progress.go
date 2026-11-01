@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/tupss/f-game/server/internal/core"
+	"github.com/tupss/f-game/server/internal/modules/leaderboard"
 )
 
 // progressReq 进度上报请求。
@@ -31,7 +32,7 @@ type unlockedSkinInfo struct {
 var nowFunc = func() time.Time { return time.Now() }
 
 // ProgressHandler 上报通关成绩，校验合法性并推进进度。
-func ProgressHandler(db *core.DB, skins []SkinConfig) gin.HandlerFunc {
+func ProgressHandler(db *core.DB, rdb *core.Redis, skins []SkinConfig) gin.HandlerFunc {
 	skinMap := make(map[string]string, len(skins))
 	for _, s := range skins {
 		skinMap[s.ID] = s.Name
@@ -89,6 +90,13 @@ func ProgressHandler(db *core.DB, skins []SkinConfig) gin.HandlerFunc {
 			return
 		}
 
+		// 更新 Redis 榜单（失败不影响主流程）
+		if rdb != nil {
+			if err := leaderboard.UpdateScore(c.Request.Context(), rdb, uid, res.MaxLevel, res.TotalTimeMs); err != nil {
+				c.Error(err)
+			}
+		}
+
 		core.OK(c, res)
 	}
 }
@@ -99,6 +107,7 @@ type progressResult struct {
 	UnlockedSkin  *unlockedSkinInfo `json:"unlockedSkin"`
 	IsNewBest     bool              `json:"isNewBest"`
 	MaxLevel      int               `json:"maxLevel"`
+	TotalTimeMs   int64             `json:"totalTimeMs"`
 	UnlockedSkins []string          `json:"unlockedSkins"`
 	MyRank        int64             `json:"myRank"`
 }
@@ -216,8 +225,9 @@ func applyProgress(db *core.DB, uid int64, lv *SerializedLevel, req progressReq,
 
 	// 读取最新进度用于响应
 	var maxLevel int
+	var totalTimeMs int64
 	var unlockedJSON string
-	if err := db.QueryRow("SELECT max_level, unlocked_skins FROM users WHERE id=?", uid).Scan(&maxLevel, &unlockedJSON); err != nil {
+	if err := db.QueryRow("SELECT max_level, total_time_ms, unlocked_skins FROM users WHERE id=?", uid).Scan(&maxLevel, &totalTimeMs, &unlockedJSON); err != nil {
 		return nil, fmt.Errorf("读取进度: %w", err)
 	}
 	var skinList []string
@@ -228,6 +238,7 @@ func applyProgress(db *core.DB, uid int64, lv *SerializedLevel, req progressReq,
 		UnlockedSkin:  unlocked,
 		IsNewBest:     isNewBest,
 		MaxLevel:      maxLevel,
+		TotalTimeMs:   totalTimeMs,
 		UnlockedSkins: skinList,
 	}, nil
 }

@@ -15,6 +15,7 @@ import (
 
 	"github.com/tupss/f-game/server/internal/core"
 	"github.com/tupss/f-game/server/internal/games/line"
+	"github.com/tupss/f-game/server/internal/modules/friend"
 	"github.com/tupss/f-game/server/internal/modules/leaderboard"
 	"github.com/tupss/f-game/server/internal/modules/profile"
 )
@@ -65,6 +66,28 @@ func main() {
 
 	issuer := core.NewTokenIssuer(cfg.JWT.Secret, cfg.JWT.TTLHours)
 
+	// 可取消的根上下文，供后台任务使用
+	rootCtx, rootCancel := context.WithCancel(context.Background())
+	defer rootCancel()
+
+	// 每日凌晨重建总榜（保证与数据库一致）
+	go func() {
+		for {
+			now := time.Now()
+			next := time.Date(now.Year(), now.Month(), now.Day()+1, 4, 0, 0, 0, now.Location())
+			select {
+			case <-time.After(time.Until(next)):
+				if err := leaderboard.RefreshAll(rootCtx, db, rdb); err != nil {
+					logger.Error("重建榜单失败", zap.Error(err))
+				} else {
+					logger.Info("总榜已重建")
+				}
+			case <-rootCtx.Done():
+				return
+			}
+		}
+	}()
+
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(core.CORS(), core.LoggerMiddleware(logger), gin.Recovery())
@@ -82,8 +105,10 @@ func main() {
 		auth := api.Group("")
 		auth.Use(core.AuthMiddleware(issuer))
 		auth.GET("/leaderboard", leaderboard.GetHandler(db, rdb))
+		auth.GET("/friends", friend.Handler(db))
+		auth.POST("/friend", friend.Handler(db))
 		auth.POST("/report", core.ReportHandler(db))
-		auth.POST("/progress", line.ProgressHandler(db, line.DefaultSkins()))
+		auth.POST("/progress", line.ProgressHandler(db, rdb, line.DefaultSkins()))
 		auth.POST("/challenge", line.ChallengeHandler(db))
 		auth.POST("/skip", line.SkipHandler(db))
 	}
