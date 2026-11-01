@@ -203,7 +203,7 @@ I:\work\f-game\
 | T10 登录 + profile | ☑ | 2026-11-01 | platform/wechat/{code2session,openid}.go + profile/{profile,profile_test}.go；openid AES-GCM 加密存储 + sha256 哈希唯一索引 + JWT 签发；go build/vet/test 通过（4 用例） |
 | T11 进度上报 + 成绩校验 | ☑ | 2026-11-01 | internal/games/line/{validate,progress,challenge,skip,validate_test}.go + 路由接入；防作弊校验（路径/步数/用时）+ 交叉验证 TS 解法通过 Go 校验；go build/vet/test 通过 |
 | T12 排行榜 + 好友 | ☑ | 2026-11-01 | modules/{leaderboard/leaderboard,leaderboard_test,friend/friend}.go + 路由接入 + progress 更新榜单 + 每日重建 goroutine；go build/vet/test 通过 |
-| T13 前端骨架 + 渲染 | ☐ | | |
+| T13 前端骨架 + 渲染 | ☑ | 2026-11-01 | platform/{index,types,web,wechat}.ts + render/{layout,board,trail}.ts + net/api.ts + game/state.ts + main.ts + test/layout.test.ts；Canvas 渲染 + 平台适配；typecheck/test(67)/build 全过 |
 | T14 拖拽输入 + 关卡交互 | ☐ | | |
 | T15 手感与特效 | ☐ | | |
 | T16 皮肤系统 | ☐ | | |
@@ -228,3 +228,4 @@ I:\work\f-game\
 | 2026-11-01 | T10 | 本环境 Docker daemon 未运行，无法 POST /api/login 端到端验证（重复登录 uid 稳定等依赖 MySQL） | 用单测覆盖哈希稳定性/加密随机性/加解密往返/mock code2session；openid 存 AES-GCM 密文而非明文 |
 | 2026-11-01 | T11 | 本环境 Docker daemon 未运行，无法执行 §11.7 的 7 项防作弊手动验证 | 用单测覆盖路径校验 4 种拒绝场景 + 交叉验证（TS 解法跑 Go ValidatePath 抽检 100 关），其余留待有 Docker 环境 |
 | 2026-11-01 | T12 | 本环境 Docker daemon 未运行，无法验证好友链路与榜单更新（G2 门禁全链路依赖 MySQL+Redis） | 用 TestComputeScore 覆盖分数换算；后端 16 测试全过、build/vet 通过，端到端 curl 留待有 Docker 环境补做 |
+| 2026-11-01 | T13 | 本环境后端未启动，无法可视化验证「拖动连线通关」 | typecheck/test(67)/build 全过，dev server 能启动并正确转译；完整可视化验证需后端就绪 |
