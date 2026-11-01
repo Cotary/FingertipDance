@@ -205,7 +205,7 @@ I:\work\f-game\
 | T12 排行榜 + 好友 | ☑ | 2026-11-01 | modules/{leaderboard/leaderboard,leaderboard_test,friend/friend}.go + 路由接入 + progress 更新榜单 + 每日重建 goroutine；go build/vet/test 通过 |
 | T13 前端骨架 + 渲染 | ☑ | 2026-11-01 | platform/{index,types,web,wechat}.ts + render/{layout,board,trail}.ts + net/api.ts + game/state.ts + main.ts + test/layout.test.ts；Canvas 渲染 + 平台适配；typecheck/test(67)/build 全过 |
 | T14 拖拽输入 + 关卡交互 | ☑ | 2026-11-01 | game/{session,progressStore}.ts + ui/hud.ts + main.ts 全链路 + test/session.test.ts（3 用例）；Session 事件驱动拖拽/断线/通关；typecheck/test(70)/build 全过 |
-| T15 手感与特效 | ☐ | | |
+| T15 手感与特效 | ☑ | 2026-11-01 | render/{fx,audio}.ts + game/anim.ts + ui/skins.ts（接口）+ main.ts 接入粒子/音效/通关波次 + 13-手感与反馈规范.md；typecheck/test(70)/build 全过 |
 | T16 皮肤系统 | ☐ | | |
 | T17 广告与商业化 | ☐ | | |
 | T18 埋点 | ☐ | | |
@@ -230,3 +230,4 @@ I:\work\f-game\
 | 2026-11-01 | T12 | 本环境 Docker daemon 未运行，无法验证好友链路与榜单更新（G2 门禁全链路依赖 MySQL+Redis） | 用 TestComputeScore 覆盖分数换算；后端 16 测试全过、build/vet 通过，端到端 curl 留待有 Docker 环境补做 |
 | 2026-11-01 | T13 | 本环境后端未启动，无法可视化验证「拖动连线通关」 | typecheck/test(67)/build 全过，dev server 能启动并正确转译；完整可视化验证需后端就绪 |
 | 2026-11-01 | T14 | 本环境后端未启动，无法执行 G3 门禁「浏览器从第 1 关玩到第 20 关、成绩落库、刷新不丢」 | typecheck/test(70)/build 全过 + Session 单测覆盖拖拽/断线/通关；端到端 G3 验证留待有 Docker/后端环境补做 |
+| 2026-11-01 | T15 | G4 门禁「5 人真人试玩录屏 + 单关 30–90s + 首关通过率 ≥95%」需真人试玩，无法在本环境自动完成 | 特效/音效/缓动已实现并通过 typecheck/test/build；真人试玩留待有可运行后端的环境由人工补做 |

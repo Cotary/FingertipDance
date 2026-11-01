@@ -5,6 +5,8 @@ import { LevelStore, ProgressStore } from './game/progressStore';
 import { DESIGN_W, DESIGN_H } from './render/layout';
 import { drawBoard, type Palette } from './render/board';
 import { drawTrail } from './render/trail';
+import { Fx } from './render/fx';
+import { audio } from './render/audio';
 import { drawHud, drawProgressBar, drawResult, drawButton, hitButton, type Button } from './ui/hud';
 import { findHint } from './core/solver';
 import { CellType } from './core/types';
@@ -29,6 +31,11 @@ const offsetY = (height - DESIGN_H * scale) / 2;
 const session = new Session();
 const levels = new LevelStore();
 const progress = new ProgressStore();
+const fx = new Fx();
+
+let lastFrameAt = Date.now();
+let winAnimStart = 0;
+let waveLit = new Set<number>();
 
 let config: any = null;
 let phase: 'loading' | 'playing' | 'result' = 'loading';
@@ -53,15 +60,25 @@ const hintBtn: Button = { x: DESIGN_W - 210, y: 100, w: 90, h: 60, label: '提�
 const skipBtn: Button = { x: DESIGN_W - 110, y: 100, w: 90, h: 60, label: '跳过', kind: 'ghost', id: 'skip' };
 
 session.on((e) => {
-  if (e.type === 'won') void onWin(e.steps, e.timeMs, e.path);
-  if (e.type === 'break') platform.vibrate();
-  if (e.type === 'moved') reportEvent('tile_light', { level_idx: session.state?.level.idx });
+  if (e.type === 'won') { audio.win(); void onWin(e.steps, e.timeMs, e.path); }
+  if (e.type === 'break') { audio.break(); platform.vibrate(); }
+  if (e.type === 'moved') {
+    audio.light();
+    const st = session.state;
+    if (st && session.layout) {
+      fx.burstAt(e.idx, st.level.w, session.layout.cell, session.layout.originX, session.layout.originY, '#F2C14E');
+    }
+    reportEvent('tile_light', { level_idx: session.state?.level.idx });
+  }
+  if (e.type === 'abandoned') reportEvent('level_abandon', { level_idx: session.state?.level.idx });
 });
 
 /** 通关处理：上报成绩。 */
 async function onWin(steps: number, timeMs: number, path: number[]) {
   const level = session.state!.level;
-  phase = 'result';
+  // 通关波次动画（约 1.2 秒），结算页延后出现
+  winAnimStart = Date.now();
+  fx.clear();
   reportEvent('level_pass', { level_idx: level.idx, steps, time_ms: timeMs, skipped: false });
 
   let unlockedSkin: any = null;
@@ -70,6 +87,7 @@ async function onWin(steps: number, timeMs: number, path: number[]) {
     unlockedSkin = res.unlockedSkin;
     if (res.unlockedSkin) {
       progress.unlockSkin(res.unlockedSkin.id);
+      audio.unlock();
       platform.vibrate();
     }
     progress.sync({ maxLevel: res.maxLevel, unlockedSkins: res.unlockedSkins });
@@ -85,6 +103,9 @@ async function onWin(steps: number, timeMs: number, path: number[]) {
     unlockedSkin,
   };
   pendingLevel = level.idx + 1;
+
+  // 结算页延后出现，让通关波次动画播完
+  setTimeout(() => { phase = 'result'; }, 1200);
 }
 
 /** 进入关卡。 */
@@ -96,6 +117,9 @@ async function enterLevel(idx: number) {
   }
   session.load(lv);
   phase = 'playing';
+  winAnimStart = 0;
+  waveLit = new Set();
+  fx.clear();
   reportEvent('level_start', { level_idx: idx, diff: lv.diff, w: lv.w, h: lv.h });
 }
 
@@ -180,8 +204,32 @@ if (platform.name === 'web') {
   canvas.addEventListener('pointercancel', onUp);
 }
 
+/** 记录帧时间。 */
+function tick() {
+  const now = Date.now();
+  const dt = Math.min(50, now - lastFrameAt);
+  lastFrameAt = now;
+  return { now, dt };
+}
+
+/** 更新通关波次点亮状态（从终点反向扩散）。 */
+function updateWave(now: number) {
+  waveLit = new Set();
+  const st = session.state;
+  if (!st || !winAnimStart) return;
+  const elapsed = now - winAnimStart;
+  const total = st.path.length;
+  for (let i = 0; i < total; i++) {
+    const delay = (total - 1 - i) * 60;
+    if (elapsed >= delay) waveLit.add(st.path[i]);
+  }
+}
+
 /** 渲染循环。 */
 function frame() {
+  const { now, dt } = tick();
+  updateWave(now);
+
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.scale(dpr * scale, dpr * scale);
   ctx.translate(offsetX / dpr, offsetY / dpr);
@@ -191,13 +239,16 @@ function frame() {
 
   const st = session.state;
   if (st && session.layout) {
+    const lit = new Set(st.lit);
+    for (const idx of waveLit) lit.add(idx);
+
     drawBoard(ctx, st.level, session.layout, {
-      lit: st.lit,
+      lit,
       path: st.path,
       hint: st.hint,
       shakeCell: st.shakeCell,
       shakeAt: st.shakeAt,
-    }, PALETTE, Date.now());
+    }, PALETTE, now);
 
     drawTrail(ctx, st.path, st.level.w, session.layout, '#6692F5', 'rgba(102,146,245,0.35)');
 
@@ -208,6 +259,9 @@ function frame() {
     drawButton(ctx, hintBtn, pressedBtn === 'hint');
     drawButton(ctx, skipBtn, pressedBtn === 'skip');
   }
+
+  // 特效（粒子 + 扩散环）
+  fx.update(ctx, dt);
 
   if (phase === 'result' && resultData) {
     resultButtons = drawResult(
