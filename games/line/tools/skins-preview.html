@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>皮肤预览</title>
+<style>
+  body { margin:0; background:#141824; color:#E8ECF5; font-family: system-ui, sans-serif; padding:24px; }
+  h1 { font-size:24px; }
+  p.sub { color:#8A94AD; font-size:14px; margin-top:-8px; }
+  #grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:20px; max-width:1200px; }
+  .card { background:#1E2436; border:1px solid #39415C; border-radius:12px; padding:16px; text-align:center; }
+  .card canvas { background:#262D42; border-radius:8px; }
+  .name { font-weight:600; margin-top:10px; font-size:16px; }
+  .meta { color:#8A94AD; font-size:12px; margin-top:4px; }
+  .tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; margin-top:6px; }
+  .free { background:#2a4a2a; color:#7fd67f; }
+  .normal { background:#2a3a55; color:#8ab4f8; }
+  .premium { background:#4a3a20; color:#f2c14e; }
+</style>
+</head>
+<body>
+<h1>皮肤预览</h1>
+<p class="sub">程序化美术 · 资产量为零 · 16 种皮肤（3×3 真实渲染）</p>
+<div id="grid"></div>
+<script type="module">
+import { SKINS, paintSkin } from '/src/render/skins/index';
+
+const grid = document.getElementById('grid');
+const now = Date.now();
+
+for (const skin of SKINS) {
+  const card = document.createElement('div');
+  card.className = 'card';
+
+  const cv = document.createElement('canvas');
+  cv.width = 180;
+  cv.height = 180;
+  const ctx = cv.getContext('2d');
+  const cell = 180 / 3;
+  for (let gy = 0; gy < 3; gy++) {
+    for (let gx = 0; gx < 3; gx++) {
+      const size = cell - 6;
+      paintSkin(ctx, skin, gx * cell + 3, gy * cell + 3, size, size, gx * 3 + gy + 1, now);
+    }
+  }
+
+  const name = document.createElement('div');
+  name.className = 'name';
+  name.textContent = skin.name;
+
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  meta.textContent = `${skin.id} · ${skin.tier} · ${skin.unlockType}:${skin.unlockValue} · ${skin.texture}`;
+
+  const tag = document.createElement('span');
+  tag.className = 'tag ' + skin.tier;
+  tag.textContent = skin.tier === 'free' ? '免费' : skin.tier === 'normal' ? '普通' : '高级';
+
+  card.appendChild(cv);
+  card.appendChild(name);
+  card.appendChild(meta);
+  card.appendChild(tag);
+  grid.appendChild(card);
+}
+</script>
+</body>
+</html>

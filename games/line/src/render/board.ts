@@ -1,6 +1,7 @@
 import type { LevelData } from '../core/levelTable';
 import { CellType } from '../core/types';
 import type { BoardLayout } from './layout';
+import { paintSkin, paletteOf, type Skin } from './skins';
 
 export interface BoardRenderState {
   /** 已点亮的格子索引集合 */
@@ -15,15 +16,6 @@ export interface BoardRenderState {
   shakeAt: number;
 }
 
-export interface Palette {
-  block: string;
-  brick: string;
-  brickLit: string;
-  oneway: string;
-  start: string;
-  end: string;
-}
-
 /**
  * 绘制棋盘与所有格子。
  */
@@ -32,17 +24,18 @@ export function drawBoard(
   level: LevelData,
   layout: BoardLayout,
   state: BoardRenderState,
-  palette: Palette,
+  skin: Skin,
   now: number,
 ): void {
   const { cell, originX, originY } = layout;
   const gap = Math.max(2, Math.floor(cell * 0.06));
   const size = cell - gap * 2;
+  const p = paletteOf(skin);
 
   for (let y = 0; y < level.h; y++) {
     for (let x = 0; x < level.w; x++) {
       const idx = y * level.w + x;
-      const cellData = level.grid[y][x];
+      const c = level.grid[y][x];
       let px = originX + x * cell + gap;
       let py = originY + y * cell + gap;
 
@@ -54,7 +47,7 @@ export function drawBoard(
         }
       }
 
-      drawCell(ctx, cellData.type, cellData.dir, px, py, size, state.lit.has(idx), palette, state.hint.has(idx));
+      drawCell(ctx, c.type, c.dir, px, py, size, state.lit.has(idx), p, skin, now, idx, state.hint.has(idx));
     }
   }
 }
@@ -64,9 +57,14 @@ function drawCell(
   ctx: CanvasRenderingContext2D,
   type: number,
   dir: number,
-  x: number, y: number, size: number,
+  x: number,
+  y: number,
+  size: number,
   lit: boolean,
-  palette: Palette,
+  p: ReturnType<typeof paletteOf>,
+  skin: Skin,
+  now: number,
+  idx: number,
   hinted: boolean,
 ): void {
   const r = Math.floor(size * 0.18);
@@ -74,11 +72,10 @@ function drawCell(
   ctx.save();
   switch (type) {
     case CellType.BLOCK: {
-      ctx.fillStyle = palette.block;
+      ctx.fillStyle = p.dark;
       roundRect(ctx, x, y, size, size, r);
       ctx.fill();
-      // 对角交叉线
-      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(x + size * 0.25, y + size * 0.25);
@@ -89,36 +86,48 @@ function drawCell(
       break;
     }
     case CellType.BRICK: {
-      ctx.fillStyle = lit ? palette.brickLit : palette.brick;
-      roundRect(ctx, x, y, size, size, r);
-      ctx.fill();
       if (lit) {
-        // 顶部高光
-        ctx.fillStyle = 'rgba(255,255,255,0.25)';
-        roundRect(ctx, x + size * 0.12, y + size * 0.1, size * 0.76, size * 0.22, r * 0.5);
+        paintSkin(ctx, skin, x, y, size, size, idx + 1, now);
+        ctx.strokeStyle = p.border;
+        ctx.lineWidth = 1.5;
+        roundRect(ctx, x, y, size, size, r);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = p.dark;
+        roundRect(ctx, x, y, size, size, r);
         ctx.fill();
       }
       break;
     }
     case CellType.ONEWAY: {
-      ctx.fillStyle = palette.oneway;
+      ctx.fillStyle = p.dark;
       roundRect(ctx, x, y, size, size, r);
       ctx.fill();
-      drawArrow(ctx, x + size / 2, y + size / 2, size * 0.3, dir, '#FFFFFF');
+      drawArrow(ctx, x + size / 2, y + size / 2, size * 0.26, dir, p.glow);
       break;
     }
     case CellType.START: {
-      ctx.fillStyle = palette.start;
+      ctx.fillStyle = '#5EA94C';
       ctx.beginPath();
       ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
       ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = `bold ${Math.floor(size * 0.36)}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('起', x + size / 2, y + size / 2);
       break;
     }
     case CellType.END: {
-      ctx.fillStyle = palette.end;
+      ctx.fillStyle = '#E97E6A';
       ctx.beginPath();
       ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
       ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = `bold ${Math.floor(size * 0.36)}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('终', x + size / 2, y + size / 2);
       break;
     }
   }

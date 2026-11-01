@@ -3,23 +3,16 @@ import { login, fetchConfig, reportProgress, reportSkip, reportEvent } from './n
 import { Session } from './game/session';
 import { LevelStore, ProgressStore } from './game/progressStore';
 import { DESIGN_W, DESIGN_H } from './render/layout';
-import { drawBoard, type Palette } from './render/board';
+import { drawBoard } from './render/board';
 import { drawTrail } from './render/trail';
 import { Fx } from './render/fx';
 import { audio } from './render/audio';
+import { SKINS, skinById } from './render/skins';
+import { drawSkinsPage, pickSkinCard, PER_PAGE, type SkinsPageState } from './ui/skins';
 import { drawHud, drawProgressBar, drawResult, drawButton, hitButton, type Button } from './ui/hud';
 import { findHint } from './core/solver';
 import { CellType } from './core/types';
 import type { GameState } from './game/state';
-
-const PALETTE: Palette = {
-  block: '#39415C',
-  brick: '#5A6480',
-  brickLit: '#6692F5',
-  oneway: '#9B7BE8',
-  start: '#5EA94C',
-  end: '#E97E6A',
-};
 
 const { canvas, width, height, dpr } = platform.getCanvas();
 const ctx = canvas.getContext('2d')!;
@@ -38,11 +31,18 @@ let winAnimStart = 0;
 let waveLit = new Set<number>();
 
 let config: any = null;
-let phase: 'loading' | 'playing' | 'result' = 'loading';
+let phase: 'loading' | 'playing' | 'result' | 'skins' = 'loading';
 let resultButtons: Button[] = [];
 let resultData: { levelIdx: number; steps: number; shortest: number; timeMs: number; unlockedSkin: any } | null = null;
 let pressedBtn: string | null = null;
 let pendingLevel = 1;
+
+let skinsPage: SkinsPageState = {
+  equipped: 'wood',
+  unlocked: new Set(['wood', 'mint']),
+  page: 0,
+};
+let skinButtons: Button[] = [];
 
 /** 画布坐标 → 设计坐标。 */
 function toDesign(clientX: number, clientY: number): { x: number; y: number } {
@@ -149,9 +149,14 @@ async function useSkip() {
   reportEvent('skip_use', { level_idx: st.level.idx, via_ad: true });
 }
 
+/** 广告解锁皮肤（T17 接入激励视频）。 */
+async function unlockByAd(skinId: string) {
+  // T17：调用 platform.ad.showRewarded('skin_unlock')，成功后 progress.unlockSkin(skinId)
+  console.log('广告解锁皮肤待 T17 接入', skinId);
+}
+
 /** 找起点索引。 */
-function findStartIdx(st: GameState): number {
-  for (let y = 0; y < st.level.h; y++) {
+function findStartIdx(st: GameState): number {  for (let y = 0; y < st.level.h; y++) {
     for (let x = 0; x < st.level.w; x++) {
       if (st.level.grid[y][x].type === CellType.START) return y * st.level.w + x;
     }
@@ -164,6 +169,25 @@ function onDown(clientX: number, clientY: number) {
   const d = toDesign(clientX, clientY);
   if (phase === 'result') {
     for (const b of resultButtons) {
+      if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
+    }
+    return;
+  }
+  if (phase === 'skins') {
+    const skin = pickSkinCard(d.x, d.y, skinsPage);
+    if (skin) {
+      if (skinsPage.unlocked.has(skin.id)) {
+        // 装备
+        skinsPage.equipped = skin.id;
+        progress.equipSkin(skin.id);
+        audio.unlock();
+      } else if (skin.unlockType === 'ad') {
+        // 广告解锁（T17 接广告）
+        void unlockByAd(skin.id);
+      }
+      return;
+    }
+    for (const b of skinButtons) {
       if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
     }
     return;
@@ -190,7 +214,10 @@ function onUp() {
     else if (id === 'skip') void useSkip();
     else if (id === 'next') void enterLevel(pendingLevel);
     else if (id === 'share') { void platform.share({ title: `我卡在第 ${session.state?.level.idx ?? 1} 关` }); reportEvent('share_click', {}); }
-    else if (id === 'skins') { /* T16 实现皮肤页 */ }
+    else if (id === 'skins') { phase = 'skins'; }
+    else if (id === 'back') phase = 'playing';
+    else if (id === 'prevPage') skinsPage.page = Math.max(0, skinsPage.page - 1);
+    else if (id === 'nextPage') skinsPage.page = Math.min(Math.ceil(SKINS.length / PER_PAGE) - 1, skinsPage.page + 1);
     return;
   }
   if (phase === 'playing') session.pointerUp();
@@ -238,7 +265,7 @@ function frame() {
   ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
 
   const st = session.state;
-  if (st && session.layout) {
+  if (st && session.layout && (phase === 'playing' || phase === 'result')) {
     const lit = new Set(st.lit);
     for (const idx of waveLit) lit.add(idx);
 
@@ -248,7 +275,7 @@ function frame() {
       hint: st.hint,
       shakeCell: st.shakeCell,
       shakeAt: st.shakeAt,
-    }, PALETTE, now);
+    }, skinById(progress.current.currentSkin), now);
 
     drawTrail(ctx, st.path, st.level.w, session.layout, '#6692F5', 'rgba(102,146,245,0.35)');
 
@@ -262,6 +289,10 @@ function frame() {
 
   // 特效（粒子 + 扩散环）
   fx.update(ctx, dt);
+
+  if (phase === 'skins') {
+    skinButtons = drawSkinsPage(ctx, skinsPage, now);
+  }
 
   if (phase === 'result' && resultData) {
     resultButtons = drawResult(
@@ -284,6 +315,8 @@ async function boot() {
       maxLevel: loginRes.maxLevel || 1,
       unlockedSkins: loginRes.unlockedSkins,
     });
+    skinsPage.equipped = progress.current.currentSkin;
+    skinsPage.unlocked = new Set(progress.current.unlockedSkins);
     config = await fetchConfig();
     await levels.init(config.levelVersion);
     const startIdx = Math.min(progress.current.maxLevel || 1, levels.loadedMax || 1);
