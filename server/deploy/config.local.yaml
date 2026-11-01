@@ -1,0 +1,15 @@
+server:
+  port: 8080
+  addr: ":8080"
+db:
+  dsn: "root:root@tcp(127.0.0.1:3306)/fgame?charset=utf8mb4&parseTime=true&loc=Local&multiStatements=true"
+redis:
+  addr: "127.0.0.1:6379"
+  db: 0
+jwt:
+  secret: "dev-secret-change-me"
+  ttl_hours: 720
+wechat:
+  appid: "wxmock"
+  secret: "mocksecret"
+  mock: true

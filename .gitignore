@@ -18,3 +18,6 @@ games/line/out/
 # 系统
 .DS_Store
 Thumbs.db
+
+# WorkBuddy 项目数据（非交付物）
+.workbuddy/

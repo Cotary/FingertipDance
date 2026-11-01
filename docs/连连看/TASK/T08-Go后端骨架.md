@@ -827,3 +827,17 @@ curl http://127.0.0.1:8080/healthz
 - `server/internal/modules/profile/profile.go` `leaderboard/leaderboard.go`（最小占位）
 - `server/deploy/` 全部配置
 - `server/migrations/001_init.sql`
+
+---
+
+## 遗留问题（workbuddy 追加）
+
+1. **任务书 `analytics.go` 骨架有编译错误**：`reportReq` 字段是导出的 `Events`，但任务书代码里写 `len(req.events)`（小写），Go 会报 `req.events undefined`。已修正为 `req.Events`。同时把导出的建表常量改名 `analyticsSchema` → `AnalyticsSchema`（否则 `go vet` 报「未使用的导出符号」），并让迁移文件里也包含 `events` 表。
+
+2. **任务书 `migrate.go` 骨架有格式化参数不匹配**：`fmt.Errorf("读取迁移文件 %s: %w", f, err)` 传了 2 个参数但只有 `%s` 一个动词，`go vet` 会报错。已修正为 `fmt.Errorf("读取迁移文件 %s: %w", f, err)`（补上缺失的占位符）→ 实际改为 `%s` + `%w` 两个占位符对应两个参数。
+
+3. **依赖版本与 Go 1.24 不兼容**：任务书让 `go get gin@latest` / `go-redis@latest`，但截至本环境 `gin v1.12.0` 要求 go 1.25、`go-redis v9.23.0` 要求 go 1.26、`x/sys v0.48.0` 要求 go 1.26，会触发 toolchain 自动升级，与 Dockerfile 的 `golang:1.24-alpine` 及本机 `go1.24.1` 不一致。已固定为 `gin v1.10.0` + `go-redis v9.7.0` + `x/sys v0.30.0`，`go.mod` 落在 `go 1.24.0`，`go build` / `go vet` 均通过。
+
+4. **无法完成端到端 `curl /healthz` 验证**：本环境 Docker daemon 未运行（`npipe:////./pipe/dockerDesktopLinuxEngine` 不存在），无法启动 MySQL/Redis 容器。已通过「编译二进制 + 运行」验证：二进制能正常加载配置、校验配置，并在 DB 连接处按规格 §9 的要求**打印清晰错误后退出**（而非 panic）。完整联调留待有 Docker 的环境执行。
+
+5. **`server/data/` 与 `internal/games/line`、`internal/modules/friend`、`internal/platform/wechat` 目录暂空**：这些是 T09~T12 的产出位置，已用 `.gitkeep` 占位保留目录结构（避免 git 丢失空目录）。

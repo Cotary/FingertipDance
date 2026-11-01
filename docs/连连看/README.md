@@ -198,7 +198,7 @@ I:\work\f-game\
 | T05 generator | ☑ | 2026-11-01 | src/core/generator.ts + 8 用例；修复 fallback（放块可达性验证、起终点距离、growPath 绕行）；100 关平均偏差 4.96 |
 | T06 关卡表流水线 + 体检 CLI | ☑ | 2026-11-01 | level-gen/batch-audit/level-inspector + data/levels.json(1000关) + solutions.json；体检通过（不可解0 重复0 异常5） |
 | T07 单元测试 + 难度校准 | ☑ | 2026-11-01 | test/{pipeline,edge}.test.ts + rng 补 4 用例（63 测试全过）；难度校准重跑（不可解0 重复0 平均偏差4.31 唯一解94.6%）；新增 11-关卡生成算法.md + 14-数值与难度曲线.md |
-| T08 Go 后端骨架 | ☐ | | |
+| T08 Go 后端骨架 | ☑ | 2026-11-01 | server/ 完整骨架：internal/core 9 文件 + profile/leaderboard 占位 + deploy 配置 + migrations/001_init.sql（6 表）；go build/vet 通过；依赖固定到 go1.24 兼容版本 |
 | T09 关卡下发 + config | ☐ | | |
 | T10 登录 + profile | ☐ | | |
 | T11 进度上报 + 成绩校验 | ☐ | | |
@@ -222,3 +222,5 @@ I:\work\f-game\
 |---|---|---|---|
 | 2026-11-01 | T07 | 「相邻档 diff 增量 ∈[3,12]」「步数增量 ∈[1,5]」两条标准数学上不可满足（diff 全程 ~0.7/档、步数 ~0.1/档，与 0-100/8-21 量纲矛盾） | 判定为规格 02 §4.4 内部不自洽；按不可解/重复/平均偏差/唯一解四条硬指标验收，记录于 14-数值与难度曲线.md |
 | 2026-11-01 | T07 | 规格 02 §4.3 targetDiff「分段线性 15→92」与 computeDiff 实际上限 ~84 不符 | 校准为平方根 15→85，平均偏差 4.31；记录于 14-数值与难度曲线.md §3 |
+| 2026-11-01 | T08 | gin@latest(v1.12.0)/go-redis@latest(v9.23.0) 要求 go1.25/1.26，与 go1.24 及 Dockerfile 不符 | 固定 gin v1.10.0 + go-redis v9.7.0 + x/sys v0.30.0，go.mod 落 go1.24 |
+| 2026-11-01 | T08 | 本环境 Docker daemon 未运行，无法端到端 curl /healthz 联调 | 已通过编译+运行验证启动序列（配置加载→DB 连接处清晰报错退出），完整联调留待有 Docker 环境 |
