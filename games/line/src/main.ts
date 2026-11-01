@@ -1,5 +1,6 @@
 import { platform } from './platform';
-import { fetchFriends, login, fetchConfig, reportProgress, reportSkip, reportChallenge, reportEvent } from './net/api';
+import { configureAds } from './platform/wechat';
+import { fetchFriends, fetchProfile, login, fetchConfig, reportProgress, reportSkip, reportChallenge, reportEvent } from './net/api';
 import { Session } from './game/session';
 import { LevelStore, ProgressStore } from './game/progressStore';
 import { DESIGN_W, DESIGN_H } from './render/layout';
@@ -241,9 +242,22 @@ async function unlockByAd(skinId: string) {
   reportEvent('skin_unlock', { skin_id: skinId, via: 'ad' });
 }
 
+/** 从服务端刷新进度（切后台回前台时）。 */
+async function refreshProgress() {
+  try {
+    const res = await fetchProfile();
+    progress.sync({
+      maxLevel: res.maxLevel,
+      unlockedSkins: res.unlockedSkins,
+      totalTimeMs: res.totalTimeMs,
+      totalSteps: res.totalSteps,
+    });
+    skinsPage.unlocked = new Set(progress.current.unlockedSkins);
+  } catch { /* 用本地缓存兜底 */ }
+}
+
 /** 发布自己的进度到开放数据域（好友榜）。 */
-function publishMyProfile() {
-  publishProfile({
+function publishMyProfile() {  publishProfile({
     maxLevel: progress.current.maxLevel,
     totalTimeMs: progress.current.totalTimeMs,
     totalSteps: progress.current.totalSteps,
@@ -411,12 +425,33 @@ function onUp() {
   }
 }
 
-// Web 事件绑定
+// 事件绑定（平台分支）
 if (platform.name === 'web') {
   canvas.addEventListener('pointerdown', (e) => onDown(e.clientX, e.clientY));
   canvas.addEventListener('pointermove', (e) => onMove(e.clientX, e.clientY));
   canvas.addEventListener('pointerup', onUp);
   canvas.addEventListener('pointercancel', onUp);
+} else {
+  type TouchEvent = { touches: Array<{ clientX: number; clientY: number }> };
+  const wx = (globalThis as {
+    wx?: {
+      onTouchStart?: (cb: (e: TouchEvent) => void) => void;
+      onTouchMove?: (cb: (e: TouchEvent) => void) => void;
+      onTouchEnd?: (cb: () => void) => void;
+      onTouchCancel?: (cb: () => void) => void;
+      onHide?: (cb: () => void) => void;
+      onShow?: (cb: () => void) => void;
+    };
+  }).wx;
+  wx?.onTouchStart?.((e: TouchEvent) => { const t = e.touches[0]; if (t) onDown(t.clientX, t.clientY); });
+  wx?.onTouchMove?.((e: TouchEvent) => { const t = e.touches[0]; if (t) onMove(t.clientX, t.clientY); });
+  wx?.onTouchEnd?.(() => onUp());
+  wx?.onTouchCancel?.(() => onUp());
+  wx?.onHide?.(() => {
+    void tracker.flush();   // 补传埋点
+    session.abandon();
+  });
+  wx?.onShow?.(() => { void refreshProgress(); });
 }
 
 /** 记录帧时间。 */
@@ -527,6 +562,12 @@ async function boot() {
     skinsPage.equipped = progress.current.currentSkin;
     skinsPage.unlocked = new Set(progress.current.unlockedSkins);
     config = await fetchConfig();
+    if (platform.name === 'wechat' && config.ad) {
+      configureAds({
+        rewardedVideoId: config.ad.rewardedVideoId,
+        interstitialId: config.ad.interstitialId,
+      });
+    }
     await levels.init(config.levelVersion);
     challenge = parseChallenge();
     const startIdx = challenge

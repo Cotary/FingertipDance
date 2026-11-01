@@ -61,6 +61,11 @@ export function fetchConfig(): Promise<ServerConfig> {
   return platform.request<ServerConfig>(API + '/api/config', 'GET');
 }
 
+/** 拉取当前用户进度（切后台回前台时刷新）。 */
+export function fetchProfile(): Promise<{ maxLevel: number; unlockedSkins: string[]; totalTimeMs: number; totalSteps: number }> {
+  return authed('/api/profile', 'GET');
+}
+
 /** 拉取关卡表。 */
 export async function fetchLevels(from: number, count: number): Promise<Level[]> {
   const res = await platform.request<{ version: string; levels: SerializedLevel[] }>(

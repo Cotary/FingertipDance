@@ -86,6 +86,35 @@ func LoginHandler(cfg *core.Config, issuer *core.TokenIssuer, db *core.DB) gin.H
 	}
 }
 
+// ProfileHandler 返回当前用户进度（切后台回前台时刷新用）。
+func ProfileHandler(db *core.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		uid := core.UIDFromContext(c)
+		row := db.QueryRow(
+			"SELECT max_level, total_time_ms, total_steps, unlocked_skins FROM users WHERE id=?",
+			uid,
+		)
+		var maxLevel, totalSteps int
+		var totalTimeMs int64
+		var skinsJSON string
+		if err := row.Scan(&maxLevel, &totalTimeMs, &totalSteps, &skinsJSON); err != nil {
+			core.Fail(c, core.CodeInternal, "用户不存在")
+			return
+		}
+		var skins []string
+		_ = json.Unmarshal([]byte(skinsJSON), &skins)
+		if skins == nil {
+			skins = []string{}
+		}
+		core.OK(c, gin.H{
+			"maxLevel":     maxLevel,
+			"totalTimeMs":  totalTimeMs,
+			"totalSteps":   totalSteps,
+			"unlockedSkins": skins,
+		})
+	}
+}
+
 // findOrCreate 按 openid 哈希查找用户，不存在则创建。
 // enc 是加密后的 openid（AES-GCM），绝不落明文。
 func findOrCreate(db *core.DB, hash, enc, nickname, avatar string) (*User, bool, error) {
