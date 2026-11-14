@@ -22,13 +22,26 @@ Thumbs.db
 # WorkBuddy 项目数据（非交付物）
 .workbuddy/
 
-# Go 编译产物
+# Go 编译产物与服务端运行目录（二进制 + 日志）
 *.exe
+server/deploy/bin/
+games/line/server/
+
+# 日志（vite / 服务端运行日志，随时可重新生成）
+*.log
+*.log.*
 
 # 参考图裁剪（分析用，非交付物）
 .research/
+
+# 原始参考截图（竞品截图原图，仅本地分析用；样片见 docs/连连看/风格样片/）
+/连连看/
+/抖音游戏  指间扩张/
 
 # UI 校验中间产物（tools/ui-gallery.ts 生成，非交付物）
 games/line/tools/*.png
 games/line/tools/ui-gallery.html
 games/line/tools/ui-debug.html
+
+# 一次性探测页（临时实验，不入库）
+games/line/tools/_probe.html
