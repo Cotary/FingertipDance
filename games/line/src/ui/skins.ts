@@ -15,13 +15,20 @@
  * 旧版是「点卡即装备」，两件事挤在一次点击里，选的过程被跳过了。
  */
 import { DESIGN_W } from '../render/layout';
+import type { BoardLayout } from '../render/layout';
 import { drawButton, type Button } from './hud';
 import { SKINS, paletteOf, skinById, paintSkin, type Skin, type SkinPalette } from '../render/skins';
+import { THEMES, themeById, themeUnlocked, type BoardTheme, type ThemeState } from '../render/themes';
+import { hasOwnVoice, voiceFor } from '../render/voice';
+import { CoverCell, DIR, packCell } from '../core/cover/v3/types';
 import { THEME, type Theme } from './theme';
 import {
   CLAY, CLAY_UI, clayBlock, clayInset, clayLock, clayText,
   rrectPts, tracePts, type ClayColor,
 } from './clay';
+
+/** 页签。皮肤只换格子色相，主题连背景 / 图标族 / 路线画法一起换 —— 两层，不是一个列表的两段。 */
+export type SkinsTab = 'skin' | 'theme';
 
 export interface SkinsPageState {
   /** 当前装备的皮肤 */
@@ -32,6 +39,19 @@ export interface SkinsPageState {
   unlocked: Set<string>;
   /** 当前页 */
   page: number;
+
+  // ── 主题页签（可选：老调用方不传就当作只有皮肤页） ──
+
+  /** 当前页签，默认 `skin` */
+  tab?: SkinsTab;
+  /** 当前装备的棋盘主题 id（'' = 不启用，走黏土皮肤管线） */
+  themeEquipped?: string;
+  /** 展台上展示的主题 id */
+  themeSelected?: string;
+  /** 最高已通关号；里程碑解锁按它判定 */
+  maxLevel?: number;
+  /** 调试构建：所有主题视为已解锁（方便在测试环境里试） */
+  themeAllUnlocked?: boolean;
 }
 
 // ────────────────────────────── 布局 ──────────────────────────────
@@ -112,11 +132,14 @@ export function drawSkinsPage(
 ): Button[] {
   void theme;
 
+  drawHeader(ctx, st);
+
+  if ((st.tab ?? 'skin') === 'theme') return drawThemeTab(ctx, st, now, theme);
+
   const sel = skinById(st.selected);
   const owned = st.unlocked.has(sel.id);
   const equipped = st.equipped === sel.id;
 
-  drawHeader(ctx, st);
   drawStage(ctx, sel, now, owned);
   const buttons = drawInfo(ctx, sel, owned, equipped, theme);
   drawChips(ctx, st, now);
@@ -128,26 +151,42 @@ export function drawSkinsPage(
 // ────────────────────────────── 标题 ──────────────────────────────
 
 /**
- * 标题区。
+ * 标题区 = 两个页签 + 计数胶囊。
  *
- * 左对齐而不是居中：居中标题 + 居中计数会让顶部变成一条对称的匾额，
- * 左对齐才读作「这一页的页眉」，右端的计数胶囊也才有地方落。
+ * 没有单独的「皮肤」大标题：底部导航已经说明了这一页是什么，
+ * 再写一遍标题只是把顶部那一行字重复两次。页签本身就能读作页眉。
  */
 function drawHeader(ctx: CanvasRenderingContext2D, st: SkinsPageState): void {
-  clayText(ctx, '皮肤', PAD, 96, 38, {
-    align: 'left',
-    fill: CLAY_UI.ink,
-    outline: 'rgba(255,251,243,0.5)',
-    outlineWidth: 5,
-  });
+  const tab = st.tab ?? 'skin';
+
+  for (let i = 0; i < TABS.length; i++) {
+    const t = TABS[i];
+    const on = t.id === tab;
+    if (on) {
+      clayBlock(ctx, t.x, t.y, t.w, t.h, t.h * 0.5, CLAY.terracotta, 880 + i, {
+        depth: 8,
+        hi: 0.07,
+        jitter: 0.004,
+      });
+    } else {
+      clayInset(ctx, t.x, t.y, t.w, t.h, t.h * 0.5, CLAY.sand, 884 + i, { jitter: 0.003 });
+    }
+    clayText(ctx, t.label, t.x + t.w / 2, t.y + t.h / 2, 27, {
+      weight: on ? 800 : 600,
+      fill: on ? '#FFF6E9' : CLAY_UI.inkSoft,
+      outline: on ? 'rgba(90,38,16,0.42)' : undefined,
+      outlineWidth: on ? 4 : 0,
+      emboss: false,
+    });
+  }
 
   // 计数胶囊：沙色内凹，右上角
   const w = 132;
   const h = 48;
   const x = DESIGN_W - PAD - w;
-  const y = 72;
+  const y = 70;
   clayInset(ctx, x, y, w, h, h / 2, CLAY.sand, 902, { jitter: 0.003 });
-  clayText(ctx, `${st.unlocked.size} / ${SKINS.length}`, x + w / 2, y + h / 2, 22, {
+  clayText(ctx, tab === 'theme' ? `${unlockedThemeCount(st)} / ${THEMES.length}` : `${st.unlocked.size} / ${SKINS.length}`, x + w / 2, y + h / 2, 22, {
     weight: 700,
     fill: CLAY_UI.inkSoft,
     outlineWidth: 0,
@@ -155,15 +194,44 @@ function drawHeader(ctx: CanvasRenderingContext2D, st: SkinsPageState): void {
   });
 }
 
+/** 页签的几何（绘制与命中都用它，避免两处对不上）。 */
+const TABS: Array<{ id: SkinsTab; label: string; x: number; y: number; w: number; h: number }> = [
+  { id: 'skin', label: '皮肤', x: PAD, y: 58, w: 172, h: 66 },
+  { id: 'theme', label: '棋盘', x: PAD + 186, y: 58, w: 172, h: 66 },
+];
+
+/** 点到了哪个页签。 */
+export function pickSkinsTab(x: number, y: number): SkinsTab | null {
+  for (const t of TABS) {
+    if (x >= t.x && x <= t.x + t.w && y >= t.y && y <= t.y + t.h) return t.id;
+  }
+  return null;
+}
+
+/** 已解锁主题数（调试构建全解锁）。 */
+function unlockedThemeCount(st: SkinsPageState): number {
+  if (st.themeAllUnlocked) return THEMES.length;
+  const maxLevel = st.maxLevel ?? 0;
+  return THEMES.filter((t) => themeUnlocked(t, maxLevel, new Set())).length;
+}
+
+/** 某个主题是否已解锁。 */
+export function isThemeOwned(st: SkinsPageState, theme: BoardTheme): boolean {
+  if (st.themeAllUnlocked) return true;
+  return themeUnlocked(theme, st.maxLevel ?? 0, new Set());
+}
+
 // ────────────────────────────── 陈列台 ──────────────────────────────
 
 /**
- * 深陶陈列台 + 真棋盘预览。
+ * 陈列台的三层框架：台子（凸）→ 内衬（凹）→ 射灯（径向柔光）。
  *
- * 三层：台子（凸）→ 内衬（凹）→ 射灯（径向柔光）→ 棋盘。
- * 射灯这层不能省：没有它，深色台面是一块死板；有了它，才有「被灯照着的展柜」。
+ * 抽出来是因为主题页要用同一座台子 —— 陈列柜是这一页的骨架，
+ * 换页签只换台面上的样品，不换柜子。
+ *
+ * @returns 内衬矩形（放样品的地方）
  */
-function drawStage(ctx: CanvasRenderingContext2D, skin: Skin, now: number, owned: boolean): void {
+function drawStageFrame(ctx: CanvasRenderingContext2D): { x: number; y: number; w: number; h: number } {
   const { x, y, w, h } = STAGE;
 
   clayBlock(ctx, x, y, w, h, 34, CLAY.stage, 700, { depth: 15, hi: 0.055, jitter: 0.004 });
@@ -193,6 +261,19 @@ function drawStage(ctx: CanvasRenderingContext2D, skin: Skin, now: number, owned
   ctx.fillStyle = lamp;
   ctx.fillRect(inX, inY, inW, inH);
   ctx.restore();
+
+  return { x: inX, y: inY, w: inW, h: inH };
+}
+
+/**
+ * 深陶陈列台 + 真棋盘预览。
+ *
+ * 三层：台子（凸）→ 内衬（凹）→ 射灯（径向柔光）→ 棋盘。
+ * 射灯这层不能省：没有它，深色台面是一块死板；有了它，才有「被灯照着的展柜」。
+ */
+function drawStage(ctx: CanvasRenderingContext2D, skin: Skin, now: number, owned: boolean): void {
+  const { y } = STAGE;
+  drawStageFrame(ctx);
 
   // ── 样品板 ──
   // 一整块料 + 刻线，不是 36 块独立小砖。后者每块都有体积和各自的纹理，
@@ -525,3 +606,407 @@ export function pickSkinCard(x: number, y: number, st: SkinsPageState): Skin | n
   return null;
 }
 
+
+// ────────────────────────────── 棋盘主题页 ──────────────────────────────
+
+/**
+ * 陈列样品：一块 6×6 的假盘面。
+ *
+ * 为什么不用静态图：主题的价值全在「真实渲染」里 —— 背景、格线、图标族、路线画法
+ * 都在渲染器里。截图会随主题改动过期，真渲染不会。
+ */
+const DEMO_N = 6;
+
+/** 蛇形路线的前 18 格（3 行铺满，剩 3 行留白 —— 一眼看出「铺到一半」）。 */
+const DEMO_PATH: number[] = (() => {
+  const out: number[] = [];
+  for (let y = 0; y < DEMO_N - 3; y++) {
+    for (let k = 0; k < DEMO_N; k++) {
+      const x = y % 2 === 0 ? k : DEMO_N - 1 - k;
+      out.push(y * DEMO_N + x);
+    }
+  }
+  return out;
+})();
+
+/** 六种机制各摆一个，缩略图里也能看出「这套主题的图标长什么样」。 */
+function buildDemoGrid(): Uint8Array {
+  const g = new Uint8Array(DEMO_N * DEMO_N);
+  for (let i = 0; i < g.length; i++) g[i] = packCell(CoverCell.BRICK);
+  const put = (idx: number, type: number, dir = 0, group = 0) => {
+    g[idx] = packCell(type, dir, group);
+  };
+  put(0, CoverCell.START);
+  put(17, CoverCell.END);
+  put(4, CoverCell.ONEWAY, DIR.RIGHT);
+  put(8, CoverCell.SHARD, 0, 0);
+  put(11, CoverCell.ICE);
+  put(14, CoverCell.KEY, 0, 0);
+  put(16, CoverCell.GATE, 0, 0);
+  put(21, CoverCell.BLOCK);
+  put(26, CoverCell.PORTAL, 0, 0);
+  put(33, CoverCell.PORTAL, 0, 0);
+  return g;
+}
+
+const DEMO_BOARD = { w: DEMO_N, h: DEMO_N, grid: buildDemoGrid() };
+
+/**
+ * 陶片缩略图用的 4×4 小盘。
+ *
+ * 为什么不是把 6×6 缩小：116px 宽的陶片里塞 6 列，每格只剩 16px ——
+ * 图标糊成噪点，格线黏成一片，五块陶片看起来一模一样。
+ * 少放两列、把格放大到 25px，才读得出「这套的格子是什么形状」。
+ */
+const THUMB_N = 4;
+const THUMB_BOARD = { w: THUMB_N, h: THUMB_N, grid: buildThumbGrid() };
+const THUMB_PATH = [0, 1, 2, 3, 7, 11];
+
+function buildThumbGrid(): Uint8Array {
+  const g = new Uint8Array(THUMB_N * THUMB_N);
+  for (let i = 0; i < g.length; i++) g[i] = packCell(CoverCell.BRICK);
+  const put = (idx: number, type: number, dir = 0, group = 0) => {
+    g[idx] = packCell(type, dir, group);
+  };
+  put(0, CoverCell.START);
+  put(11, CoverCell.END);
+  put(5, CoverCell.SHARD, 0, 0);
+  put(10, CoverCell.ICE);
+  put(15, CoverCell.BLOCK);
+  return g;
+}
+
+const THUMB_STATE: ThemeState = {
+  covered: new Set(THUMB_PATH),
+  path: THUMB_PATH,
+  keysHeld: new Set<number>(),
+  shardsGot: new Set<number>(),
+  shardNext: 0,
+};
+
+const DEMO_STATE: ThemeState = {
+  covered: new Set(DEMO_PATH),
+  path: DEMO_PATH,
+  keysHeld: new Set<number>(),
+  shardsGot: new Set<number>(),
+  // 第一颗星还亮着：星空 / 冰雕那几套的星形最抓眼，样品要让玩家先看到它
+  shardNext: 0,
+};
+
+/**
+ * 主题页。
+ *
+ * 结构完全套用皮肤页（展台 → 铭牌 → 陶片），只换了台面上的东西：
+ * 皮肤页摆的是「一块料」，主题页摆的是「一整块盘面」。
+ * 同一条骨架是有意的 —— 玩家不该为了看外观学两套界面。
+ */
+function drawThemeTab(
+  ctx: CanvasRenderingContext2D,
+  st: SkinsPageState,
+  now: number,
+  theme: Theme,
+): Button[] {
+  const selId = st.themeSelected ?? '';
+  const sel = themeById(selId);
+
+  // 「经典」= 不启用主题，摆的是当前黏土皮肤 —— 它就是玩家现在的盘面
+  if (sel) drawThemeStage(ctx, sel, now, isThemeOwned(st, sel));
+  else drawStage(ctx, skinById(st.equipped), now, true);
+
+  const buttons = drawThemeInfo(ctx, st, sel, theme);
+  drawThemeChips(ctx, st, now, selId);
+  return buttons;
+}
+
+/** 展台里的主题样品：主题自己画底板与背景，这里只负责裁剪。 */
+function drawThemeStage(
+  ctx: CanvasRenderingContext2D,
+  t: BoardTheme,
+  now: number,
+  owned: boolean,
+): void {
+  const inner = drawStageFrame(ctx);
+
+  const pad = 12;
+  // 缩略图要给「盘沿」留位置。
+  //
+  // 各主题的盘沿宽约 `cell*0.52`（金缮瓷盘的瓷边、金线的画框都是这个量级），
+  // 按 `N*cell + 2*pad` 算出来的 cell 会让盘撑满窗口，四条边被裁掉 ——
+  // 预览就变成「一张没有边框的格子图」，玩家看不到这套主题的「器」。
+  // 解 `cell*(N + 1.04) = inner` 才是能装下整只盘的尺寸。
+  const cell = Math.floor(
+    Math.min(
+      (inner.w - pad * 2) / (DEMO_N + 1.04),
+      (inner.h - pad * 2) / (DEMO_N + 1.04),
+    ),
+  );
+  const bw = cell * DEMO_N;
+  const ox = Math.round(inner.x + (inner.w - bw) / 2);
+  const oy = Math.round(inner.y + (inner.h - bw) / 2);
+  const winX = inner.x + pad;
+  const winY = inner.y + pad;
+  const winW = inner.w - pad * 2;
+  const winH = inner.h - pad * 2;
+
+  ctx.save();
+  tracePts(ctx, rrectPts(winX, winY, winW, winH, 16, 708, 0.003));
+  ctx.clip();
+  // 背景按整个窗口铺，不是按盘面铺 —— 光带 / 罗盘刻度 / 星点本来就是整屏量级的东西，
+  // 只铺在盘面大小上会变成一坨局部的杂纹。
+  t.backdrop(ctx, { x: inner.x, y: inner.y, w: inner.w, h: inner.h });
+  const layout: BoardLayout = { cell, originX: ox, originY: oy, boardW: bw, boardH: bw };
+  t.board({ ctx, board: DEMO_BOARD, layout, state: DEMO_STATE, now, dpr: 2 });
+  ctx.restore();
+
+  if (!owned) {
+    // 不换灰色：灰样品读作「坏了」，这里要的是「看得见、拿不到」
+    ctx.save();
+    tracePts(ctx, rrectPts(winX, winY, winW, winH, 16, 708, 0.003));
+    ctx.fillStyle = 'rgba(12,8,6,0.58)';
+    ctx.fill();
+    ctx.restore();
+    clayLock(ctx, DESIGN_W / 2, inner.y + inner.h / 2, 1.9, CLAY.cream);
+  }
+}
+
+/** 铭牌：一句话卖点 + 名字 + 右侧的装备 / 解锁条件。 */
+function drawThemeInfo(
+  ctx: CanvasRenderingContext2D,
+  st: SkinsPageState,
+  sel: BoardTheme | undefined,
+  theme: Theme,
+): Button[] {
+  const equippedId = st.themeEquipped ?? '';
+  const isEquipped = sel ? equippedId === sel.id : equippedId === '';
+  const owned = sel ? isThemeOwned(st, sel) : true;
+
+  clayText(ctx, sel ? sel.tagline : `经典 · ${skinById(st.equipped).name}`, PAD, INFO_Y, 21, {
+    align: 'left',
+    weight: 600,
+    fill: CLAY_UI.inkSoft,
+    outlineWidth: 0,
+    emboss: false,
+  });
+
+  clayText(ctx, sel ? sel.name : '经典棋盘', PAD, INFO_Y + 44, 42, {
+    align: 'left',
+    fill: CLAY_UI.ink,
+    outline: 'rgba(255,251,243,0.55)',
+    outlineWidth: 5,
+  });
+
+  // 专属音色的铭牌行。
+  //
+  // **必须写出来**：音效是这套主题的一半，但玩家在展台上没有任何别的途径知道 ——
+  // 「玻璃穹顶的钟声」不点进去听是看不见的。这一行让「八套主题 = 八种声音」
+  // 从隐藏卖点变成可见卖点。
+  // 位置在名字下方、陶片上方（INFO_Y=686，陶片 900），中间这段本来是空的。
+  if (sel && hasOwnVoice(sel.id)) {
+    clayText(ctx, `♪ ${voiceFor(sel.id).desc}`, PAD, INFO_Y + 96, 21, {
+      align: 'left',
+      weight: 600,
+      fill: CLAY_UI.inkSoft,
+      outlineWidth: 0,
+      emboss: false,
+    });
+  }
+
+  const btnW = 168;
+  const btnH = 68;
+  const btnX = DESIGN_W - PAD - btnW;
+  const btnY = INFO_Y + 8;
+
+  if (isEquipped) {
+    clayInset(ctx, btnX, btnY, btnW, btnH, 26, CLAY.sand, 930, { jitter: 0.003 });
+    clayText(ctx, '使用中', btnX + btnW / 2, btnY + btnH / 2, 26, {
+      weight: 700,
+      fill: CLAY.mint.shade,
+      outlineWidth: 0,
+      emboss: false,
+    });
+    return [];
+  }
+
+  if (owned) {
+    const b: Button = { x: btnX, y: btnY, w: btnW, h: btnH, label: '装备', kind: 'primary', id: 'equipTheme' };
+    drawButton(ctx, b, false, theme);
+    return [b];
+  }
+
+  // 解锁条件必须写死关号：只写「通关解锁」等于没写
+  clayText(ctx, sel ? `通关第 ${sel.unlock.value} 关解锁` : '', btnX + btnW, INFO_Y + 46, 23, {
+    align: 'right',
+    weight: 700,
+    fill: CLAY_UI.inkSoft,
+    outlineWidth: 0,
+    emboss: false,
+  });
+  return [];
+}
+
+// ── 陶片：九格（经典 + 八套主题），5 列 × 2 行 ──
+//
+// 单行放不下九块（9×121 + 8×10 = 1169 > 750），而缩小到 72px 之后
+// 主题自己的底板、格子、线就全糊成一片色块 —— 陶片必须看得出「这是哪一套」。
+// 所以改成两行：每块仍是 121×118（和展台上的样品同一个画法）。
+//
+// 第二行只有 4 块，**居中排**而不是左对齐：左对齐会在右下角留一个大洞，
+// 读作「还差一块没加载」。
+
+const TC_W = 121;
+// 118 → 104：两行之后第二行的名字会压到导航条上（实测基线 1192，
+// 导航 1214，字底 1202 —— 只差 12px，而导航条上沿还有一道阴影）。
+// 高度收 14px 换来 40px 余量，样品仍然是 24px 一格，读得出是哪一套。
+const TC_H = 104;
+const TC_GAP = 10;
+const TC_Y = 878;
+const TC_COLS = 5;
+/** 行距 = 陶片 + 名字 + 12px 呼吸。名字写不下就等于没有索引 */
+const TC_ROW_H = TC_H + 40;
+const TC_COUNT = THEMES.length + 1;
+
+/** 第 i 块陶片的位置。 */
+function themeChipRect(i: number): { x: number; y: number } {
+  const row = Math.floor(i / TC_COLS);
+  const col = i % TC_COLS;
+  const inRow = Math.min(TC_COLS, TC_COUNT - row * TC_COLS);
+  const total = inRow * TC_W + (inRow - 1) * TC_GAP;
+  return { x: (DESIGN_W - total) / 2 + col * (TC_W + TC_GAP), y: TC_Y + row * TC_ROW_H };
+}
+
+function drawThemeChips(
+  ctx: CanvasRenderingContext2D,
+  st: SkinsPageState,
+  now: number,
+  selId: string,
+): void {
+  const names = ['经典', ...THEMES.map((t) => t.name)];
+
+  for (let i = 0; i < names.length; i++) {
+    const { x, y } = themeChipRect(i);
+    const id = i === 0 ? '' : THEMES[i - 1].id;
+    const isSel = selId === id;
+
+    if (isSel) {
+      clayBlock(ctx, x - 5, y - 5, TC_W + 10, TC_H + 10, 24, CLAY.terracotta, 950 + i, {
+        depth: 12,
+        hi: 0.06,
+        jitter: 0.004,
+      });
+    }
+
+    if (i === 0) {
+      // 经典：手画一块 4×4 黏土砖盘 + 一条陶土线。
+      //
+      // 不能只铺一块蓝色 `clayBlock` —— 那读作「一个空的色块」，而不是「一块棋盘」，
+      // 和旁边四块一眼能认出是盘面的主题放在一起，它显得像没加载出来。
+      clayBlock(ctx, x, y, TC_W, TC_H, 18, CLAY.board, 960, { depth: 6, hi: 0.09, jitter: 0.005 });
+      ctx.save();
+      tracePts(ctx, rrectPts(x, y, TC_W, TC_H, 18, 960, 0.004));
+      ctx.clip();
+      const cell = Math.floor(Math.min(TC_W - 10, TC_H - 10) / THUMB_N);
+      const bw = cell * THUMB_N;
+      const ox = x + Math.round((TC_W - bw) / 2);
+      const oy = y + Math.round((TC_H - bw) / 2);
+      const rr = cell * 0.18;
+      for (let gy = 0; gy < THUMB_N; gy++) {
+        for (let gx = 0; gx < THUMB_N; gx++) {
+          const idx = gy * THUMB_N + gx;
+          const walk = THUMB_PATH.includes(idx);
+          const c = walk ? CLAY.terracotta : (gx + gy) % 2 === 0 ? CLAY.board.light : CLAY.board;
+          ctx.fillStyle = (c as ClayColor).base;
+          roundRectLocal(ctx, ox + gx * cell + 1.5, oy + gy * cell + 1.5, cell - 3, cell - 3, rr);
+          ctx.fill();
+        }
+      }
+      // 线：陶土色，沿 THUMB_PATH 的折线（和主题里那条线同一个意思）
+      ctx.strokeStyle = '#FFF3E2';
+      ctx.lineWidth = Math.max(2, cell * 0.13);
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      THUMB_PATH.forEach((idx, k) => {
+        const px2 = ox + (idx % THUMB_N) * cell + cell / 2;
+        const py2 = oy + Math.floor(idx / THUMB_N) * cell + cell / 2;
+        if (k === 0) ctx.moveTo(px2, py2);
+        else ctx.lineTo(px2, py2);
+      });
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      // 其余四块直接渲染同一块样品盘面，只是更小 —— 陶片和展台说的是同一件事
+      const t = THEMES[i - 1];
+      const cell = Math.floor(Math.min(TC_W - 8, TC_H - 8) / THUMB_N);
+      const bw = cell * THUMB_N;
+      const ox = x + Math.round((TC_W - bw) / 2);
+      const oy = y + Math.round((TC_H - bw) / 2);
+      ctx.save();
+      tracePts(ctx, rrectPts(x, y, TC_W, TC_H, 18, 962 + i, 0.004));
+      ctx.clip();
+      t.backdrop(ctx, { x, y, w: TC_W, h: TC_H });
+      t.board({
+        ctx,
+        board: THUMB_BOARD,
+        layout: { cell, originX: ox, originY: oy, boardW: bw, boardH: bw },
+        state: THUMB_STATE,
+        now,
+        dpr: 2,
+      });
+      ctx.restore();
+    }
+
+    if (!isSel) {
+      ctx.fillStyle = 'rgba(38,26,18,0.16)';
+      tracePts(ctx, rrectPts(x, y, TC_W, TC_H, 18, 964 + i, 0.004));
+      ctx.fill();
+    }
+
+    if (i > 0 && !isThemeOwned(st, THEMES[i - 1])) {
+      ctx.fillStyle = 'rgba(14,10,8,0.5)';
+      tracePts(ctx, rrectPts(x, y, TC_W, TC_H, 18, 966 + i, 0.004));
+      ctx.fill();
+      clayLock(ctx, x + TC_W / 2, y + TC_H / 2, 0.72, CLAY.cream);
+    }
+
+    clayText(ctx, names[i], x + TC_W / 2, y + TC_H + 22, 21, {
+      weight: isSel ? 800 : 600,
+      fill: isSel ? CLAY_UI.ink : CLAY_UI.inkSoft,
+      outlineWidth: 0,
+      emboss: false,
+    });
+  }
+}
+
+/** 点到第几块陶片（0 = 经典）。没点到返回 -1。 */
+export function pickThemeChip(x: number, y: number): number {
+  for (let i = 0; i < TC_COUNT; i++) {
+    const r = themeChipRect(i);
+    if (x >= r.x && x <= r.x + TC_W && y >= r.y && y <= r.y + TC_H + 26) return i;
+  }
+  return -1;
+}
+
+/** 陶片序号 → 主题 id（0 = 经典 = 空串）。 */
+export function themeIdAt(index: number): string {
+  if (index <= 0) return '';
+  return THEMES[index - 1]?.id ?? '';
+}
+
+/** 圆角矩形（缩略图专用，避免为一处圆角引入整个 board.ts）。 */
+function roundRectLocal(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}

@@ -14,9 +14,36 @@ interface CachedLevels {
 
 /** 玩家进度。 */
 export interface Progress {
+  /**
+   * 最高**已通关**关号（服务端 `users.max_level` 的原样值）。
+   *
+   * 语义必须和服务端一致：`0` = 一关都没通，`3` = 最高打通了第 3 关。
+   *
+   * ## 注意：这不是「当前该打哪一关」
+   *
+   * 通关第 N 关之后，**下一个可玩关号是 N+1**。
+   * 所有「继续 / 解锁 / 当前关」的判断都要用 `currentLevel`，不要直接用 `maxLevel`。
+   * 早期两边混用，导致通关第 1 关后大厅还写「继续 第 1 关」、地图把第 2 关锁着。
+   */
   maxLevel: number;
   unlockedSkins: string[];
   currentSkin: string;
+  /**
+   * 当前装备的**棋盘主题** id。空串 = 不启用主题，走原来的黏土皮肤管线。
+   *
+   * 主题和皮肤是两层：皮肤只换格子色相（`Skin.hue/sat/light`），
+   * 主题连背景、图标族、路线画法一起换。所以是两个独立字段，
+   * 不是「皮肤的一个子集」。
+   */
+  currentTheme: string;
+  /**
+   * 已解锁的**广告主题** id。
+   *
+   * 只存广告解锁的那几套 —— 免费和里程碑主题都**不落盘**：
+   * 免费的永远可用，里程碑由 `maxLevel` 直接推导（跨设备天然一致）。
+   * 落盘一个可推导的值只会带来「换机丢失」和「服务端覆盖」两种麻烦。
+   */
+  unlockedThemes: string[];
   adWatchCnt: number;
   /** 累计步数（用于好友榜/统计）。 */
   totalSteps: number;
@@ -26,6 +53,8 @@ export interface Progress {
   nickname: string;
   /** 头像 URL（空则程序化生成）。 */
   avatar: string;
+  /** 玩家 uid（来自服务端登录响应）。分享链接要带，好友才知道谁在挑战。 */
+  uid: number;
   /** 关号 → 星级（1~3），来自 /api/progress/stars。 */
   stars: Record<string, number>;
 }
@@ -98,23 +127,72 @@ export class LevelStore {
  */
 export class ProgressStore {
   private progress: Progress = {
-    maxLevel: 1,
+    // maxLevel = 最高**已通关**关号。新用户一关都没通 → 0。
+    // （原来默认 1，导致新用户一进大厅就显示「第 1 关」而不是「第 0 关」，
+    //   而且 currentLevel 会算成 2 —— 直接跳过第 1 关。）
+    maxLevel: 0,
     unlockedSkins: ['wood', 'mint'],
     currentSkin: 'wood',
+    currentTheme: '',
+    unlockedThemes: [],
     adWatchCnt: 0,
     totalSteps: 0,
     totalTimeMs: 0,
     nickname: '玩家',
     avatar: '',
+    uid: 0,
     stars: {},
   };
 
   /** 读取进度。 */
   get current(): Progress { return this.progress; }
 
-  /** 从服务端同步。 */
+  /**
+   * 当前该打哪一关（= 下一个未通关的关号）。
+   *
+   * ## 为什么需要单独一个概念
+   *
+   * 服务端 `users.max_level` 的语义是「**最高已通关**关号」：
+   * 一关都没通是 `0`，刚打完第 1 关是 `1`。
+   *
+   * 而 UI 上的「继续第 N 关」「当前关」「哪些关解锁了」需要的是
+   * 「**下一个可玩**关号」：刚打完第 1 关 → 下一关是第 **2** 关。
+   *
+   * 两者差 1。以前客户端直接拿 `maxLevel` 当「当前关」用，
+   * 结果通关第 1 关后大厅还写「继续 第 1 关」、地图把第 2 关锁着 ——
+   * 玩家会觉得「明明通关了，怎么还在原地」。
+   *
+   * `maxLevel` 保持原样（与服务端一致，用于「最高关卡」统计与排行榜），
+   * 所有「下一关 / 当前关 / 解锁」判断一律用这个派生值。
+   */
+  get currentLevel(): number {
+    return this.progress.maxLevel + 1;
+  }
+
+  /**
+   * 从服务端同步。
+   *
+   * ## 为什么忽略 `undefined` 字段
+   *
+   * `sync` 是**整体覆盖**语义，调用方常写成
+   * `progress.sync({ maxLevel: res.maxLevel, unlockedSkins: res.unlockedSkins })`。
+   * 只要服务端某次响应少返回了一个字段（比如 cover 模式的成绩接口
+   * 一度漏了 `unlockedSkins`），这个字段就会是 `undefined`，
+   * 而 `{...old, unlockedSkins: undefined}` 会把本地数组**覆盖成 undefined**。
+   *
+   * 后果非常隐蔽：下一帧 `progress.current.unlockedSkins.length` 抛
+   * `Cannot read properties of undefined`，整个 `requestAnimationFrame` 渲染循环中断 ——
+   * 表现就是「通关后画面卡住、点『下一关』没反应」，而且不会报任何网络错误。
+   *
+   * 所以这里把 `undefined` 当成「服务端没给这个字段」，保持本地旧值不动。
+   */
   sync(p: Partial<Progress>): void {
-    this.progress = { ...this.progress, ...p };
+    const merged: Partial<Progress> = {};
+    for (const [k, v] of Object.entries(p) as [keyof Progress, unknown][]) {
+      if (v === undefined) continue;
+      (merged as Record<string, unknown>)[k] = v;
+    }
+    this.progress = { ...this.progress, ...merged };
     platform.storage.set(KEY_PROGRESS, JSON.stringify(this.progress));
   }
 
@@ -141,6 +219,21 @@ export class ProgressStore {
     platform.storage.set(KEY_PROGRESS, JSON.stringify(this.progress));
   }
 
+  /** 装备棋盘主题（空串 = 退回黏土皮肤管线）。 */
+  equipTheme(id: string): void {
+    this.progress.currentTheme = id;
+    platform.storage.set(KEY_PROGRESS, JSON.stringify(this.progress));
+  }
+
+  /** 记录一个已解锁的广告主题。 */
+  unlockTheme(id: string): void {
+    if (!this.progress.unlockedThemes) this.progress.unlockedThemes = [];
+    if (!this.progress.unlockedThemes.includes(id)) {
+      this.progress.unlockedThemes.push(id);
+    }
+    platform.storage.set(KEY_PROGRESS, JSON.stringify(this.progress));
+  }
+
   /** 写入全量星级（首次进大厅时拉一次）。 */
   setStars(stars: Record<string, number>): void {
     this.progress.stars = stars;
@@ -153,6 +246,19 @@ export class ProgressStore {
     const key = String(levelIdx);
     if ((this.progress.stars[key] ?? 0) >= star) return;
     this.progress.stars[key] = star;
+    platform.storage.set(KEY_PROGRESS, JSON.stringify(this.progress));
+  }
+
+  /**
+   * 清掉某关的星级。
+   *
+   * 跳过的关卡**不给星** —— 花钱买过去的 ≠ 打过去的，
+   * 地图上不能给它点亮星星。
+   */
+  clearStar(levelIdx: number): void {
+    const key = String(levelIdx);
+    if (this.progress.stars[key] === undefined) return;
+    delete this.progress.stars[key];
     platform.storage.set(KEY_PROGRESS, JSON.stringify(this.progress));
   }
 }

@@ -14,6 +14,7 @@ import { DESIGN_W, DESIGN_H } from '../src/render/layout';
 import { clayBackdrop } from '../src/ui/clay';
 import { drawNav } from '../src/ui/nav';
 import { pageByKey, PAGES, NOW } from './mock-ui';
+import { themeById } from '../src/render/themes';
 
 const params = new URLSearchParams(location.search);
 const key = params.get('p') ?? 'home';
@@ -31,9 +32,10 @@ if (!ctx) throw new Error('no 2d context');
 ctx.setTransform(1, 0, 0, 1, 0, 0);
 
 clayBackdrop(ctx);
+const themeChrome = themeById(params.get('t') ?? '')?.chrome;
 if (page) {
   page.draw(ctx);
-  if (page.nav) drawNav(ctx, page.nav, NOW);
+  if (page.nav) drawNav(ctx, page.nav, NOW, themeChrome);
 }
 
 // 供截图脚本判断是否画完

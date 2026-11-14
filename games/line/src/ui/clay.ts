@@ -313,6 +313,14 @@ export interface ClayOpts {
   /** 是否画亮面 */
   lit?: boolean;
   /**
+   * 反光强度倍率，默认 1。
+   *
+   * 那两圈哑光反光是按**浅色黏土**调的（0.14 / 0.09）。同样的白光打在深色块上
+   * 会把整块推成脏灰 —— 深色主题的按钮实测就是这样读作「禁用」的。
+   * 主题配色传 0.3 左右。
+   */
+  gloss?: number;
+  /**
    * 大块平板（≥300px）。
    * 亮面的常规做法是「缩到 90% 的同形」，在 396 的样品板上会变成一块突兀的中央亮斑；
    * 打开这个开关后亮面几乎满幅，只留一圈窄色阶 —— 读作「一整块料的受光」，不是「贴了块亮片」。
@@ -379,11 +387,12 @@ export function clayBlock(
   ctx.fill();
 
   // 哑光反光：大范围、低 alpha、两圈
-  ctx.fillStyle = 'rgba(255,255,255,0.14)';
+  const gloss = opts.gloss ?? 1;
+  ctx.fillStyle = `rgba(255,255,255,${(0.14 * gloss).toFixed(3)})`;
   ctx.beginPath();
   ctx.ellipse(cx - w * 0.20, cy - h * 0.26, w * 0.30, h * 0.22, -0.42, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,0.09)';
+  ctx.fillStyle = `rgba(255,255,255,${(0.09 * gloss).toFixed(3)})`;
   ctx.beginPath();
   ctx.ellipse(cx - w * 0.16, cy - h * 0.30, w * 0.44, h * 0.30, -0.42, 0, Math.PI * 2);
   ctx.fill();
@@ -652,31 +661,53 @@ export function clayText(
 // ────────────────────────────── 背景 ──────────────────────────────
 
 /**
+ * 背景要铺满的设计坐标范围。
+ *
+ * 默认是整张设计稿；**手机端必须传实际可视范围** ——
+ * 等比缩放把 750×1334 塞进 19.5:9 的屏幕时，上下会各留出几十像素，
+ * 那段空白不在 `0..DESIGN_H` 里，背景渐变就断在边界上，
+ * 观感是一道横贯屏幕的接缝。传进真实盒子后渐变覆盖整屏，接缝自然消失。
+ */
+export interface BackdropBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
  * 陶土背景：暖色竖向渐变 + 左上暖光 + 底部暗角。
  * 不画星星 —— 黏土工坊是"桌面棚拍"，不是夜空。
  */
-export function clayBackdrop(ctx: CanvasRenderingContext2D): void {
-  const g = ctx.createLinearGradient(0, 0, 0, DESIGN_H);
+export function clayBackdrop(ctx: CanvasRenderingContext2D, box?: BackdropBox): void {
+  const bx = box?.x ?? 0;
+  const by = box?.y ?? 0;
+  const bw = box?.w ?? DESIGN_W;
+  const bh = box?.h ?? DESIGN_H;
+
+  const g = ctx.createLinearGradient(0, by, 0, by + bh);
   g.addColorStop(0, CLAY_UI.bgTop);
   g.addColorStop(0.55, CLAY_UI.bg);
   g.addColorStop(1, CLAY_UI.bgBottom);
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+  ctx.fillRect(bx, by, bw, bh);
 
   // 左上暖光
-  const lg = ctx.createRadialGradient(DESIGN_W * 0.20, DESIGN_H * 0.14, 0, DESIGN_W * 0.20, DESIGN_H * 0.14, DESIGN_W * 0.95);
+  const lx = bx + bw * 0.20;
+  const ly = by + bh * 0.14;
+  const lg = ctx.createRadialGradient(lx, ly, 0, lx, ly, bw * 0.95);
   lg.addColorStop(0, 'rgba(255,247,229,0.42)');
   lg.addColorStop(0.5, 'rgba(255,247,229,0.10)');
   lg.addColorStop(1, 'rgba(255,247,229,0)');
   ctx.fillStyle = lg;
-  ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+  ctx.fillRect(bx, by, bw, bh);
 
   // 底部暗角
-  const dg = ctx.createLinearGradient(0, DESIGN_H * 0.62, 0, DESIGN_H);
+  const dg = ctx.createLinearGradient(0, by + bh * 0.62, 0, by + bh);
   dg.addColorStop(0, 'rgba(120,88,62,0)');
   dg.addColorStop(1, 'rgba(120,88,62,0.30)');
   ctx.fillStyle = dg;
-  ctx.fillRect(0, DESIGN_H * 0.62, DESIGN_W, DESIGN_H * 0.38);
+  ctx.fillRect(bx, by + bh * 0.62, bw, bh * 0.38);
 
   // 起伏：背景不是一张平纸，是搭出来的。
   // 只有竖向渐变 + 一处暖光时，整屏读作「一个色块」；补 4 处大范围柔光/柔暗，
@@ -688,10 +719,10 @@ export function clayBackdrop(ctx: CanvasRenderingContext2D): void {
     [0.66, 0.74, 0.46, [146, 106, 74], 0.10],
     [0.06, 0.88, 0.34, [146, 106, 74], 0.12],
   ];
-  for (const [bx, by, br, [r, g2, b], a] of blobs) {
-    const cx = DESIGN_W * bx;
-    const cy = DESIGN_H * by;
-    const rad = DESIGN_W * br;
+  for (const [rbx, rby, rbr, [r, g2, b], a] of blobs) {
+    const cx = bx + bw * rbx;
+    const cy = by + bh * rby;
+    const rad = bw * rbr;
     const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
     bg.addColorStop(0, `rgba(${r},${g2},${b},${a})`);
     bg.addColorStop(0.55, `rgba(${r},${g2},${b},${a * 0.16})`);

@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>纸上园林 · 三屏系统</title>
+<style>
+  html, body { margin: 0; background: #141414; color: #EDEAE4; font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+  .wrap { width: 1240px; margin: 0 auto; padding: 28px 0 40px; }
+  .head { display: flex; align-items: baseline; gap: 14px; padding: 0 8px 18px; }
+  .logo { width: 22px; height: 22px; background: #C14A2E; }
+  .title { font-size: 18px; letter-spacing: .12em; font-weight: 600; }
+  .sub { font-size: 12px; color: #8A857C; letter-spacing: .06em; }
+  .row { display: flex; gap: 20px; }
+  canvas { display: block; width: 375px; height: 700px; }
+  .cap { padding: 14px 4px 0; font-size: 11px; color: #8F8A80; letter-spacing: .05em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="logo"></div>
+    <div class="title">纸上园林 · 系统中的三屏</div>
+    <div class="sub">主页 / 关卡地图 / 结算 · 同一套纸、墨、朱红</div>
+  </div>
+  <div class="row" id="row"></div>
+</div>
+<script>
+const DPR = 2, W = 375, H = 700;
+
+const P = {
+  bg: '#F1E7D4', paper: '#FCF7EC', paperEdge: '#E3D3B8',
+  ink: '#22201C', sub: '#7A7164', faint: 'rgba(34,32,28,0.14)',
+  accent: '#C14A2E', jade: '#2E6B58', jadeDeep: '#245647',
+  serif: 'Georgia, "Songti SC", "SimSun", serif',
+  sans: '"PingFang SC", "Microsoft YaHei", sans-serif',
+};
+
+function setup(cv) {
+  cv.width = W * DPR; cv.height = H * DPR;
+  const ctx = cv.getContext('2d'); ctx.scale(DPR, DPR); return ctx;
+}
+function rr(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  const k = Math.min(r, w / 2, h / 2);
+  ctx.moveTo(x + k, y);
+  ctx.arcTo(x + w, y, x + w, y + h, k);
+  ctx.arcTo(x + w, y + h, x, y + h, k);
+  ctx.arcTo(x, y + h, x, y, k);
+  ctx.arcTo(x, y, x + w, y, k);
+  ctx.closePath();
+}
+function grain(ctx, n, seed = 5) {
+  let s = seed;
+  const rnd = () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; };
+  ctx.save(); ctx.fillStyle = '#8A7350'; ctx.globalAlpha = 0.05;
+  for (let i = 0; i < n; i++) ctx.fillRect(rnd() * W, rnd() * H, 1, 1);
+  ctx.restore();
+}
+function starPath(ctx, x, y, r) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const rad = i % 2 === 0 ? r : r * 0.42;
+    const px = x + Math.cos(a) * rad, py = y + Math.sin(a) * rad;
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+function seal(ctx, x, y, size, ch, rot = -0.06) {
+  ctx.save();
+  ctx.translate(x, y); ctx.rotate(rot);
+  ctx.fillStyle = P.accent;
+  rr(ctx, -size / 2, -size / 2, size, size, 2); ctx.fill();
+  ctx.fillStyle = P.paper;
+  ctx.font = `600 ${size * 0.56}px ${P.serif}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(ch, 0, size * 0.02);
+  ctx.restore();
+}
+function paperCard(ctx, x, y, w, h, r = 6) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(60,48,32,0.10)';
+  rr(ctx, x, y + 5, w, h, r); ctx.fill();
+  ctx.fillStyle = P.paper;
+  rr(ctx, x, y, w, h, r); ctx.fill();
+  ctx.strokeStyle = P.paperEdge;
+  ctx.lineWidth = 1; ctx.stroke();
+  ctx.restore();
+}
+function tracked(ctx, text, x, y, size, spacing, color, font) {
+  ctx.save();
+  ctx.font = font ?? `500 ${size}px ${P.sans}`;
+  ctx.fillStyle = color;
+  ctx.textBaseline = 'middle';
+  let w = 0;
+  for (const ch of text) w += ctx.measureText(ch).width + spacing;
+  w -= spacing;
+  let cx = x - w / 2;
+  ctx.textAlign = 'left';
+  for (const ch of text) { ctx.fillText(ch, cx, y); cx += ctx.measureText(ch).width + spacing; }
+  ctx.restore();
+}
+function navIcon(ctx, kind, x, y, color) {
+  ctx.save();
+  ctx.strokeStyle = color; ctx.fillStyle = color;
+  ctx.lineWidth = 1.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (kind === 'home') {
+    ctx.beginPath();
+    ctx.moveTo(x - 8, y - 1); ctx.lineTo(x, y - 9); ctx.lineTo(x + 8, y - 1);
+    ctx.moveTo(x - 6, y - 2); ctx.lineTo(x - 6, y + 8); ctx.lineTo(x + 6, y + 8); ctx.lineTo(x + 6, y - 2);
+    ctx.stroke();
+  } else if (kind === 'map') {
+    ctx.beginPath();
+    ctx.moveTo(x - 9, y + 6); ctx.lineTo(x - 3, y - 6); ctx.lineTo(x + 3, y + 5); ctx.lineTo(x + 9, y - 6);
+    ctx.stroke();
+  } else if (kind === 'skin') {
+    for (let i = 0; i < 4; i++) {
+      const dx = i % 2 === 0 ? -7 : 1, dy = i < 2 ? -7 : 1;
+      rr(ctx, x + dx, y + dy, 6, 6, 1.4); ctx.stroke();
+    }
+  } else if (kind === 'rank') {
+    ctx.beginPath();
+    ctx.moveTo(x - 8, y + 8); ctx.lineTo(x - 8, y + 1);
+    ctx.moveTo(x, y + 8); ctx.lineTo(x, y - 8);
+    ctx.moveTo(x + 8, y + 8); ctx.lineTo(x + 8, y - 3);
+    ctx.stroke();
+  } else {
+    ctx.beginPath(); ctx.arc(x, y - 5, 4, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y + 10, 8, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
+  }
+  ctx.restore();
+}
+function bottomNav(ctx, active) {
+  ctx.save();
+  ctx.fillStyle = P.paper;
+  ctx.fillRect(0, 632, W, H - 632);
+  ctx.strokeStyle = P.faint; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, 632); ctx.lineTo(W, 632); ctx.stroke();
+
+  const items = [
+    ['home', '主页'], ['map', '地图'], ['skin', '皮肤'], ['rank', '排行'], ['me', '我的'],
+  ];
+  const gap = W / 5;
+  items.forEach(([k, label], i) => {
+    const x = gap * i + gap / 2;
+    const on = k === active;
+    navIcon(ctx, k, x, 660, on ? P.accent : 'rgba(34,32,28,0.42)');
+    ctx.font = `500 9px ${P.sans}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = on ? P.accent : 'rgba(34,32,28,0.42)';
+    ctx.fillText(label, x, 684);
+  });
+  ctx.restore();
+}
+
+// ───────── 迷你棋盘（主页预览） ─────────
+function miniBoard(ctx, x0, y0, cell) {
+  const cols = 7, rows = 7;
+  const VOID = new Set(['0,5', '1,5', '0,6', '1,6']);
+  const path = [];
+  for (let r = 0; r < 4; r++) for (let i = 0; i < cols; i++) path.push([r % 2 === 0 ? i : cols - 1 - i, r]);
+  for (let c = 0; c < 5; c++) path.push([c, 4]);
+  const set = new Set(path.map(([c, r]) => `${c},${r}`));
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (VOID.has(`${c},${r}`)) continue;
+      const x = x0 + c * cell, y = y0 + r * cell;
+      if (set.has(`${c},${r}`)) {
+        ctx.fillStyle = P.jade;
+        rr(ctx, x + 1, y + 1, cell - 2, cell - 2, 1.5); ctx.fill();
+      } else {
+        ctx.strokeStyle = 'rgba(34,32,28,0.16)'; ctx.lineWidth = 1;
+        rr(ctx, x + 1, y + 1, cell - 2, cell - 2, 1.5); ctx.stroke();
+      }
+    }
+  }
+  ctx.save();
+  ctx.strokeStyle = P.accent;
+  ctx.lineWidth = 2.4; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath();
+  path.forEach(([c, r], i) => {
+    const x = x0 + c * cell + cell / 2, y = y0 + r * cell + cell / 2;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ───────── 主页 ─────────
+function home(ctx) {
+  ctx.fillStyle = P.bg; ctx.fillRect(0, 0, W, H);
+  grain(ctx, 2600, 11);
+
+  // 玩家条
+  ctx.save();
+  ctx.fillStyle = P.jade;
+  ctx.beginPath(); ctx.arc(40, 48, 17, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = P.paper;
+  ctx.font = `600 14px ${P.serif}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('满', 40, 49);
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = P.ink;
+  ctx.font = `600 15px ${P.sans}`;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('小满', 66, 42);
+  ctx.strokeStyle = 'rgba(34,32,28,0.30)'; ctx.lineWidth = 1;
+  rr(ctx, 66, 52, 44, 15, 7.5); ctx.stroke();
+  ctx.fillStyle = P.sub;
+  ctx.font = `500 9px ${P.sans}`;
+  ctx.fillText('Lv. 37', 75, 60);
+  ctx.textAlign = 'right';
+  ctx.font = `400 11px ${P.sans}`;
+  ctx.fillText('皮肤 6 / 16', 349, 48);
+  ctx.restore();
+
+  // 关卡票券
+  paperCard(ctx, 26, 92, 323, 372, 8);
+  miniBoard(ctx, 96, 118, 26);
+
+  // 票根虚线
+  ctx.save();
+  ctx.strokeStyle = 'rgba(34,32,28,0.14)';
+  ctx.setLineDash([3, 4]);
+  ctx.beginPath(); ctx.moveTo(26, 330); ctx.lineTo(349, 330); ctx.stroke();
+  ctx.restore();
+
+  // 关号
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = P.ink;
+  ctx.font = `600 40px ${P.serif}`;
+  ctx.fillText('38', 187.5, 380);
+  ctx.font = `400 12px ${P.sans}`;
+  ctx.fillStyle = P.sub;
+  ctx.fillText('第 38 关 · 苔原', 187.5, 402);
+  ctx.restore();
+
+  // 进度
+  ctx.save();
+  const bx = 61, by = 424, bw = 252;
+  ctx.fillStyle = 'rgba(34,32,28,0.12)';
+  rr(ctx, bx, by, bw, 3, 2); ctx.fill();
+  ctx.fillStyle = P.accent;
+  rr(ctx, bx, by, bw * (38 / 1000), 3, 2); ctx.fill();
+  ctx.fillStyle = P.sub;
+  ctx.font = `400 10px ${P.sans}`;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('38 / 1000', bx, by + 14);
+  ctx.textAlign = 'right';
+  ctx.fillText('剩 962 关', bx + bw, by + 14);
+  ctx.restore();
+
+  // 苔原印章
+  seal(ctx, 310, 128, 30, '苔');
+
+  // 主按钮
+  ctx.save();
+  ctx.fillStyle = 'rgba(34,32,28,0.18)';
+  rr(ctx, 26, 498, 323, 56, 7); ctx.fill();
+  ctx.fillStyle = P.accent;
+  rr(ctx, 26, 493, 323, 56, 7); ctx.fill();
+  ctx.fillStyle = P.paper;
+  ctx.font = `600 17px ${P.sans}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('继续第 38 关', 187.5, 522);
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = P.sub;
+  ctx.font = `400 10px ${P.sans}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('每次只走一格，走完全部即通关', 187.5, 576);
+  ctx.restore();
+
+  bottomNav(ctx, 'home');
+}
+
+// ───────── 地图 ─────────
+const NODES = [];
+(() => {
+  const xs = [64, 146, 228, 310];
+  for (let r = 0; r < 3; r++) {
+    for (let i = 0; i < 4; i++) NODES.push([xs[r % 2 === 0 ? i : 3 - i], 208 + r * 126, 33 + r * 4 + i]);
+  }
+})();
+
+function mapScreen(ctx) {
+  ctx.fillStyle = P.bg; ctx.fillRect(0, 0, W, H);
+  grain(ctx, 2400, 23);
+
+  // 等高线
+  ctx.save();
+  ctx.strokeStyle = 'rgba(34,32,28,0.06)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 7; i++) {
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 6) {
+      const y = 120 + i * 78 + Math.sin((x / W) * Math.PI * 1.6 + i * 0.7) * 12;
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // 头部
+  ctx.save();
+  ctx.strokeStyle = P.ink; ctx.globalAlpha = 0.7; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(26, 44); ctx.lineTo(19, 51); ctx.lineTo(26, 58); ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = P.ink;
+  ctx.font = `600 23px ${P.serif}`;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('苔原', 40, 50);
+  ctx.fillStyle = P.sub;
+  ctx.font = `400 11px ${P.sans}`;
+  ctx.fillText('33 — 64', 92, 52);
+  ctx.textAlign = 'right';
+  ctx.fillText('已通关 37', 349, 50);
+  ctx.restore();
+
+  // 路线
+  ctx.save();
+  ctx.strokeStyle = 'rgba(34,32,28,0.18)';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  NODES.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+  ctx.stroke();
+  ctx.restore();
+
+  for (const [x, y, idx] of NODES) {
+    const done = idx < 38;
+    const cur = idx === 38;
+    ctx.save();
+    if (cur) {
+      ctx.strokeStyle = 'rgba(193,74,46,0.30)';
+      ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.arc(x, y, 19, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.fillStyle = done ? P.jade : P.paper;
+    ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = done ? P.jadeDeep : (cur ? P.accent : 'rgba(34,32,28,0.28)');
+    ctx.lineWidth = cur ? 2 : 1.2;
+    ctx.stroke();
+
+    ctx.fillStyle = done ? P.paper : (cur ? P.accent : P.sub);
+    ctx.font = `600 12px ${P.serif}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(idx), x, y + 0.5);
+
+    if (done) {
+      for (let s = 0; s < 3; s++) {
+        const sx = x - 10 + s * 10;
+        starPath(ctx, sx, y + 25, 3.8);
+        ctx.fillStyle = s < 2 ? P.accent : 'rgba(34,32,28,0.18)';
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  // 世界小结
+  ctx.save();
+  ctx.fillStyle = P.sub;
+  ctx.font = `400 11px ${P.sans}`;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('世界 III · 苔原', 28, 526);
+  ctx.textAlign = 'right';
+  ctx.fillText('星屑 1 → 2 → 3', 347, 526);
+  ctx.restore();
+
+  // CTA
+  ctx.save();
+  ctx.fillStyle = 'rgba(34,32,28,0.18)';
+  rr(ctx, 26, 561, 323, 46, 7); ctx.fill();
+  ctx.fillStyle = P.accent;
+  rr(ctx, 26, 556, 323, 46, 7); ctx.fill();
+  ctx.fillStyle = P.paper;
+  ctx.font = `600 15px ${P.sans}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('继续第 38 关', 187.5, 579);
+  ctx.restore();
+  bottomNav(ctx, 'map');
+}
+
+// ───────── 结算 ─────────
+function result(ctx) {
+  ctx.fillStyle = P.bg; ctx.fillRect(0, 0, W, H);
+  grain(ctx, 2000, 31);
+  // 压暗
+  ctx.fillStyle = 'rgba(24,20,14,0.50)';
+  ctx.fillRect(0, 0, W, H);
+
+  paperCard(ctx, 30, 96, 315, 444, 8);
+
+  ctx.save();
+  ctx.fillStyle = P.sub;
+  ctx.font = `500 11px ${P.sans}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('第 38 关 · 苔原', 187.5, 128);
+  ctx.restore();
+
+  tracked(ctx, '一气呵成', 187.5, 172, 30, 6, P.ink, `600 30px ${P.serif}`);
+
+  // 三星印章
+  for (let i = 0; i < 3; i++) {
+    const x = 187.5 + (i - 1) * 44;
+    starPath(ctx, x, 226, 15);
+    if (i < 3) { ctx.fillStyle = P.accent; ctx.fill(); }
+    else { ctx.strokeStyle = 'rgba(34,32,28,0.22)'; ctx.lineWidth = 1.2; ctx.stroke(); }
+  }
+
+  // 分隔
+  ctx.save();
+  ctx.strokeStyle = 'rgba(34,32,28,0.14)';
+  ctx.setLineDash([3, 4]);
+  ctx.beginPath(); ctx.moveTo(62, 264); ctx.lineTo(313, 264); ctx.stroke();
+  ctx.restore();
+
+  // 数据行
+  const rows = [['重来', '0 次'], ['用时', '41.5 秒'], ['本关格数', '45 格']];
+  rows.forEach(([k, v], i) => {
+    const y = 296 + i * 38;
+    ctx.save();
+    ctx.fillStyle = P.sub; ctx.font = `400 11px ${P.sans}`;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(k, 62, y);
+    ctx.fillStyle = P.ink; ctx.font = `600 13px ${P.serif}`;
+    ctx.textAlign = 'right';
+    ctx.fillText(v, 313, y);
+    ctx.strokeStyle = 'rgba(34,32,28,0.10)';
+    ctx.beginPath(); ctx.moveTo(62, y + 17); ctx.lineTo(313, y + 17); ctx.stroke();
+    ctx.restore();
+  });
+
+  // 主按钮
+  ctx.save();
+  ctx.fillStyle = 'rgba(34,32,28,0.18)';
+  rr(ctx, 62, 438, 251, 50, 6); ctx.fill();
+  ctx.fillStyle = P.accent;
+  rr(ctx, 62, 433, 251, 50, 6); ctx.fill();
+  ctx.fillStyle = P.paper;
+  ctx.font = `600 16px ${P.sans}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('下一关', 187.5, 459);
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = P.sub;
+  ctx.font = `400 11px ${P.sans}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('回地图', 187.5, 514);
+  ctx.restore();
+
+  seal(ctx, 300, 120, 34, '过', -0.10);
+
+  // 底部提示
+  ctx.save();
+  ctx.fillStyle = 'rgba(252,247,236,0.62)';
+  ctx.font = `400 10px ${P.sans}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('分享给好友 · 比比谁的重来次数少', 187.5, 604);
+  ctx.restore();
+}
+
+const row = document.getElementById('row');
+[['home', home, '主页 · 关卡预览票券 + 单一主按钮'],
+ ['map', mapScreen, '地图 · 等高线底纹 + 印章节点'],
+ ['result', result, '结算 · 纸卡 + 朱红印章评分']].forEach(([k, draw, cap]) => {
+  const col = document.createElement('div');
+  const cv = document.createElement('canvas');
+  col.appendChild(cv);
+  const c = document.createElement('div');
+  c.className = 'cap'; c.textContent = cap;
+  col.appendChild(c);
+  row.appendChild(col);
+  draw(setup(cv));
+});
+document.title = 'ready';
+</script>
+</body>
+</html>

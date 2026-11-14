@@ -27,8 +27,24 @@ export { drawAvatar };
 
 /** 主页状态。 */
 export interface HomePageState {
-  /** 已通过的最高关号 */
+  /**
+   * 最高**已通关**关号（服务端 `users.max_level` 原样值）。
+   *
+   * 0 = 一关都没通。
+   *
+   * ## 注意：这不是「当前该打哪一关」
+   *
+   * 下一关是 `maxLevel + 1`。UI 上的「继续 第 N 关」「卫星当前节点」
+   * 都用**下一个可玩关号**，不要直接用这个值。
+   */
   maxLevel: number;
+  /**
+   * 当前该打哪一关（= `maxLevel + 1`）。
+   *
+   * 从 `main.ts` 传进来，和服务端语义解耦 ——
+   * 免得每个渲染点各自做 +1，各自理解错。
+   */
+  currentLevel: number;
   /** 关卡总数 */
   levelCount: number;
   /** 昵称 */
@@ -83,11 +99,11 @@ export function drawHomePage(ctx: CanvasRenderingContext2D, st: HomePageState, n
   drawOrbits(ctx);
   for (const n of satelliteLevels(st)) drawSatellite(ctx, n, now);
 
-  drawMascot(ctx, now, st.maxLevel);
+  drawMascot(ctx, now, st.currentLevel);
   drawProgress(ctx, st);
 
   // ── 主按钮 ──
-  const label = st.maxLevel > 1 ? `继续 第 ${st.maxLevel} 关` : '开始游戏';
+  const label = st.currentLevel > 1 ? `继续 第 ${st.currentLevel} 关` : '开始游戏';
   const btn: Button = { x: 115, y: 1064, w: DESIGN_W - 230, h: 108, label, kind: 'primary', id: 'homeStart' };
   clayBlock(ctx, btn.x, btn.y, btn.w, btn.h, 46, CLAY.terracotta, 911, { depth: 14, hi: 0.07 });
   clayText(ctx, label, btn.x + btn.w / 2, btn.y + btn.h / 2, 42, {
@@ -219,12 +235,17 @@ export interface Satellite {
 /**
  * 计算大厅上要显示的卫星关卡节点。
  * 以当前关为中心，向前 3 关 + 向后 2 关，共 6 个。
+ *
+ * `currentLevel` 是**下一个可玩关**：
+ *   - 比它小 → 已通关（done，可重玩）
+ *   - 等于它 → 当前关（current）
+ *   - 比它大 → 未解锁（locked）
  */
 export function satelliteLevels(st: HomePageState): Satellite[] {
   const out: Satellite[] = [];
   const offsets = [-3, -2, -1, 0, 1, 2];
   for (const off of offsets) {
-    const lv = st.maxLevel + off;
+    const lv = st.currentLevel + off;
     if (lv < 1 || lv > st.levelCount) continue;
     const slot = out.length;
     const o = ORBITS[slot % ORBITS.length];
@@ -409,6 +430,8 @@ function drawProgress(ctx: CanvasRenderingContext2D, st: HomePageState): void {
     clayDisc(ctx, bx + fillW - bh / 2, by + bh / 2, bh * 0.44, CLAY.mustard, 503, { depth: 3 });
   }
 
+  // 进度条显示的是**已通关**进度（maxLevel / levelCount），
+  // 文字标注也用已通关关号 —— 和「当前关」是两件事，别混。
   clayText(ctx, `第 ${st.maxLevel} 关`, bx, by + 34, 23, {
     align: 'left',
     baseline: 'top',

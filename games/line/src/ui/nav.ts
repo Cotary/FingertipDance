@@ -8,6 +8,7 @@
 import { DESIGN_W, DESIGN_H } from '../render/layout';
 import { roundRect } from '../render/board';
 import { CLAY, CLAY_UI, clayBlock, clayText } from './clay';
+import { clayFrom, type ThemeChrome } from '../render/themes/types';
 
 /** 导航页签。 */
 export type NavTab = 'home' | 'map' | 'skins' | 'rank' | 'profile';
@@ -69,16 +70,35 @@ export function pickNavTab(x: number, y: number): NavTab | null {
  * @param active 当前页签
  * @param now 当前时间戳（ms），用于图标动画
  */
-export function drawNav(ctx: CanvasRenderingContext2D, active: NavTab, now: number): void {
+export function drawNav(
+  ctx: CanvasRenderingContext2D,
+  active: NavTab,
+  now: number,
+  chrome?: ThemeChrome,
+): void {
+  // 主题色：底栏是「内容区的一部分」，深色主题下留一条奶油色板会像贴错了图。
+  //
+  // 三档色都从 chrome 取：
+  // - `plate` 背板 ← `chrome.pill`（就是「板上的一块」，和关号胶囊同一个语义）
+  // - `chip`  选中片 ← `chrome.primary`
+  // - `inkOn` 选中字 ← `chrome.primaryInk`；`inkOff` 未选中 ← `chrome.pillInk`（压到 55%）
+  //
+  // 未选中不能用 `inkSoft`：它是「深色背景上的弱化正文」，浅色底上会直接消失。
+  const plate = chrome ? clayFrom(chrome.pill) : CLAY.cream;
+  const chip = chrome ? clayFrom(chrome.primary) : CLAY.terracotta;
+  const inkOn = chrome ? chrome.primaryInk : '#FFF6E9';
+  const inkOff = chrome ? chrome.pillInk : CLAY_UI.inkSoft;
+  const offAlpha = chrome ? 0.55 : 1;
+
   // 内容区在导航上沿的落影（导航是浮在内容之上的，所以影子朝上）
   const fade = ctx.createLinearGradient(0, NAV_TOP - 40, 0, NAV_TOP);
   fade.addColorStop(0, 'rgba(74,51,39,0)');
-  fade.addColorStop(1, 'rgba(74,51,39,0.16)');
+  fade.addColorStop(1, chrome ? 'rgba(8,14,22,0.22)' : 'rgba(74,51,39,0.16)');
   ctx.fillStyle = fade;
   ctx.fillRect(0, NAV_TOP - 40, DESIGN_W, 40);
 
   // 背板：横向外扩 40，让左右圆角藏在屏幕外，只留顶部两角
-  clayBlock(ctx, -40, NAV_TOP - 6, DESIGN_W + 80, NAV_H + 80, 34, CLAY.cream, 601, { depth: 0 });
+  clayBlock(ctx, -40, NAV_TOP - 6, DESIGN_W + 80, NAV_H + 80, 34, plate, 601, { depth: 0 });
 
   // 上沿一道浅色高光，把背板从内容区里「切」出来
   ctx.strokeStyle = 'rgba(255,251,243,0.85)';
@@ -96,21 +116,25 @@ export function drawNav(ctx: CanvasRenderingContext2D, active: NavTab, now: numb
 
     // 选中态：一整块翘起的陶土片（把图标和文字一起包住）
     if (on) {
-      clayBlock(ctx, cx - 59, NAV_TOP + 6, 118, 106, 28, CLAY.terracotta, 611 + i, { depth: 9 });
+      clayBlock(ctx, cx - 59, NAV_TOP + 6, 118, 106, 28, chip, 611 + i, { depth: 9 });
     }
 
     ctx.save();
+    if (!on) ctx.globalAlpha = offAlpha;
     ctx.translate(cx, iconY + (on ? -3 : 0));
-    drawNavIcon(ctx, h.tab, on ? '#FFF6E9' : CLAY_UI.inkSoft, now + i * 120, on);
+    drawNavIcon(ctx, h.tab, on ? inkOn : inkOff, now + i * 120, on);
     ctx.restore();
 
+    ctx.save();
+    if (!on) ctx.globalAlpha = offAlpha;
     clayText(ctx, NAV_LABELS[h.tab], cx, labelY, on ? 23 : 21, {
       weight: on ? 800 : 600,
-      fill: on ? '#FFF6E9' : CLAY_UI.inkSoft,
+      fill: on ? inkOn : inkOff,
       outline: on ? 'rgba(118,50,22,0.55)' : undefined,
       outlineWidth: on ? 4 : 0,
       emboss: false,
     });
+    ctx.restore();
   });
 }
 

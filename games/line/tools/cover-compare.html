@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>cover 棋盘：改前 vs 改后</title>
+  <style>
+    :root { --ink: #3A2A20; --sub: #7A6252; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 28px 32px 36px;
+      background: #F2E7D9;
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+    }
+    h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: .5px; }
+    .sub { font-size: 14px; color: var(--sub); margin-bottom: 22px; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+    figure { margin: 0; background: #fff; border-radius: 14px; padding: 10px 10px 8px;
+             box-shadow: 0 6px 18px rgba(90,60,40,.14); }
+    figure img { width: 100%; display: block; border-radius: 8px; }
+    figcaption { font-size: 14px; margin-top: 8px; text-align: center; }
+    .tag { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; margin-right: 6px; }
+    .before { background: #F3D6D0; color: #8E3B34; }
+    .after { background: #CFE6D8; color: #2F6B4C; }
+  </style>
+</head>
+<body>
+  <h1>Cover 棋盘视觉重构 · 改前 / 改后</h1>
+  <div class="sub">同关、同进度（走到 60%），只换绘制实现。左两列是线上现状，右两列是重构原型。</div>
+  <div class="grid">
+    <figure>
+      <img src="/out/shots/cover-cur-20.png" alt="before 6x6" />
+      <figcaption><span class="tag before">改前</span>6×6 · 第 20 关</figcaption>
+    </figure>
+    <figure>
+      <img src="/out/shots/proto3-20.png" alt="after 6x6" />
+      <figcaption><span class="tag after">改后</span>6×6 · 第 20 关</figcaption>
+    </figure>
+    <figure>
+      <img src="/out/shots/cover-cur-900.png" alt="before 11x11" />
+      <figcaption><span class="tag before">改前</span>11×11 · 第 900 关</figcaption>
+    </figure>
+    <figure>
+      <img src="/out/shots/proto3-900.png" alt="after 11x11" />
+      <figcaption><span class="tag after">改后</span>11×11 · 第 900 关</figcaption>
+    </figure>
+  </div>
+  <div class="grid" style="margin-top:18px">
+    <figure>
+      <img src="/out/shots/cover-cur-705.png" alt="before 10x10" />
+      <figcaption><span class="tag before">改前</span>10×10 · 第 705 关</figcaption>
+    </figure>
+    <figure>
+      <img src="/out/shots/proto-705.png" alt="after 10x10" />
+      <figcaption><span class="tag after">改后</span>10×10 · 第 705 关</figcaption>
+    </figure>
+    <figure>
+      <img src="/out/shots/cover-cur-1.png" alt="before 5x5" />
+      <figcaption><span class="tag before">改前</span>5×5 · 第 1 关</figcaption>
+    </figure>
+    <figure>
+      <img src="/out/shots/proto3-1.png" alt="after 5x5" />
+      <figcaption><span class="tag after">改后</span>5×5 · 第 1 关</figcaption>
+    </figure>
+  </div>
+</body>
+</html>

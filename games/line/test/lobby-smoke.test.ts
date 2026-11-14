@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { drawHomePage } from '../src/ui/home';
 import { drawNav, pickNavTab } from '../src/ui/nav';
-import { createMapState, drawMapView, pickMapNode } from '../src/ui/mapview';
+import { createMapState, pickMapNode } from '../src/ui/mapview';
+import { drawMapView } from '../src/ui/mapdraw';
 import { createRankState, drawRankPage } from '../src/ui/leaderboard';
 import { drawProfilePage, type ProfilePageState } from '../src/ui/profile';
 import { drawSkinsPage } from '../src/ui/skins';
@@ -40,6 +41,8 @@ function fakeCtx() {
 
 const HOME = {
   maxLevel: 7,
+  // 当前关 = 最高已通关 + 1
+  currentLevel: 8,
   levelCount: 1000,
   nickname: '测试玩家',
   avatar: '',

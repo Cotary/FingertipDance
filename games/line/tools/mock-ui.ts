@@ -12,7 +12,8 @@ import { DESIGN_W } from '../src/render/layout';
 import { computeLayout } from '../src/render/layout';
 import { CLAY } from '../src/ui/clay';
 import { drawHomePage, type HomePageState } from '../src/ui/home';
-import { drawMapView, createMapState, scrollToLevel } from '../src/ui/mapview';
+import { drawMapView } from '../src/ui/mapdraw';
+import { createMapState, scrollToLevel } from '../src/ui/mapview';
 import { drawRankPage, createRankState } from '../src/ui/leaderboard';
 import { drawProfilePage, type ProfilePageState } from '../src/ui/profile';
 import { drawSkinsPage, type SkinsPageState } from '../src/ui/skins';
@@ -33,6 +34,8 @@ type Ctx = CanvasRenderingContext2D;
 // ── 主页 ──
 export const homeState: HomePageState = {
   maxLevel: 37,
+  // 当前关 = 最高已通关 + 1
+  currentLevel: 38,
   levelCount: 1000,
   nickname: '小满',
   avatar: '',
@@ -43,8 +46,23 @@ export const homeState: HomePageState = {
 // ── 地图 ──
 const stars: Record<string, number> = {};
 for (let i = 1; i <= 36; i++) stars[String(i)] = i % 7 === 0 ? 2 : i % 5 === 0 ? 1 : 3;
-export const mapState = createMapState(37, 1000, stars);
-mapState.scrollY = scrollToLevel(37);
+/**
+ * 地图页的预览关号：`?p=map&lv=705` 可以看任意位置那张图。
+ * 视觉验收必须能直接看到「世界门 / 熔炉 / 星穹」这些平时要划 40 屏才到的地方。
+ */
+const lvArg = typeof location !== 'undefined' ? Number(new URLSearchParams(location.search).get('lv') ?? 0) : 0;
+const mapLv = lvArg > 0 ? lvArg : 38;
+
+const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
+/** `?t=neon` 预览地图跟着某套主题变色的样子（空 = 默认星穹）。 */
+const MAP_THEME = q.get('t') ?? '';
+export const mapState = createMapState(mapLv, 1000, stars);
+mapState.scrollY = scrollToLevel(mapLv);
+// `&off=3000` 模拟「已经拖远了」：用来验收「回到当前」与导轨浮标
+const offArg = Number(q.get('off') ?? 0);
+if (offArg) mapState.scrollY = Math.min(mapState.maxScrollY, Math.max(0, mapState.scrollY + offArg));
+// `&scrub=1` 停在「正在拖导轨」的那一帧，用来看浮标
+if (q.get('scrub') === '1') mapState.scrub = true;
 
 // ── 排行榜 ──
 const board9 = (rank: number, nickname: string, maxLevel: number, totalTimeMs: number): LeaderboardItem => ({
@@ -87,6 +105,30 @@ export const skinsState: SkinsPageState = {
   selected: 'marble',
   unlocked: new Set(['wood', 'mint', 'graphite', 'slate', 'blush', 'amber', 'marble']),
   page: 0,
+};
+
+/**
+ * 皮肤页的「棋盘」页签。
+ *
+ * 单独给一份 state 而不是改 `skinsState`：两页签的内容完全不同，
+ * 挤在一个 state 里就得在 mock 里写分支，画廊反而看不出真实布局。
+ * `maxLevel` 给 400 —— 正好让玻璃穹顶、圆格罗盘已解锁、黑曜熔岩锁着，
+ * 一次截屏能同时看到「已解锁」「未解锁」「使用中」三种状态。
+ */
+const themeQ = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
+
+export const themesState: SkinsPageState = {
+  equipped: 'mint',
+  selected: 'marble',
+  unlocked: new Set(['wood', 'mint', 'graphite', 'slate', 'blush', 'amber', 'marble']),
+  page: 0,
+  tab: 'theme',
+  // `?p=themes&t=abyss` 直接看在展台上的某一套 —— 八套逐张验收要用它，
+  // 否则只能每张截三次图、点两次陶片才能换到
+  themeSelected: themeQ.get('t') ?? 'orbit',
+  themeEquipped: 'glass',
+  maxLevel: 1000,
+  themeAllUnlocked: true,
 };
 
 // ── 游戏内：造一个 7×7 关卡 + 一条已走过的路径 ──
@@ -147,10 +189,11 @@ export interface PageDef {
 
 export const PAGES: PageDef[] = [
   { key: 'home', title: '主页大厅', nav: 'home', draw: (c) => void drawHomePage(c, homeState, NOW) },
-  { key: 'map', title: '关卡地图', nav: 'map', draw: (c) => void drawMapView(c, mapState, NOW) },
+  { key: 'map', title: '关卡地图', nav: 'map', draw: (c) => void drawMapView(c, mapState, NOW, MAP_THEME) },
   { key: 'rank', title: '排行榜', nav: 'rank', draw: (c) => void drawRankPage(c, rankState, NOW) },
   { key: 'profile', title: '我的', nav: 'profile', draw: (c) => void drawProfilePage(c, profileState, NOW) },
   { key: 'skins', title: '皮肤', nav: 'skins', draw: (c) => void drawSkinsPage(c, skinsState, NOW) },
+  { key: 'themes', title: '棋盘主题', nav: 'skins', draw: (c) => void drawSkinsPage(c, themesState, NOW) },
   { key: 'game', title: '游戏内', draw: gameScreen },
   { key: 'result', title: '通关结算', draw: resultScreen },
 ];

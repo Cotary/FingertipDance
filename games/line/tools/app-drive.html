@@ -1,0 +1,112 @@
+<!doctype html>
+<!--
+  真实 App 的输入演练台。
+
+  为什么要它：地图的视觉能用 live-gallery 截，但「拖导轨跳关」「甩指惯性」
+  这类**输入行为**截不出来 —— 而它们恰恰是最容易改坏、又最难靠单测覆盖的部分
+  （`onDown/onMove/onUp` 里的状态机）。
+
+  做法：同一个源下的 iframe 装载 `/`，然后往它的 canvas 上派发真的 PointerEvent
+  （`isTrusted` 对 addEventListener 无影响），走的是和手指完全同一条链路。
+
+  用法：
+    /tools/app-drive.html            → 点「地图」页签，停在地图
+    /tools/app-drive.html?drag=1     → 再拖右侧导轨到 2/3 处（验跳关）
+    /tools/app-drive.html?fling=1    → 快速上划 300px 后松手（验惯性）
+  配合：
+    chrome --headless=new --screenshot=out.png --window-size=750,1334 \
+           --virtual-time-budget=18000 <url>
+-->
+<html><head><meta charset="utf-8"><style>body{margin:0;background:#000}iframe{border:0;display:block}</style></head>
+<body>
+<iframe id="f" src="/" width="750" height="1334"></iframe>
+<script>
+const q = new URLSearchParams(location.search);
+const f = document.getElementById('f');
+function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }
+f.onload = async () => {
+  const w = f.contentWindow, doc = f.contentDocument;
+  await wait(2500);
+  const cv = doc.querySelector('canvas');
+  const ev = (type, x, y) => cv.dispatchEvent(new w.PointerEvent(type, {
+    clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 1, isPrimary: true, pointerType: 'touch',
+  }));
+  // 底部导航「地图」：设计坐标 (187, 1290)
+  ev('pointerdown', 187, 1290); ev('pointerup', 187, 1290);
+  await wait(900);
+  if (q.get('drag') === '1') {
+    // 从导轨滑块（约 y 250）往下拖到 y 800
+    ev('pointerdown', 722, 250);
+    for (let y = 260; y <= 800; y += 20) { ev('pointermove', 722, y); }
+    ev('pointerup', 722, 800);
+    await wait(600);
+  }
+  if (q.get('tab') === 'theme') {
+    // 只走到「棋盘页签」为止：headless 里进关会崩渲染进程（audio + 关卡初始化），
+    // 而装备链路的前半段（页签 / 陶片 / 装备按钮）不需要进关就能验
+    ev('pointerdown', 375, 1274); ev('pointerup', 375, 1274);
+    await wait(700);
+    ev('pointerdown', 324, 91); ev('pointerup', 324, 91);
+    await wait(600);
+    const ti = ['ink', 'glass', 'pixel', 'orbit', 'neon', 'obsidian', 'gilded', 'abyss']
+      .indexOf(q.get('tab2') ?? 'abyss');
+    if (ti >= 0) {
+      const i = ti + 1;
+      const row = Math.floor(i / 5);
+      const col = i % 5;
+      const inRow = Math.min(5, 9 - row * 5);
+      const w = inRow * 121 + (inRow - 1) * 10;
+      ev('pointerdown', (750 - w) / 2 + col * 131 + 60, 878 + row * 144 + 52);
+      ev('pointerup', (750 - w) / 2 + col * 131 + 60, 878 + row * 144 + 52);
+      await wait(500);
+    }
+  }
+  if (q.get('theme')) {
+    // 皮肤页 → 棋盘页签 → 选中那一套 → 装备 → 回主页 → 开始
+    //
+    // 这条链路是主题的**唯一**入口：单看渲染器画得对不对，不等于
+    // 「玩家能不能装上」。坐标全部取自设计稿（750×1334，与 iframe 1:1）。
+    const themeId = q.get('theme');
+    const idx = ['ink', 'glass', 'pixel', 'orbit', 'neon', 'obsidian', 'gilded', 'abyss'].indexOf(themeId);
+    if (idx < 0) { document.title = 'unknown-theme'; return; }
+    ev('pointerdown', 375, 1274); ev('pointerup', 375, 1274);  // 皮肤
+    await wait(700);
+    ev('pointerdown', 324, 91); ev('pointerup', 324, 91);      // 棋盘页签
+    await wait(500);
+    const i = idx + 1;
+    const row = Math.floor(i / 5);
+    const col = i % 5;
+    const inRow = Math.min(5, 9 - row * 5);
+    const inkW = inRow * 121 + (inRow - 1) * 10;
+    const chipX = (750 - inkW) / 2 + col * 131 + 60;
+    const chipY = 878 + row * 144 + 52;
+    ev('pointerdown', chipX, chipY); ev('pointerup', chipX, chipY);
+    await wait(600);
+    ev('pointerdown', 614, 728); ev('pointerup', 614, 728);     // 装备
+    await wait(900);
+    ev('pointerdown', 75, 1274); ev('pointerup', 75, 1274);     // 主页
+    await wait(800);
+    ev('pointerdown', 375, 1118); ev('pointerup', 375, 1118);   // 开始
+    await wait(1500);
+  }
+  if (q.get('fling') === '1') {
+    // 快速上划 300px 后松手：惯性应该继续滑出远多于 300px 的距离
+    ev('pointerdown', 300, 900);
+    await wait(16);
+    ev('pointermove', 300, 800);
+    await wait(16);
+    ev('pointermove', 300, 700);
+    await wait(16);
+    ev('pointermove', 300, 600);
+    ev('pointerup', 300, 600);
+    await wait(1200);
+  }
+  if (q.get('live') === '1') {
+    // 拖导轨到一半 → 停住看浮标
+    ev('pointerdown', 722, 700);
+    for (let y = 700; y <= 760; y += 10) ev('pointermove', 722, y);
+  }
+  document.title = 'ok';
+};
+</script>
+</body></html>

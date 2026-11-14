@@ -1,86 +1,164 @@
 /**
- * 关卡地图页。
+ * 关卡地图页 —— 一条通往星穹的古道（几何 / 状态 / 命中）。
  *
- * 蛇形路线 + 七个「世界」。
+ * ## 这一版换的不是装饰，是空间
  *
- * 旧版是一条单列 S 形直线（`x = 中轴 + sin 摆动`），1000 个一模一样的圆点排到底，
- * 一屏只看得到 7 关，而且 `curve.ts` 里分好的 7 段（棋盘 6×6 → 11×11）在地图上
- * 完全没有体现 —— 打第 500 关和打第 50 关看起来是同一条路的第 N 个点。
+ * 上一版是「平铺的山道」：节点等大、路面等宽、世界门是一块横跨屏幕的牌子。
+ * 它的问题不是颜色，是**没有纵深**——一屏十四个一样大的圆点，
+ * 读起来像贴在墙上的清单，不像一条要走的路。
  *
- * 新版：
- * - 蛇形排布：每行 4 关、左右往返，横向利用率翻倍 → 一屏 15~16 关
- * - 七个世界：边界**对齐到行首**（1/13/33/65/153/405/705，都是 4k+1），
- *   世界之间横插一道「世界门」，门独占一段高度，不和任何一行节点打架
- * - 世界末关插旗、皮肤奖励关（200/500/900）挂钻石，让长线有可数的锚点
+ * 新版按「站在路上往前看」组织：
+ *
+ * - **远小近大**：`depthScale(y)` 让位于视野上方的节点缩到 0.72、下方放到 1.05，
+ *   路面同步从 28px 宽收到 80px。透视是唯一让人相信「前面还有路」的线索。
+ * - **天空有层**：星点按 0.15 的视差走、星云几乎不动、行星固定在远处。
+ *   滚动时三层速度不同，2D 画面就有了相机在动的错觉。
+ * - **路是一条带**：不再是 `lineWidth` 描边，而是沿 Catmull-Rom 采样后
+ *   左右各偏移半个路宽拼出的多边形，透视收窄会真的发生在几何上。
+ * - **未解锁是暗星，不是坑**：深色球体 + 一圈冷光边，读作「还没点亮」。
+ *   凹坑是黏土桌面的语言，放到星空里会变成一个黑洞。
+ *
+ * 配色按**当前棋盘主题**取（`render/mapstyle.ts`）：九套主题九片夜空，
+ * 但共用同一套构图。
+ *
+ * ## 几何的两条硬约束（测试锁着）
+ *
+ * 1. 节点必须落在 `[40, 656]` 里 —— 右边 656 之后是导轨的手势区（见 `RAIL`）。
+ * 2. 世界门必须夹在两个节点**中间**，不能和任何节点重叠（见 `test/mapview.test.ts`）。
+ *
+ * 绘制在 `ui/mapdraw.ts`。这里只留「路在哪、点得中哪」。
  */
 import { DESIGN_W, DESIGN_H } from '../render/layout';
 import { SKINS } from '../render/skins';
-import { drawButton, type Button } from './hud';
-import { CLAY, CLAY_UI, clayBlock, clayDisc, clayStar, clayText } from './clay';
+import { DEBUG_ENABLED } from '../core/debug';
 
-/** 每行关卡数。4 列 → 一屏能放下 15~16 关。 */
-const PER_ROW = 4;
+// ────────────────────────────── 尺寸 ──────────────────────────────
 
-/** 行高（相邻两行节点的垂直间距）。 */
-const ROW_H = 248;
+/** 相邻两关的垂直间距。8 关左右填满一屏 —— 看细节，不是看清单。 */
+export const NODE_STEP = 116;
 
-/** 世界门独占的额外高度。门插在两行之间，不占任何一行的位置。 */
-const GATE_H = 96;
+/**
+ * 世界门独占的额外高度。门夹在两关之间，不占任何一关的位置。
+ *
+ * 140 而不是 96：门高 84，两关间距 = 116 + GATE_H ± 20（y 有 ±10 的呼吸）。
+ * 96 时门顶正好压在**世界末关的星星**上（星星画在节点下方 r + 18 + 10 处），
+ * 世界末关刚好插着旗、带着星，是这张图上最需要看清的一格。
+ */
+const GATE_H = 140;
 
-/** 可视区顶部（顶部遮罩以下）。第一行节点中心 = 这个值 + ROW_H/2。 */
-const ROUTE_TOP = 210;
+/** 第一关节点的中心 y（顶部遮罩 204 以下留一点呼吸）。 */
+export const FIRST_NODE_Y = 246;
 
-/** 可视区底部。下方 76px 留给吸底的「继续」按钮和导航栏。 */
-const VIEW_BOTTOM = DESIGN_H - 196;
+/** 可视区顶部（遮罩下沿）。 */
+export const ROUTE_TOP = 200;
 
-/** 四列的 x 坐标。最右一列留够半径 40 的节点不出界。 */
-const COL_X = [60, 270, 480, 690];
+/** 可视区底部。下面 196px 留给吸底的「继续」按钮和导航栏。 */
+export const VIEW_BOTTOM = DESIGN_H - 196;
 
-/** 世界：关号区间 + 名字。区间来自 `curve.ts` 的 SEGMENTS，但边界取整到 4k+1。 */
+/** 山道的中轴（0..706 的中点，右边 44px 是导轨）。 */
+export const CENTER_X = 353;
+
+/** 蜿蜒振幅。353 ± (198 + 20) = [135, 571]，加减最大节点半径 46 仍在 [89, 617] 内。 */
+const WAVE_AMP = 198;
+
+/** 每个节点推进的相位。2π/0.72 ≈ 8.7 关一个来回 —— 长周期才像山路，短周期像弹簧。 */
+const WAVE_K = 0.95;
+
+/** 右侧导轨。 */
+export const RAIL = {
+  /**
+   * 手势区左边界（这个 x 以右都算导轨）。
+   *
+   * 节点最右到 617（`CENTER_X + WAVE_AMP + 副波 + 半径`），656 留了近 40px
+   * 余量：再往左就开始吃掉节点边缘的点击，再往右（比如 686）在 375 宽的手机上
+   * 只剩 24px，拇指按不准。
+   */
+  hitLeft: 656,
+  /** 轨道中心 x */
+  center: DESIGN_W - 28,
+  /** 轨道宽度 */
+  width: 7,
+  /** 轨道上下端 */
+  top: 214,
+  bottom: VIEW_BOTTOM - 8,
+  /** 滑块最小高度：太短就抓不住 */
+  thumbMinH: 64,
+} as const;
+
+// ────────────────────────────── 世界 ──────────────────────────────
+
+/** 世界：关号区间 + 名字 + 主色。 */
 export interface World {
   from: number;
   to: number;
   name: string;
+  /** 世界主色：世界门、导轨刻度、节点星球、星尘。 */
+  accent: string;
 }
 
 /**
  * 七个世界。
  *
- * 边界必须是 4k+1（即 (from-1) 能被 PER_ROW 整除），否则世界门会插在同一行的
- * 两个节点之间，把一行切成两半。原 SEGMENTS 边界是 11/31/61/151/401/701，
- * 这里就近取到 13/33/65/153/405/705，误差 ≤2 关。
+ * 区间来自 `core/cover/v3/generate.ts` 的 WORLDS，两边必须一致
+ * （`test/mapview.test.ts` 锁住了）。
+ *
+ * 色值比黏土版亮一档：它们要压在深色夜空上。太暗的绿/蓝在 #0A1226 上
+ * 只剩一团脏灰，分不出「苗圃」和「苔原」。
  */
 export const WORLDS: World[] = [
-  { from: 1, to: 12, name: '苗圃' },
-  { from: 13, to: 32, name: '石溪' },
-  { from: 33, to: 64, name: '苔原' },
-  { from: 65, to: 152, name: '熔炉' },
-  { from: 153, to: 404, name: '深井' },
-  { from: 405, to: 704, name: '云阶' },
-  { from: 705, to: 1000, name: '星穹' },
+  { from: 1, to: 12, name: '苗圃', accent: '#8FE3A8' },
+  { from: 13, to: 32, name: '石溪', accent: '#7FC8F0' },
+  { from: 33, to: 64, name: '苔原', accent: '#7FE0C4' },
+  { from: 65, to: 152, name: '熔炉', accent: '#F0906A' },
+  { from: 153, to: 404, name: '深井', accent: '#8C9BE8' },
+  { from: 405, to: 704, name: '云阶', accent: '#E8D9B8' },
+  { from: 705, to: 1000, name: '星穹', accent: '#F2C86A' },
 ];
 
-/** 罗马数字（世界门序号）。 */
-const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
-
-/** 门所在的行号（第 2 个世界起，每个世界一道门）。导出供测试校验几何。 */
-export const GATE_ROWS: number[] = WORLDS.slice(1).map((w) => (w.from - 1) / PER_ROW);
-
 /** 世界末关（插旗的关号）。 */
-const WORLD_ENDS: number[] = WORLDS.map((w) => w.to);
+export const WORLD_ENDS: number[] = WORLDS.map((w) => w.to);
 
 /**
  * 皮肤奖励关。只认 premium —— 普通皮肤已经整体改成广告解锁，
  * 标在地图上会误导成「打这关才有」。
  */
-const SKIN_LEVELS: number[] = SKINS
+export const SKIN_LEVELS: number[] = SKINS
   .filter((s) => s.unlockType === 'milestone' && s.unlockValue > 0)
   .map((s) => s.unlockValue);
 
+// ────────────────────────────── 小工具 ──────────────────────────────
+
+export function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
+/** 确定性伪随机：同一个 seed 永远同一个值。地形不能用 Math.random（每帧会跳）。 */
+export function hash(n: number): number {
+  const v = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return v - Math.floor(v);
+}
+
+// ────────────────────────────── 几何 ──────────────────────────────
+
 /** 地图状态。 */
 export interface MapViewState {
-  /** 已通过的最高关号 */
-  maxLevel: number;
+  /**
+   * 当前关号（= 下一个可玩的关号）。
+   *
+   * 语义：**已经通关的最高关号 + 1**。
+   * 一关都没通 → 1；刚打完第 1 关 → 2。
+   *
+   * ## 为什么不用「最高已通关关号」
+   *
+   * 服务端 `users.max_level` 存的是「最高**已通关**关号」（0 = 没通关过），
+   * 而地图的三态判定是「比当前关小的都通了，比当前关大的都锁着」。
+   * 直接拿 `maxLevel` 当当前关用会整体错一格：
+   * 通关第 1 关后地图会把第 1 关画成「当前」（可重玩）、
+   * 把第 2 关锁着 —— 玩家会觉得「明明通关了，怎么还在原地」。
+   *
+   * 所以这里统一用「当前关号」语义，`maxLevel` 只在统计/排行榜里出现。
+   */
+  currentLevel: number;
   /** 关卡总数 */
   levelCount: number;
   /** 关号 → 星级（0 表示还没打过） */
@@ -93,56 +171,91 @@ export interface MapViewState {
   toast: string;
   /** 提示气泡显示起始时间 */
   toastAt: number;
+  /**
+   * 平滑滚动目标（点世界刻度 / 「回到当前关」时用）。
+   *
+   * 直接赋值会让画面瞬移，玩家不知道自己去了哪；缓动过去才能建立
+   * 「我往上/往下走了多远」的空间感。`null` = 没有待执行的目标。
+   */
+  scrollTarget: number | null;
+  /** 甩指惯性速度（设计像素 / 毫秒）。每帧衰减。 */
+  fling: number;
+  /** 是否正在拖右侧导轨（拖时滑块加宽 + 出浮标） */
+  scrub: boolean;
+  /** 调试模式：所有关卡都可点。见 `debugUnlockAll` 的说明。 */
+  debugUnlockAll: boolean;
 }
 
-/** 到指定行为止，前面插了几道门。 */
-function gatesUpTo(row: number): number {
+/** 到指定关号为止，前面插了几道门。 */
+function gatesBefore(idx: number): number {
   let n = 0;
-  for (const r of GATE_ROWS) if (r <= row) n++;
+  for (let i = 1; i < WORLDS.length; i++) if (WORLDS[i].from <= idx) n++;
   return n;
 }
 
-/** 第 row 行节点的中心 y（世界坐标，未减 scrollY）。导出供测试校验几何。 */
-export function rowCenterY(row: number): number {
-  return ROUTE_TOP + ROW_H / 2 + row * ROW_H + gatesUpTo(row) * GATE_H;
-}
-
-/** 第 gateIdx 道门的中心 y。正好落在上一行与本行中间。导出供测试校验几何。 */
-export function gateCenterY(gateIdx: number): number {
-  const row = GATE_ROWS[gateIdx];
-  return ROUTE_TOP + row * ROW_H + gateIdx * GATE_H + GATE_H / 2;
-}
-
-/** 内容总高度（最后一行底边）。 */
-function contentBottom(levelCount: number): number {
-  const rows = Math.ceil(levelCount / PER_ROW);
-  if (rows <= 0) return ROUTE_TOP;
-  return rowCenterY(rows - 1) + ROW_H / 2;
-}
-
-/** 创建初始状态。 */
-export function createMapState(maxLevel: number, levelCount: number, stars: Record<string, number>): MapViewState {
-  return {
-    maxLevel,
-    levelCount,
-    stars,
-    scrollY: 0,
-    maxScrollY: Math.max(0, contentBottom(levelCount) - VIEW_BOTTOM),
-    toast: '',
-    toastAt: 0,
-  };
+/**
+ * 第 idx 关节点的中心 y（世界坐标，未减 scrollY）。
+ * 关号 1-based。严格单调递增 —— `visibleRange` 靠这条做二分。
+ */
+export function nodeY(idx: number): number {
+  const i = idx - 1;
+  // 行距也留一点呼吸（±10）。等距会让「每一关都一样重」，
+  // 而不等距读起来像人一步步走出来的。下界 96 仍然远大于两个节点的半径和。
+  return FIRST_NODE_Y + i * NODE_STEP + Math.sin(i * 1.73) * 10 + gatesBefore(idx) * GATE_H;
 }
 
 /**
- * 节点坐标。关号 1-based。
- * 偶数行左→右，奇数行右→左 —— 蛇形折返处两个节点同列，路径是垂直的。
+ * 第 idx 关节点的中心 x。
+ *
+ * 主波是长周期正弦（山路），再叠一条几乎看不出来的高频小波：
+ * 纯正弦的两个波峰波谷之间是等距的，加一点不规则才不像函数图像。
  */
-export function mapNodePos(idx: number): { x: number; y: number } {
+export function nodeX(idx: number): number {
   const i = idx - 1;
-  const row = Math.floor(i / PER_ROW);
-  const c = i % PER_ROW;
-  const col = row % 2 === 0 ? c : PER_ROW - 1 - c;
-  return { x: COL_X[col], y: rowCenterY(row) };
+  // 主波决定走哪边，副波（20px、频率和主波不整除）负责「同一条斜坡上也有起伏」：
+  // 只有主波时，两个拐点之间的距离是一段**笔直**的斜线，一眼就是正弦函数图像。
+  return CENTER_X + Math.sin(i * WAVE_K) * WAVE_AMP + Math.sin(i * 2.41 + 0.7) * 20;
+}
+
+/** 节点坐标。关号 1-based。 */
+export function mapNodePos(idx: number): { x: number; y: number } {
+  return { x: nodeX(idx), y: nodeY(idx) };
+}
+
+/**
+ * 透视缩放：视野上方（远）小，下方（近）大。
+ *
+ * 这是「3D 倾向」的全部秘密 —— 不改任何世界坐标，只改**画多大**。
+ * 命中判断也用它，所以视觉大小和可点区域永远一致（不会出现
+ * 「看着是个小星，点半天点不中」）。
+ *
+ * 指数 0.8 而不是线性：线性会让中段的路突然变宽，像折了一刀；
+ * 0.8 的曲线在视野中部更平缓，符合「近处变化快、远处变化慢」的透视直觉。
+ *
+ * @param screenY 屏幕坐标 y（已减 scrollY）
+ */
+export function depthScale(screenY: number): number {
+  const t = clamp((screenY - ROUTE_TOP) / (VIEW_BOTTOM - ROUTE_TOP), 0, 1);
+  return 0.72 + 0.33 * Math.pow(t, 0.8);
+}
+
+/** 路面半宽（设计像素）。远处 14、近处 40 —— 一条真的会收窄的带子。 */
+export function roadHalfWidth(screenY: number): number {
+  const t = clamp((screenY - ROUTE_TOP) / (VIEW_BOTTOM - ROUTE_TOP), 0, 1);
+  return 11 + 16 * Math.pow(t, 0.9);
+}
+
+/** 某关节点的视觉半径（未解锁 / 已通关 / 当前关三态 + 透视）。 */
+export function nodeRadius(idx: number, screenY: number, st: MapViewState): number {
+  const milestone = WORLD_ENDS.includes(idx);
+  const base = idx === st.currentLevel ? 46 : idx < st.currentLevel ? (milestone ? 44 : 39) : 32;
+  return base * depthScale(screenY);
+}
+
+/** 第 gi 道门的中心 y。正好落在前后两关中间。导出供测试校验几何。 */
+export function gateCenterY(gi: number): number {
+  const from = WORLDS[gi + 1].from;
+  return (nodeY(from - 1) + nodeY(from)) / 2;
 }
 
 /** 关号所属的世界下标。 */
@@ -151,32 +264,91 @@ export function worldOf(idx: number): number {
   return 0;
 }
 
-/**
- * 计算可视区内的节点区间。
- * 逐行扫（1000 关 = 250 行），比维护 y→row 反函数简单，开销可忽略。
- */
-export function visibleRange(scrollY: number, levelCount: number): { first: number; last: number } {
-  const rows = Math.ceil(levelCount / PER_ROW);
-  const top = scrollY - ROW_H;
-  const bot = scrollY + (VIEW_BOTTOM - ROUTE_TOP) + ROW_H;
-
-  let r0 = -1;
-  let r1 = -2;
-  for (let r = 0; r < rows; r++) {
-    const y = rowCenterY(r);
-    if (y >= top && y <= bot) {
-      if (r0 < 0) r0 = r;
-      r1 = r;
-    }
-  }
-  if (r0 < 0) return { first: 1, last: Math.min(levelCount, PER_ROW) };
-  return { first: r0 * PER_ROW + 1, last: Math.min(levelCount, (r1 + 1) * PER_ROW) };
+/** 内容总高度（最后一关再往下留一段，让它能滚到屏幕中部）。 */
+function contentBottom(levelCount: number): number {
+  if (levelCount <= 0) return ROUTE_TOP;
+  return nodeY(levelCount) + 120;
 }
 
 /**
- * 判断点击落在哪个关卡节点上。
- * @returns 关号，未命中返回 -1
+ * 创建初始状态。
+ *
+ * ## `debugUnlockAll` 的生效条件
+ *
+ * 只有**构建期调试开关**（`DEBUG_ENABLED`）打开时才允许真的开这个模式。
+ * 生产构建里 `DEBUG_ENABLED` 恒为 `false` → 这里直接忽略传入值 →
+ * 就算调用方误传了 `true`，调试入口也不存在。
  */
+export function createMapState(
+  currentLevel: number,
+  levelCount: number,
+  stars: Record<string, number>,
+  debugUnlockAll = false,
+): MapViewState {
+  return {
+    currentLevel,
+    levelCount,
+    stars,
+    scrollY: 0,
+    maxScrollY: Math.max(0, contentBottom(levelCount) - VIEW_BOTTOM),
+    toast: '',
+    toastAt: 0,
+    scrollTarget: null,
+    fling: 0,
+    scrub: false,
+    debugUnlockAll: DEBUG_ENABLED && debugUnlockAll,
+  };
+}
+
+/**
+ * 某关当前是否可点。
+ *
+ * 正常情况：`idx <= currentLevel` 可点（已通关的可重玩，当前关可玩）。
+ * 调试模式（`debugUnlockAll`）：**全部可点** —— 测试时能直接进任意一关。
+ *
+ * ## 为什么这里也判一次 `DEBUG_ENABLED`
+ *
+ * 让生产构建能把整个调试分支**彻底 tree-shake 掉**：
+ * `DEBUG_ENABLED` 被内联成 `false` → `false && ...` 整块被删。
+ */
+export function isLevelPlayable(idx: number, st: MapViewState): boolean {
+  if (DEBUG_ENABLED && st.debugUnlockAll) return true;
+  return idx <= st.currentLevel;
+}
+
+/** 第一个 `nodeY >= y` 的关号。 */
+function firstAtLeast(y: number, levelCount: number): number {
+  let lo = 1;
+  let hi = levelCount;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (nodeY(mid) < y) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * 计算可视区内的节点区间。
+ *
+ * 视线之外多带一关：曲线段的切线要用到相邻节点，
+ * 只给刚好可见的那几关，路会在屏幕边缘「折」一下。
+ */
+export function visibleRange(scrollY: number, levelCount: number): { first: number; last: number } {
+  if (levelCount <= 0) return { first: 1, last: 0 };
+  const top = scrollY + ROUTE_TOP - NODE_STEP;
+  const bot = scrollY + VIEW_BOTTOM + NODE_STEP;
+
+  const first = clamp(firstAtLeast(top, levelCount) - 1, 1, levelCount);
+  let last = first;
+  for (let i = first; i <= levelCount; i++) {
+    if (nodeY(i) > bot) break;
+    last = i;
+  }
+  return { first, last: clamp(last, 1, levelCount) };
+}
+
+/** 判断点击落在哪个关卡节点上。@returns 关号，未命中返回 -1 */
 export function pickMapNode(x: number, y: number, st: MapViewState): number {
   const { first, last } = visibleRange(st.scrollY, st.levelCount);
   for (let i = first; i <= last; i++) {
@@ -184,339 +356,136 @@ export function pickMapNode(x: number, y: number, st: MapViewState): number {
     const cy = p.y - st.scrollY;
     const dx = x - p.x;
     const dy = y - cy;
-    if (dx * dx + dy * dy <= 40 * 40) return i;
+    // 半径与视觉一致，再给 6px 宽容：远端的节点只有 26px，
+    // 严格按视觉半径判会让「看着能点」变成「点不中」。
+    // 下限 32 是触控底线，不能为了透视把手感做没了。
+    const r = Math.max(32, nodeRadius(i, cy, st) + 6);
+    if (dx * dx + dy * dy <= r * r) return i;
   }
   return -1;
 }
 
 /**
  * 让指定关号滚动到可视区中部（进入地图时聚焦当前关用）。
+ *
+ * 下限夹到 0：前几关的节点本来就在屏幕上部，硬居中会把内容推出上边界，
+ * 露出「地图之外」的空白。
  */
 export function scrollToLevel(idx: number): number {
-  const y = rowCenterY(Math.floor((idx - 1) / PER_ROW));
-  return Math.max(0, y - (VIEW_BOTTOM - ROUTE_TOP) / 2);
+  return Math.max(0, nodeY(idx) - (ROUTE_TOP + VIEW_BOTTOM) / 2);
+}
+
+/** 设计坐标 y 处最接近的那一关（导轨浮标用）。 */
+export function levelNear(y: number, levelCount: number): number {
+  if (levelCount <= 0) return 1;
+  const lo = firstAtLeast(y, levelCount);
+  if (lo > 1 && Math.abs(nodeY(lo - 1) - y) < Math.abs(nodeY(lo) - y)) return lo - 1;
+  return lo;
+}
+
+// ────────────────────────────── 滚动动力学 ──────────────────────────────
+
+/**
+ * 推进一帧滚动。
+ *
+ * 两件事只能在这里做：
+ * - **缓动到目标**（点世界刻度）：直接赋值会让画面瞬移，玩家丢失空间感
+ * - **甩指惯性**：`onUp` 只给一个初速度，衰减必须按帧算，
+ *   交给 `setTimeout` 会在切后台时被节流成「回前台突然滚一大段」
+ */
+export function stepMapScroll(st: MapViewState, dt: number): void {
+  if (st.scrollTarget !== null) {
+    const target = clamp(st.scrollTarget, 0, st.maxScrollY);
+    const k = 1 - Math.exp(-dt / 72);
+    const next = st.scrollY + (target - st.scrollY) * k;
+    if (Math.abs(target - next) < 0.6) {
+      st.scrollY = target;
+      st.scrollTarget = null;
+    } else {
+      st.scrollY = next;
+    }
+    return;
+  }
+
+  if (Math.abs(st.fling) > 0.01) {
+    st.scrollY = clamp(st.scrollY + st.fling * dt, 0, st.maxScrollY);
+    st.fling *= Math.exp(-dt / 320);
+    // 撞到上下边界就停：继续衰减会让手指离屏后还在「顶」着边
+    if (st.scrollY <= 0 || st.scrollY >= st.maxScrollY) st.fling = 0;
+    else if (Math.abs(st.fling) < 0.01) st.fling = 0;
+  }
+}
+
+// ────────────────────────────── 导轨 ──────────────────────────────
+
+/** 导轨几何：轨道范围 + 滑块位置。 */
+export function railGeometry(st: MapViewState): {
+  top: number;
+  h: number;
+  thumbH: number;
+  thumbTop: number;
+} {
+  const top = RAIL.top;
+  const h = RAIL.bottom - RAIL.top;
+  const viewH = VIEW_BOTTOM - ROUTE_TOP;
+  const ratio = st.maxScrollY > 0 ? clamp(viewH / st.maxScrollY, 0, 1) : 1;
+  const thumbH = Math.max(RAIL.thumbMinH, Math.round(h * ratio));
+  const pos = st.maxScrollY > 0 ? clamp(st.scrollY / st.maxScrollY, 0, 1) : 0;
+  return { top, h, thumbH, thumbTop: top + (h - thumbH) * pos };
+}
+
+/** 某一关在导轨上的 y（按内容比例映射）。 */
+export function railYOf(level: number, st: MapViewState): number {
+  const g = railGeometry(st);
+  const contentH = st.maxScrollY + (VIEW_BOTTOM - ROUTE_TOP);
+  const p = contentH > 0 ? clamp(nodeY(level) / contentH, 0, 1) : 0;
+  return g.top + p * g.h;
+}
+
+/** 导轨上的落点 → 滚动偏移。`grab` 是按下点相对滑块顶部的偏移。 */
+export function railScrollAt(y: number, st: MapViewState, grab: number): number {
+  const g = railGeometry(st);
+  const span = g.h - g.thumbH;
+  const rel = span > 0 ? (y - grab - g.top) / span : 0;
+  return clamp(rel, 0, 1) * st.maxScrollY;
+}
+
+/** 导轨命中结果。 */
+export interface RailHit {
+  /**
+   * - `scrub`：拖滑块（最常用）
+   * - `world`：点了某个世界的刻度 → 缓动跳过去
+   * - `current`：点了当前关的小圆点 → 缓动跳回自己
+   */
+  kind: 'scrub' | 'world' | 'current';
+  /** `world` / `current` 时的目标关号 */
+  level?: number;
+  /** `scrub` 时按下点相对滑块顶部的偏移 */
+  grab: number;
 }
 
 /**
- * 绘制地图页。
- * @returns 可点击按钮列表
+ * 导轨命中判定。
+ *
+ * 顺序很重要：**先判滑块再判刻度**。滑块只有 64px 高，刻度又正好压在
+ * 轨道上 —— 先判刻度的话，想拖滑块却因为手指偏了两像素被弹到另一个世界。
  */
-export function drawMapView(ctx: CanvasRenderingContext2D, st: MapViewState, now: number): Button[] {
-  const { first, last } = visibleRange(st.scrollY, st.levelCount);
+export function pickRail(x: number, y: number, st: MapViewState): RailHit | null {
+  if (x < RAIL.hitLeft) return null;
+  if (y < RAIL.top - 36 || y > RAIL.bottom + 12) return null;
 
-  // ── 路线：嵌进桌面的一道凹槽 + 压上去的黏土条（已走 / 未走两种色） ──
-  // 注意：路径点在 moveTo/lineTo 时就按当时的变换定死了，先建路径再 translate 是无效的。
-  // 所有垂直偏移必须直接算进坐标（dy 参数）。
-  ctx.save();
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-
-  const trace = (from: number, to: number, dy = 0): void => {
-    let started = false;
-    for (let i = from; i <= to; i++) {
-      const p = mapNodePos(i);
-      const cy = p.y - st.scrollY + dy;
-      if (!started) {
-        ctx.moveTo(p.x, cy);
-        started = true;
-      } else {
-        ctx.lineTo(p.x, cy);
-      }
-    }
-  };
-
-  const lastSeg = last + 1;
-  // 已走过的最后一段：关号 maxLevel 之后就是没走的路
-  const doneSeg = Math.min(lastSeg, st.maxLevel);
-
-  // 凹槽：比桌面深一档，路才像「被按进桌面」
-  ctx.beginPath();
-  trace(first, lastSeg);
-  ctx.strokeStyle = CLAY.sand.shade;
-  ctx.lineWidth = 24;
-  ctx.stroke();
-
-  // 未走的路：浅棕细线，像还没压实的土（和已走的粗管拉开两档粗细，一眼分得清）
-  if (doneSeg < lastSeg) {
-    ctx.beginPath();
-    trace(Math.max(first, doneSeg), lastSeg);
-    ctx.strokeStyle = CLAY.cream.dark;
-    ctx.lineWidth = 11;
-    ctx.stroke();
+  const g = railGeometry(st);
+  if (y >= g.thumbTop && y <= g.thumbTop + g.thumbH) {
+    return { kind: 'scrub', grab: y - g.thumbTop };
   }
-
-  // 已走的路：一条陶土**管**（先画下移 5px 的暗面，再画主色 → 底边露暗）
-  if (doneSeg > first) {
-    ctx.beginPath();
-    trace(first, doneSeg, 5);
-    ctx.strokeStyle = CLAY.terracotta.dark;
-    ctx.lineWidth = 20;
-    ctx.stroke();
-
-    ctx.beginPath();
-    trace(first, doneSeg);
-    ctx.strokeStyle = CLAY.terracotta.base;
-    ctx.lineWidth = 20;
-    ctx.stroke();
-
-    // 大范围低 alpha 柔光（黏土不许有高光条，只能这样提亮上缘）
-    ctx.beginPath();
-    trace(first, doneSeg, -4);
-    ctx.strokeStyle = 'rgba(255,246,233,0.24)';
-    ctx.lineWidth = 6;
-    ctx.stroke();
+  if (Math.abs(y - railYOf(st.currentLevel, st)) <= 22) {
+    return { kind: 'current', level: st.currentLevel, grab: 0 };
   }
-  ctx.restore();
-
-  // ── 世界门（画在路径之上：路径是穿过门的） ──
-  for (let gi = 0; gi < GATE_ROWS.length; gi++) {
-    const gy = gateCenterY(gi) - st.scrollY;
-    if (gy < -GATE_H || gy > VIEW_BOTTOM) continue;
-    drawWorldGate(ctx, gi, gy, st);
-  }
-
-  // ── 节点 ──
-  for (let i = first; i <= last; i++) {
-    const p = mapNodePos(i);
-    drawMapNode(ctx, i, p.x, p.y - st.scrollY, st, now);
-  }
-
-  // ── 顶部标题栏：陶土色渐隐遮罩 + 关号胶囊 ──
-  // 遮罩：0~150 完全实（盖住滚出去的节点和它下方的星星），150~204 淡出。
-  // 星星画在节点下方 54px 处，遮罩只到 150 的话星星会从半透明段透出来，
-  // 和「第 37 关」胶囊叠在一起，看起来像胶囊上沾了脏东西。
-  const fade = ctx.createLinearGradient(0, 0, 0, 204);
-  fade.addColorStop(0, CLAY_UI.bgTop);
-  fade.addColorStop(0.82, CLAY_UI.bgTop);
-  fade.addColorStop(1, 'rgba(236,217,196,0)');
-  ctx.fillStyle = fade;
-  ctx.fillRect(0, 0, DESIGN_W, 204);
-
-  const pw = 240, ph = 64, px = (DESIGN_W - pw) / 2, py = 90;
-  const wi = worldOf(st.maxLevel);
-  clayBlock(ctx, px, py, pw, ph, ph * 0.5, CLAY.terracotta, 771, { depth: 9, hi: 0.07 });
-  clayText(ctx, `第 ${st.maxLevel} 关`, DESIGN_W / 2, py + ph / 2, 32, {
-    fill: '#FFF6E9',
-    outline: 'rgba(90,38,16,0.5)',
-    outlineWidth: 5,
-  });
-
-  // 世界名：当前关落在哪个世界，比关号更能定位「我在哪」
-  clayText(ctx, `${WORLDS[wi].name} ${WORLDS[wi].from}-${WORLDS[wi].to}`, DESIGN_W / 2, py + ph + 22, 22, {
-    weight: 600,
-    fill: CLAY_UI.inkSoft,
-    outlineWidth: 0,
-    emboss: false,
-  });
-
-  const back: Button = { x: 30, y: 92, w: 96, h: 60, label: '返回', kind: 'ghost', id: 'navHome' };
-  drawButton(ctx, back, false);
-
-  // ── 吸底「继续」：地图上最该被点的地方，不该让玩家自己找当前关 ──
-  const cbW = 320, cbH = 62;
-  const cb: Button = {
-    x: (DESIGN_W - cbW) / 2,
-    y: VIEW_BOTTOM + 6,
-    w: cbW,
-    h: cbH,
-    label: `继续第 ${st.maxLevel} 关`,
-    kind: 'primary',
-    id: 'playCurrent',
-  };
-  drawButton(ctx, cb, false);
-
-  // ── 提示气泡 ──
-  if (st.toast && now - st.toastAt < 1800) {
-    const alpha = Math.min(1, (1800 - (now - st.toastAt)) / 400);
-    ctx.globalAlpha = alpha;
-    // 236 而不是 176：顶栏多了一行世界名，气泡压上去会糊成一团。
-    // 这里已经在遮罩下方，浮在节点之上是气泡该有的样子
-    clayBlock(ctx, DESIGN_W / 2 - 210, 236, 420, 80, 26, CLAY.rose, 772, { depth: 8, hi: 0.06 });
-    clayText(ctx, st.toast, DESIGN_W / 2, 276, 26, {
-      fill: '#FFF6E9',
-      outline: 'rgba(88,24,24,0.45)',
-      outlineWidth: 4,
-    });
-    ctx.globalAlpha = 1;
-  }
-
-  return [back, cb];
-}
-
-/** 画一道横贯的世界门。 */
-function drawWorldGate(
-  ctx: CanvasRenderingContext2D,
-  gi: number,
-  y: number,
-  st: MapViewState,
-): void {
-  const w = WORLDS[gi + 1];
-  const gx = 36;
-  const gw = DESIGN_W - 72;
-  const gh = 76;
-  const gy = y - gh / 2;
-
-  // 还没走到这个世界：整块压成深灰蓝，读作「关着」而不是「禁用」——
-  // 玩家要能看见前面还有六个世界，只是暂时进不去
-  const opened = st.maxLevel + 1 >= w.from;
-  const cleared = st.maxLevel >= w.to;
-
-  clayBlock(ctx, gx, gy, gw, gh, 26, opened ? CLAY.stage : CLAY.lockTile, 800 + gi, {
-    depth: 10,
-    hi: 0.04,
-  });
-
-  const ink = opened ? '#FFF6E9' : 'rgba(255,246,233,0.72)';
-  const shade = opened ? 'rgba(40,26,16,0.55)' : 'rgba(16,26,36,0.6)';
-
-  // 左：◆ + 罗马序号
-  drawDiamond(ctx, gx + 30, y, 9, opened ? CLAY.mustard.base : CLAY.cream.dark);
-  clayText(ctx, ROMAN[gi + 1], gx + 76, y, 26, {
-    align: 'left',
-    weight: 700,
-    fill: ink,
-    outline: shade,
-    outlineWidth: 3,
-  });
-
-  // 中：世界名
-  clayText(ctx, w.name, gx + 150, y, 34, {
-    align: 'left',
-    weight: 700,
-    fill: ink,
-    outline: shade,
-    outlineWidth: 4,
-  });
-
-  // 右：关号区间 + 进度
-  const done = Math.max(0, Math.min(w.to - w.from + 1, st.maxLevel - w.from + 1));
-  const right = opened ? `${w.from}-${w.to}` : `${w.from}-${w.to}`;
-  clayText(ctx, right, gx + gw - 30, y - 12, 22, {
-    align: 'right',
-    weight: 600,
-    fill: opened ? 'rgba(255,246,233,0.86)' : 'rgba(255,246,233,0.55)',
-    outlineWidth: 0,
-    emboss: false,
-  });
-  clayText(ctx, cleared ? '已通关' : `${done} / ${w.to - w.from + 1}`, gx + gw - 30, y + 14, 20, {
-    align: 'right',
-    weight: 600,
-    fill: cleared ? CLAY.mint.light : 'rgba(255,246,233,0.62)',
-    outlineWidth: 0,
-    emboss: false,
-  });
-}
-
-/** 画单个地图节点。 */
-function drawMapNode(
-  ctx: CanvasRenderingContext2D,
-  idx: number,
-  x: number,
-  y: number,
-  st: MapViewState,
-  now: number,
-): void {
-  const done = idx <= st.maxLevel && idx !== st.maxLevel;
-  const current = idx === st.maxLevel;
-  const locked = idx > st.maxLevel;
-  const star = st.stars[String(idx)] ?? 0;
-
-  const r = current ? 40 : 34;
-
-  // 当前关：脉冲描边环（黏土不做发光，用「有人在敲这块土」的描边代替）
-  if (current) {
-    const pulse = (Math.sin(now / 400) + 1) / 2;
-    ctx.strokeStyle = `rgba(255,246,233,${(0.30 + pulse * 0.45).toFixed(3)})`;
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.arc(x, y, r + 12 + pulse * 8, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-
-  if (locked) {
-    // 未解锁：一块深蓝黏土片。比球面/桌面都深，才能读作「压在上面但关着」
-    clayDisc(ctx, x, y, r, CLAY.lockTile, 900 + idx, { depth: 3, hi: 0.08 });
-    // 不放锁：34px 的圆装不下能读清的挂锁，会变成一个白点。
-    // 未解锁的表达交给「更深的底 + 更沉（depth 小）+ 白字」。
-    clayText(ctx, String(idx), x, y, 24, {
-      weight: 600,
-      fill: 'rgba(255,251,243,0.92)',
-      outlineWidth: 0,
-      emboss: false,
-    });
-  } else {
-    clayDisc(ctx, x, y, r, current ? CLAY.mustard : CLAY.mint, 900 + idx, { depth: 7, hi: 0.16 });
-
-    clayText(ctx, String(idx), x, y, current ? 34 : 28, {
-      fill: '#FFF6E9',
-      outline: current ? CLAY.mustard.shade : CLAY.mint.shade,
-      outlineWidth: current ? 6 : 5,
-    });
-  }
-
-  // 星级（已通关）
-  if (!current && done && star > 0) {
-    for (let i = 0; i < 3; i++) {
-      const on = i < star;
-      clayStar(
-        ctx,
-        x + (i - 1) * 25,
-        y + r + 20,
-        11,
-        on ? CLAY.mustard : CLAY.sand,
-        950 + i,
-        { depth: 3, lit: on },
-      );
+  for (let wi = 1; wi < WORLDS.length; wi++) {
+    if (Math.abs(y - railYOf(WORLDS[wi].from, st)) <= 15) {
+      return { kind: 'world', level: WORLDS[wi].from, grab: 0 };
     }
   }
-
-  // 皮肤奖励关：右上角一颗小钻石（只标 premium，普通皮肤是广告解锁的）
-  if (SKIN_LEVELS.includes(idx)) {
-    drawDiamond(ctx, x + r * 0.78, y - r * 0.72, 10, CLAY.mustard.base);
-  }
-
-  // 世界末关：一面小旗（旧版每 10 关一面，1000 关要插 100 面，反而没有重点）
-  if (WORLD_ENDS.includes(idx)) {
-    drawFlag(ctx, x, y, r, st.maxLevel >= idx);
-  }
-}
-
-/** 小菱形（品级 / 奖励标记）。 */
-function drawDiamond(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, color: string): void {
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(cx, cy - r);
-  ctx.lineTo(cx + r * 0.78, cy);
-  ctx.lineTo(cx, cy + r);
-  ctx.lineTo(cx - r * 0.78, cy);
-  ctx.closePath();
-  ctx.fill();
-}
-
-/** 世界末关的小旗。 */
-function drawFlag(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, taken: boolean): void {
-  const fx = x + (x > DESIGN_W / 2 ? -r - 26 : r + 26);
-  ctx.strokeStyle = CLAY.cream.shade;
-  ctx.lineWidth = 4;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(fx, y - 26);
-  ctx.lineTo(fx, y + 18);
-  ctx.stroke();
-
-  const c = taken ? CLAY.mint : CLAY.rose;
-  ctx.fillStyle = c.dark;
-  ctx.beginPath();
-  ctx.moveTo(fx, y - 26);
-  ctx.lineTo(fx + 28, y - 16);
-  ctx.lineTo(fx, y - 6);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = c.base;
-  ctx.beginPath();
-  ctx.moveTo(fx, y - 25);
-  ctx.lineTo(fx + 26, y - 16);
-  ctx.lineTo(fx, y - 8);
-  ctx.closePath();
-  ctx.fill();
+  // 空白处按下 = 把滑块中心挪到手指处，然后跟着拖
+  return { kind: 'scrub', grab: g.thumbH / 2 };
 }

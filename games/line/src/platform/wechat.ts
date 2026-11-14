@@ -104,6 +104,37 @@ export const wechatPlatform: Platform = {
     return { canvas, width, height, dpr };
   },
 
+  /**
+   * 重新测量画布尺寸。
+   *
+   * 微信端在横竖屏切换 / 状态栏高度变化后，窗口尺寸会变。
+   * 不重新测量的话，`toDesign` 会按旧尺寸反解 → **点击位置整体偏移**。
+   */
+  resizeCanvas() {
+    const sys = wx.getSystemInfoSync();
+    const dpr = Math.min(sys.pixelRatio || 1, 3);
+    const width = sys.windowWidth;
+    const height = sys.windowHeight;
+    const canvas = wx.getCanvas ? wx.getCanvas() : wx.createCanvas();
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(height * dpr);
+    return { canvas, width, height, dpr };
+  },
+
+  /**
+   * 订阅尺寸变化（`wx.onWindowResize`）。
+   *
+   * 微信的 `onWindowResize` 在横竖屏切换时触发；
+   * 补充 `onShow` —— 从后台回来时窗口尺寸也可能已经变了。
+   */
+  onResize(cb: () => void) {
+    const g = globalThis as { wx?: { onWindowResize?: (f: () => void) => void; offWindowResize?: (f: () => void) => void } };
+    g.wx?.onWindowResize?.(cb);
+    return () => {
+      g.wx?.offWindowResize?.(cb);
+    };
+  },
+
   openDataAvailable: true,
 };
 

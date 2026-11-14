@@ -4,23 +4,25 @@
 import { roundRect } from '../render/board';
 import { COLORS } from './hud';
 import { paintSkin, skinById } from '../render/skins';
-import type { LevelData } from '../core/levelTable';
 import { platform } from '../platform';
 
 /** 分享文案池。 */
 const COPY_POOL = [
   '我卡在第 {lv} 关，你能连过去吗？',
-  '这关我用了 {steps} 步，你呢？',
+  '这关我重来 {undos} 次，你呢？',
   '敢不敢试试我的皮肤？',
   '第 {lv} 关，我不信你过得去',
 ];
 
 /**
  * 生成分享文案。
+ *
+ * @param levelIdx 关号
+ * @param undos   重来次数（cover 模式的对比维度）
  */
-export function shareCopy(levelIdx: number, steps: number): string {
+export function shareCopy(levelIdx: number, undos: number): string {
   const tpl = COPY_POOL[Math.floor(Math.random() * COPY_POOL.length)];
-  return tpl.replace('{lv}', String(levelIdx)).replace('{steps}', String(steps));
+  return tpl.replace('{lv}', String(levelIdx)).replace('{undos}', String(undos));
 }
 
 /** 离屏 canvas 类型（兼容微信 offscreen 与浏览器 canvas）。 */
@@ -47,9 +49,26 @@ function createPosterCanvas(): PosterCanvas {
 }
 
 /**
- * 绘制分享海报到离屏 canvas。
+ * 分享海报只需要关号与盘面尺寸。
+ *
+ * cover 模式的关卡对象跟经典模式结构不同（没有 `grid: Cell[][]`），
+ * 所以这里定义一个最小接口，两种模式都能喂。
  */
-export function renderPoster(level: LevelData, skinId: string, steps: number, nickname: string): PosterCanvas {
+export interface PosterLevel {
+  idx: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * 生成分享海报。
+ *
+ * @param level  关卡信息
+ * @param skinId 皮肤 id
+ * @param undos  重来次数（cover 模式是唯一有区分度的成绩）
+ * @param nickname 昵称
+ */
+export function renderPoster(level: PosterLevel, skinId: string, undos: number, nickname: string): PosterCanvas {
   const canvas = createPosterCanvas();
   const ctx = canvas.getContext('2d')!;
 
@@ -85,12 +104,12 @@ export function renderPoster(level: LevelData, skinId: string, steps: number, ni
   // 文案
   ctx.fillStyle = COLORS.yellow;
   ctx.font = '600 38px system-ui, sans-serif';
-  ctx.fillText(shareCopy(level.idx, steps), 375, 740);
+  ctx.fillText(shareCopy(level.idx, undos), 375, 740);
 
-  // 步数
+  // 成绩：重来次数（cover 模式步数恒定，比步数没意义）
   ctx.fillStyle = COLORS.text;
   ctx.font = '30px system-ui, sans-serif';
-  ctx.fillText(`我的步数 ${steps}`, 375, 810);
+  ctx.fillText(undos === 0 ? '一次都没重来' : `我重来了 ${undos} 次`, 375, 810);
 
   // 昵称
   ctx.fillStyle = COLORS.subText;

@@ -1,21 +1,30 @@
 import { platform } from './platform';
 import { configureAds } from './platform/wechat';
-import { fetchFriends, fetchLeaderboard, fetchProfile, fetchStars, login, fetchConfig, reportProgress, reportSkip, reportChallenge, reportEvent, type ServerConfig } from './net/api';
-import { Session } from './game/session';
-import { LevelStore, ProgressStore } from './game/progressStore';
+import { fetchFriends, fetchLeaderboard, fetchProfile, fetchStars, login, fetchConfig, reportCoverProgress, reportCoverSkip, reportCoverChallenge, reportEvent, debugJump, type ServerConfig } from './net/api';
+import { CoverSession } from './game/coverSession';
+import { CoverLevelStore } from './game/coverLevelStore';
+import { buildCoverRuntime, decodeCoverLevel } from './game/coverLevel';
+import { findCoverHint } from './game/coverHint';
+import { ProgressStore } from './game/progressStore';
 import { DESIGN_W, DESIGN_H } from './render/layout';
-import { drawBoard, drawEndpoints } from './render/board';
-import { drawTrail } from './render/trail';
+import { createViewport } from './render/viewport';
+import { drawCoverCells, drawCoverEndpoints, drawCoverFreeStartHint, drawCoverHead, drawCoverMarks, drawCoverPlate } from './render/coverBoard';
+import { drawCoverTrail } from './render/coverTrail';
 import { Fx } from './render/fx';
 import { audio } from './render/audio';
 import { SKINS, skinById } from './render/skins';
-import { drawSkinsPage, pickSkinCard, PER_PAGE, type SkinsPageState } from './ui/skins';
+import { drawSkinsPage, pickSkinCard, pickSkinsTab, pickThemeChip, themeIdAt, isThemeOwned, PER_PAGE, type SkinsPageState } from './ui/skins';
+import { themeById } from './render/themes';
 import { ads } from './ads/ads';
 import { needsAdForHint, canSkipToday, markSkippedToday } from './ads/rewardRules';
 import { tracker } from './analytics/tracker';
-import { drawHud, drawProgressBar, drawResult, drawButton, hitButton, type Button } from './ui/hud';
+import { drawHud, drawProgressBar, drawResult, drawButton, hitButton, starOfCover as starOfCoverLocal, type Button } from './ui/hud';
 import { drawHomePage, type HomePageState } from './ui/home';
-import { drawMapView, createMapState, pickMapNode, scrollToLevel, type MapViewState } from './ui/mapview';
+import {
+  createMapState, pickMapNode, scrollToLevel, isLevelPlayable, stepMapScroll,
+  pickRail, railScrollAt, type MapViewState,
+} from './ui/mapview';
+import { drawMapView } from './ui/mapdraw';
 import { drawRankPage, createRankState, type RankPageState } from './ui/leaderboard';
 import { drawProfilePage, type ProfilePageState } from './ui/profile';
 import { drawNav, pickNavTab, type NavTab } from './ui/nav';
@@ -23,20 +32,48 @@ import { LOBBY_THEME } from './ui/theme';
 import { CLAY, CLAY_UI, clayBackdrop, clayBlock, clayText } from './ui/clay';
 import { publishProfile } from './platform/openData';
 import { parseChallenge, buildShareQuery } from './game/challenge';
+import { DEBUG_ENABLED } from './core/debug';
+import { applyDebugJumpInput, createDebugJumpState, drawDebugJump, type DebugJumpState } from './ui/debugjump';
 import { renderPoster, shareCopy } from './ui/share';
-import { findHint } from './core/solver';
-import { CellType } from './core/types';
-import type { GameState } from './game/state';
 
-const { canvas, width, height, dpr } = platform.getCanvas();
+/**
+ * 画布的 CSS 尺寸与设备像素比。
+ *
+ * 必须是 `let` —— 窗口尺寸变了要重新测量（见 `applyResize`）。
+ */
+const { canvas, width: initWidth, height: initHeight, dpr: initDpr } = platform.getCanvas();
 const ctx = canvas.getContext('2d')!;
+let width = initWidth;
+let height = initHeight;
+let dpr = initDpr;
 
-const scale = Math.min(width / DESIGN_W, height / DESIGN_H);
-const offsetX = (width - DESIGN_W * scale) / 2;
-const offsetY = (height - DESIGN_H * scale) / 2;
+/**
+ * 视口：设计坐标系 ↔ 屏幕 ↔ 设备像素。
+ *
+ * 渲染和输入**必须走同一个视口对象** —— 否则两边各算各的，
+ * 就会出现「鼠标点 A 格、游戏响应 B 格」（见 `render/viewport.ts` 的历史 bug 说明）。
+ *
+ * ## 必须是 `let`
+ *
+ * 窗口尺寸变了要重建它（见 `applyResize`）——
+ * 画布尺寸变了但视口还是旧的，点击位置就会整体偏移。
+ */
+let viewport = createViewport({
+  width,
+  height,
+  dpr,
+  designWidth: DESIGN_W,
+  designHeight: DESIGN_H,
+});
 
-const session = new Session();
-const levels = new LevelStore();
+/**
+ * cover 模式会话（v3）。
+ *
+ * 经典模式（`Session`）已下线 —— cover 模式是现行玩法：
+ * 一条路铺满整张图，不交叉、不重复。
+ */
+const session = new CoverSession();
+const levels = new CoverLevelStore();
 const progress = new ProgressStore();
 const fx = new Fx();
 
@@ -58,21 +95,65 @@ type Phase =
 let config: ServerConfig | null = null;
 let phase: Phase = 'loading';
 let resultButtons: Button[] = [];
-let resultData: { levelIdx: number; steps: number; shortest: number; timeMs: number; unlockedSkin: { id: string; name: string } | null } | null = null;
+let resultData: { levelIdx: number; steps: number; shortest: number; timeMs: number; unlockedSkin: { id: string; name: string } | null; undos: number; skipped?: boolean } | null = null;
 let pressedBtn: string | null = null;
 let pendingLevel = 1;
+
+/**
+ * 全局提示条（画在所有页面之上）。
+ *
+ * ## 为什么需要它
+ *
+ * 以前所有失败路径都只有 `console.error` —— 界面上零反馈。
+ * 玩家点「下一关」而关卡加载失败时，看到的就是「点了没反应」，
+ * 根本不知道发生了什么。提示条是最低限度的用户可见反馈。
+ */
+let toastMsg = '';
+let toastAt = 0;
+/** 提示条的展示时长（毫秒）。 */
+let toastMs = 2400;
+
+/** 显示一条提示（默认 2.4 秒）。 */
+function showToast(msg: string, ms = 2400): void {
+  toastMsg = msg;
+  toastAt = Date.now();
+  // 记录时长，绘制时按它算淡出
+  toastMs = ms;
+}
 
 let skinsPage: SkinsPageState = {
   equipped: 'wood',
   selected: 'wood',
   unlocked: new Set(['wood', 'mint']),
   page: 0,
+  tab: 'skin',
+  themeSelected: '',
+  themeEquipped: '',
+  maxLevel: 0,
+  // 调试构建里八套全部可试 —— 否则测试环境要先打通 1000 关才能看到深海
+  themeAllUnlocked: DEBUG_ENABLED,
 };
+
+/**
+ * 把「进度」同步到皮肤页的状态。
+ *
+ * 三处都要调：启动、服务端回包、以及每次进皮肤页。
+ * 少一处就会出现「刚装备的主题切后台回来变回去了」这类状态不一致。
+ */
+function syncSkinsPage(): void {
+  skinsPage.equipped = progress.current.currentSkin;
+  skinsPage.unlocked = new Set(progress.current.unlockedSkins);
+  skinsPage.themeEquipped = progress.current.currentTheme ?? '';
+  skinsPage.maxLevel = progress.current.maxLevel;
+  // 展台默认摆「正在用的那一套」，而不是每次都从第一格开始
+  if (!skinsPage.themeSelected) skinsPage.themeSelected = skinsPage.themeEquipped;
+}
 let skinButtons: Button[] = [];
 
 /** 主页大厅。 */
 let homePage: HomePageState = {
-  maxLevel: 1,
+  maxLevel: 0,
+  currentLevel: 1,
   levelCount: 1000,
   nickname: '玩家',
   avatar: '',
@@ -82,10 +163,35 @@ let homePage: HomePageState = {
 let homeButtons: Button[] = [];
 
 /** 关卡地图。 */
-let mapPage: MapViewState = createMapState(1, 1000, {});
+let mapPage: MapViewState = createMapState(1, 1000, {}, DEBUG_ENABLED);
 let mapButtons: Button[] = [];
-/** 地图拖动会话（区分拖动与点击）。 */
-let mapDragStart: { x: number; y: number; scrollY: number; moved: boolean } | null = null;
+/**
+ * 地图拖动会话（区分拖动与点击）。
+ *
+ * `v` 是最近一段的滚动速度（设计像素 / 毫秒）：抬手时交给 `fling` 继续跑。
+ * 没有它，一次划动只能走一个屏幕 —— 1000 关要划四十多次，这正是
+ * 「地图不能快速拖动」的一半原因（另一半是右侧导轨）。
+ */
+let mapDragStart: {
+  x: number;
+  y: number;
+  scrollY: number;
+  moved: boolean;
+  lastY: number;
+  lastAt: number;
+  v: number;
+} | null = null;
+/** 导轨拖动：只记手指相对滑块顶部的偏移（null = 没在拖导轨）。 */
+let mapRailGrab: number | null = null;
+
+/**
+ * 调试面板：关卡直达（**仅测试环境**）。
+ *
+ * 展开时它压在一切之上 —— 所有输入先给它，剩下的才轮到下面那一页。
+ * 生产构建里 `DEBUG_ENABLED` 恒为 `false`，`drawDebugJump` 与这段状态一起被删掉。
+ */
+let debugPanel: DebugJumpState = createDebugJumpState();
+let debugJumpButtons: Button[] = [];
 
 /** 排行榜。 */
 let rankPage: RankPageState = createRankState();
@@ -104,28 +210,68 @@ let profilePage: ProfilePageState = {
   soundOn: true,
   vibrateOn: true,
 };
+
+/**
+ * 音效偏好落盘的 key。
+ *
+ * **不进 `ProgressStore`**：那份数据会被服务端回包整体覆盖
+ * （`progress.sync` 直接改字段），本地开关混进去会在某次登录后被重置。
+ * 音效是设备偏好，不是账号进度 —— 换手机重启默认开，是对的。
+ */
+const KEY_SOUND = 'sound_off';
 let profileButtons: Button[] = [];
 
 /** 当前挑战上下文（若来自好友分享）。 */
 let challenge: ReturnType<typeof parseChallenge> = null;
-/** 挑战结算结果。 */
-let challengeResult: { win: boolean; mySteps: number; bestSteps: number; fromName: string; isNewBest: boolean } | null = null;
+/** 挑战结算结果。cover 模式的对比维度是「重来次数」。 */
+let challengeResult: { win: boolean; myUndos: number; bestUndos: number; fromName: string; isNewBest: boolean } | null = null;
 
-/** 画布坐标 → 设计坐标。 */
+/**
+ * 画布坐标 → 设计坐标。
+ *
+ * `clientX/clientY` 是**页面 CSS 像素**（`e.clientX`）。
+ * 先换算到「画布自己的 CSS 尺寸内」（去掉画布在页面中的偏移、考虑画布被缩放的情况），
+ * 再用视口反解。
+ *
+ * ## 为什么不用 canvas.width 去缩放
+ *
+ * `canvas.width` 是**设备像素**（= CSS 尺寸 × dpr）。拿它去除会得到设备像素，
+ * 还得再除 dpr 绕回 CSS 像素 —— 绕一圈容易出错（历史上就是这么错的）。
+ * 直接用 `rect.width`（CSS 像素）只做一次换算就够了。
+ */
 function toDesign(clientX: number, clientY: number): { x: number; y: number } {
   if (platform.name === 'wechat') {
-    return { x: (clientX - offsetX) / scale, y: (clientY - offsetY) / scale };
+    // 微信的 clientX 已经是 CSS 像素，且画布铺满屏幕，无需再按 rect 换算。
+    return viewport.toDesign(clientX, clientY);
   }
   const rect = canvas.getBoundingClientRect();
-  const px = (clientX - rect.left) * (canvas.width / rect.width);
-  const py = (clientY - rect.top) * (canvas.height / rect.height);
-  return { x: (px / dpr - offsetX) / scale, y: (py / dpr - offsetY) / scale };
+  // 画布 CSS 尺寸 → 视口内的 CSS 坐标
+  const cssX = ((clientX - rect.left) / rect.width) * width;
+  const cssY = ((clientY - rect.top) / rect.height) * height;
+  return viewport.toDesign(cssX, cssY);
 }
 
-/** 顶部操作按钮。 */
-const hintBtn: Button = { x: DESIGN_W - 210, y: 100, w: 90, h: 60, label: '提示', kind: 'ghost', id: 'hint' };
-const skipBtn: Button = { x: DESIGN_W - 110, y: 100, w: 90, h: 60, label: '跳过', kind: 'ghost', id: 'skip' };
-const backHomeBtn: Button = { x: 40, y: 100, w: 90, h: 60, label: '返回', kind: 'ghost', id: 'backHome' };
+/**
+ * 游戏内按钮位置。
+ *
+ * ## 尺寸为什么是 88 高（2026-11-11 移动端体检）
+ *
+ * 原来按 90×60 设计像素画。390 宽的屏上缩放 0.52，实际只有 46.8×31.2 CSS px，
+ * 比 44pt 的触控下限还矮一截 —— 拇指要瞄准第二次才点中。
+ * 88 设计高在 375 屏上是 44 CSS px、在 390 屏上是 45.8，正好压在可用线上。
+ *
+ * ## 为什么「提示」去盘面下方、「跳过」留顶部
+ *
+ * 顶部原来挤着「返回 / 提示 / 跳过」三颗按钮，间隙只剩 12 设计像素（6 CSS）。
+ * 其中「跳过」是**看广告换通关**的动作，点错的代价比「提示」大得多，却和它肩并肩。
+ *
+ * 现在的分工按「手会放哪」定：
+ * - **提示**是卡住时的高频动作，落在盘面下方 —— 拇指的自然停放区，够得着也不挡盘；
+ * - **跳过**是低频且不可逆的动作，留在右上角，和「返回」隔着一整个关号胶囊。
+ */
+const hintBtn: Button = { x: 534, y: 1088, w: 176, h: 88, label: '提示', kind: 'ghost', id: 'hint' };
+const skipBtn: Button = { x: 614, y: 78, w: 96, h: 88, label: '跳过', kind: 'ghost', id: 'skip' };
+const backHomeBtn: Button = { x: 36, y: 78, w: 104, h: 88, label: '返回', kind: 'ghost', id: 'backHome' };
 
 /** 需要显示底部导航的页面。 */
 const NAV_PAGES: NavTab[] = ['home', 'map', 'skins', 'rank', 'profile'];
@@ -146,6 +292,16 @@ function navTabOf(p: Phase): NavTab {
   }
 }
 
+/**
+ * 当前生效的总关数。
+ *
+ * cover 模式是现行玩法，优先用 cover 表的关数；
+ * 服务端没给（老服务端）就退回经典表，最后退回内置表。
+ */
+function totalLevelCount(): number {
+  return config?.coverLevelCount ?? config?.levelCount ?? levels.total;
+}
+
 /** 切换到某个导航页。 */
 async function gotoTab(tab: NavTab): Promise<void> {
   reportEvent('nav_click', { tab });
@@ -156,15 +312,16 @@ async function gotoTab(tab: NavTab): Promise<void> {
       phase = 'home';
       break;
     case 'map': {
-      mapPage = createMapState(progress.current.maxLevel, config?.levelCount ?? 1000, progress.current.stars);
+      mapPage = createMapState(progress.currentLevel, totalLevelCount(), progress.current.stars, DEBUG_ENABLED);
       // 首次进入地图聚焦当前关
-      mapPage.scrollY = Math.min(mapPage.maxScrollY, scrollToLevel(progress.current.maxLevel));
+      mapPage.scrollY = Math.min(mapPage.maxScrollY, scrollToLevel(progress.currentLevel));
       mapDragStart = null;
       phase = 'map';
       break;
     }
     case 'skins':
       phase = 'skins';
+      syncSkinsPage();
       ads.showBanner();
       reportEvent('skin_page_view', { owned: skinsPage.unlocked.size, total: SKINS.length });
       break;
@@ -203,7 +360,9 @@ async function loadGlobalRank(): Promise<void> {
 
 session.on((e) => {
   if (e.type === 'won') {
-    audio.win();
+    // perfect = 一次没撤销。通关琶音要多一声高八度的闪光，
+    // 这是「打得干净」唯一的即时听觉奖励（星级要等结算页才看到）
+    audio.win((session.state?.undos ?? 0) === 0);
     if (challenge) void onChallengeWin(e.steps, e.timeMs, e.path);
     else void onWin(e.steps, e.timeMs, e.path);
   }
@@ -212,49 +371,115 @@ session.on((e) => {
     audio.light();
     const st = session.state;
     if (st && session.layout) {
-      fx.burstAt(e.idx, st.level.w, session.layout.cell, session.layout.originX, session.layout.originY, '#F2C14E');
+      fx.burstAt(e.idx, st.runtime.level.w, session.layout.cell, session.layout.originX, session.layout.originY, '#F2C14E');
     }
-    reportEvent('tile_light', { level_idx: session.state?.level.idx });
+    reportEvent('tile_light', { level_idx: session.state?.runtime.level.idx });
   }
-  if (e.type === 'abandoned') reportEvent('level_abandon', { level_idx: session.state?.level.idx });
+  // ── 松手宽限期 ──
+  //
+  // 只在「已经画出东西」时才提示：连点两下没拖动也要弹一句话就太吵了。
+  if (e.type === 'paused') {
+    const st = session.state;
+    if (st && st.path.length > 1) showToast('松手了 · 1.5 秒内按回线上可继续拖', 1600);
+  }
+  if (e.type === 'resumed') {
+    // 续接不该有任何惩罚，连音效都省 —— 玩家只是以为自己断线了
+    audio.light();
+  }
+  if (e.type === 'expired') {
+    // 真正的「失败」在这里，不在松手那一刻
+    showToast('这一段作废了 · 重新起一笔', 1800);
+    reportEvent('level_fail', {
+      level_idx: session.state?.runtime.level.idx,
+      steps: e.steps,
+      undos: session.state?.undos ?? 0,
+    });
+  }
+  if (e.type === 'abandoned') reportEvent('level_abandon', { level_idx: session.state?.runtime.level.idx });
 });
 
 /** 通关处理：上报成绩。 */
 async function onWin(steps: number, timeMs: number, path: number[], skipped = false) {
-  const level = session.state!.level;
+  const level = session.state!.runtime.level;
+  const undos = session.state?.undos ?? 0;
   // 通关波次动画（约 1.2 秒），结算页延后出现
   winAnimStart = Date.now();
   fx.clear();
-  reportEvent('level_pass', { level_idx: level.idx, steps, time_ms: timeMs, skipped });
+  reportEvent('level_pass', { level_idx: level.idx, steps, time_ms: timeMs, undos, skipped });
 
   let unlockedSkin: { id: string; name: string } | null = null;
   try {
-    const res = await reportProgress(level.idx, steps, timeMs, path);
-    unlockedSkin = res.unlockedSkin;
-    if (res.unlockedSkin) {
-      progress.unlockSkin(res.unlockedSkin.id);
-      audio.unlock();
-      platform.vibrate();
+    if (skipped) {
+      // **跳过走独立接口** —— cover 的跳过没有路径可校验，
+      // 走 `/api/cover/progress` 会因为「路径长度 0 != 可走格数」被拒。
+      const res = await reportCoverSkip(level.idx);
+      progress.sync({
+        maxLevel: res.maxLevel,
+        totalTimeMs: progress.current.totalTimeMs,
+        totalSteps: progress.current.totalSteps,
+      });
+      // 跳过的关卡**不给星**（花钱买过去的 ≠ 打过去的）
+      progress.clearStar(level.idx);
+    } else {
+      // **cover 模式走独立接口** —— 服务端按 cover 的完整规则回放校验
+      // （冰块滑行 / 单向门 / 钥匙门 / 传送门 / 星星顺序），
+      // 且星级由 `undos` 决定而不是步数（步数恒为 required−1）。
+      const res = await reportCoverProgress(level.idx, steps, timeMs, undos, path);
+      unlockedSkin = res.unlockedSkin;
+      if (res.unlockedSkin) {
+        progress.unlockSkin(res.unlockedSkin.id);
+        audio.unlock();
+        platform.vibrate();
+      }
+      progress.sync({
+        maxLevel: res.maxLevel,
+        unlockedSkins: res.unlockedSkins,
+        totalTimeMs: res.totalTimeMs,
+        totalSteps: res.totalSteps,
+      });
+      // 本地即时更新该关星级，地图页无需等下次拉取
+      progress.setStar(level.idx, res.stars);
     }
-    progress.sync({
-      maxLevel: res.maxLevel,
-      unlockedSkins: res.unlockedSkins,
-      totalTimeMs: res.totalTimeMs,
-      totalSteps: res.totalSteps,
-    });
-    // 本地即时更新该关星级，地图页无需等下次拉取
-    progress.setStar(level.idx, res.stars);
   } catch (e) {
     console.error('上报成绩失败', e);
+    // ── 乐观更新本地进度 ──
+    //
+    // ## 为什么失败也要推进本地进度
+    //
+    // 服务端没记上这一关 → `maxLevel` 不变 → 地图页把下一关画成「锁着」。
+    // 但玩家**已经打完了**这一关，而且 `pendingLevel` 已经推进到下一关 ——
+    // 于是玩家能进下一关（走 `pendingLevel`），却看到地图说没解锁。
+    //
+    // 两边不一致比「服务端数据晚点同步」糟糕得多：
+    // 玩家会以为进度丢了，反复重玩同一关。
+    //
+    // 本地先记上，下次登录时服务端会用 `GREATEST(max_level, ...)` 兜回来；
+    // 如果这次上报其实只是网络抖动、请求已经到达服务端，那本地值和服务端一致。
+    progress.sync({
+      maxLevel: Math.max(progress.current.maxLevel, level.idx),
+    });
+    // 星级也乐观写上（服务端没收到的话下次拉取会覆盖回来）
+    if (!skipped) {
+      progress.setStar(level.idx, starOfCoverLocal(undos));
+    }
+    showToast('成绩同步失败，进度已本地保存');
+    reportEvent('progress_report_failed', { level_idx: level.idx, skipped });
   }
 
   resultData = {
     levelIdx: level.idx,
     steps,
-    shortest: level.shortest,
+    shortest: level.required - 1,
     timeMs,
     unlockedSkin,
+    undos,
+    skipped,
   };
+  // **下一关 = 当前关 + 1**。
+  //
+  // 最后一关（1000）通关后这里是 1001 —— 超出关卡表范围。
+  // 结算页据此判断「是不是全部通关了」，决定要不要显示「下一关」按钮
+  // （见 `drawResult` 的 `isAllCleared`）。`enterLevel` 也有越界拦截兜底。
   pendingLevel = level.idx + 1;
 
   // 发布进度到开放数据域（好友榜才准）
@@ -267,23 +492,52 @@ async function onWin(steps: number, timeMs: number, path: number[], skipped = fa
   }, 1200);
 }
 
-/** 挑战模式通关：不推进主线，走 /api/challenge。 */
+/**
+ * 挑战模式通关：不推进主线，走 /api/cover/challenge。
+ *
+ * cover 模式的挑战比较维度是**悔棋次数**（不是步数）——
+ * 步数恒为 required−1，比步数没有意义。
+ *
+ * ## 跟谁比
+ *
+ * 优先跟**分享链接里的那位好友**比（`challenge.fromUndos`）——
+ * 这才是「挑战」的语义：好友重来 3 次，我重来 2 次就是赢了。
+ *
+ * 链接里没带分数（老版本分享的链接只有 `l=N`）时，
+ * 退回跟**自己的历史最佳**比 —— 服务端返回的 `best` 就是这个。
+ *
+ * ## 为什么不能只看服务端返回的 best
+ *
+ * 服务端的 best 是「自己这关的历史最佳」，不是好友的分数。
+ * 只用它的话，好友来 2 次、我来 5 次也会判「惜败」——
+ * 但实际上我比好友差，而好友根本没出现在比较里。
+ */
 async function onChallengeWin(steps: number, timeMs: number, path: number[]) {
-  const level = session.state!.level;
+  const level = session.state!.runtime.level;
+  const undos = session.state?.undos ?? 0;
   let isNewBest = false;
-  let best = { steps: level.shortest, timeMs: 0 };
+  let myBest = { undos: 0, timeMs: 0 };
   try {
-    const res = await reportChallenge(level.idx, steps, timeMs, path);
+    const res = await reportCoverChallenge(level.idx, steps, timeMs, undos, path);
     isNewBest = res.isNewBest;
-    best = res.best;
+    myBest = res.best;
   } catch (e) {
     console.error('提交挑战成绩失败', e);
   }
 
+  // 好友的分数（分享链接带的话）；没有就用自己的历史最佳
+  //
+  // 注意 `fromUndos` 可能是 0（好友一次都没重来 = 最好的成绩），
+  // 所以判空用 `!== null` 而不是 `> 0`。
+  const friendUndos = challenge?.fromUndos ?? null;
+  const rivalUndos = friendUndos !== null ? friendUndos : myBest.undos;
+  // 平手算赢 —— 挑战场景下「跟好友一样好」也是赢
+  const win = undos <= rivalUndos;
+
   reportEvent('challenge_result', {
     from_uid: challenge?.fromUid,
     level_idx: level.idx,
-    win: steps <= best.steps,
+    win,
     is_new_best: isNewBest,
   });
 
@@ -292,69 +546,257 @@ async function onChallengeWin(steps: number, timeMs: number, path: number[]) {
   setTimeout(() => {
     phase = 'result';
     challengeResult = {
-      win: steps <= best.steps,
-      mySteps: steps,
-      bestSteps: best.steps,
+      win,
+      myUndos: undos,
+      bestUndos: rivalUndos,
       fromName: challenge?.fromName ?? '好友',
       isNewBest,
     };
   }, 1200);
 }
 
-/** 进入关卡。 */
-async function enterLevel(idx: number) {
-  const lv = await levels.ensure(idx, config?.levelVersion ?? '');
-  if (!lv) {
-    console.error('关卡加载失败', idx);
+/**
+ * 调试模式：跳到任意一关。
+ *
+ * ## 为什么要分两步（先跳服务端，再进关卡）
+ *
+ * 客户端的调试开关只负责「**界面**允许点任意一关」（`isLevelPlayable`）。
+ * 服务端的 `max_level` 不动的话，地图上那一关仍然画成「调试解锁」的蓝灰色，
+ * 而且玩家打完这一关、通关上报回来时 `max_level` 会突然跳到那一关 ——
+ * 中间的关卡被一次性「吞掉」，看起来像 bug。
+ *
+ * 所以先让服务端把 `max_level` 推到目标关的**前一关**：
+ * 目标关成为「当前关」，中间那些关显示为已通关（无星）。
+ *
+ * ## 服务端调不通怎么办
+ *
+ * 服务端的调试开关是**独立**的（配置项 `debug.enabled`）。
+ * 万一服务端没开调试，这个请求会 403 —— 那就**只进关卡，不跳进度**。
+ * 客户端的调试入口本身不依赖服务端。
+ *
+ * 服务端拒绝时也要提示一下，否则测试会以为「点了没反应」。
+ */
+async function debugJumpToLevel(idx: number): Promise<void> {
+  try {
+    const res = await debugJump(idx);
+    progress.sync({ maxLevel: res.maxLevel });
+    mapPage.currentLevel = progress.currentLevel;
+    mapPage.stars = progress.current.stars;
+  } catch (e) {
+    console.warn('[debug] 跳关请求失败，仅本地进入关卡', e);
+    // 两种失败必须分开报：
+    // - 403 = 服务端调试开关关着（`debug.enabled: false`），这是我们自己关的；
+    // - 其他 = 后端连不上 / 超时，多半是本地服务没起或数据库没开。
+    // 原来一律提示「服务端调试未开启」，DB 挂了的时候会把人往配置上带，白查半天。
+    const msg = String((e as Error)?.message ?? e);
+    showToast(msg.includes('403') ? '服务端调试未开启，仅本地进入' : '服务端没响应，已直接进入');
+  }
+}
+
+/**
+ * 调试模式：跳到任意一关（先同步服务端进度，再进关卡）。
+ *
+ * 失败也要进关卡 —— 调试入口不依赖服务端是否开了调试。
+ */
+async function jumpAndEnter(idx: number): Promise<void> {
+  await debugJumpToLevel(idx);
+  void enterLevel(idx);
+}
+
+/**
+ * 调试面板的一个按键被按下。
+ *
+ * 这里只做两件「需要外部状态」的事：开 / 关面板、真的进关卡。
+ * 输入本身的状态流转全在 `applyDebugJumpInput`（纯函数，可测）——
+ * 触摸点按键和键盘敲数字都走它，两条路径的行为才不会分叉。
+ */
+function applyDebugJumpKey(id: string): void {
+  if (id === 'dj:close') { debugPanel.open = false; return; }
+  if (id === 'dj:open') {
+    debugPanel.open = true;
+    debugPanel.openedAt = Date.now();
+    // 默认填当前关：绝大多数调试就是从「我卡在哪一关」出发的。
+    // 标成 fresh —— 第一下数字要整段替换，否则想输 71 会变成 171。
+    if (!debugPanel.input) {
+      debugPanel.input = String(progress.currentLevel);
+      debugPanel.fresh = true;
+    }
     return;
   }
-  session.load(lv);
+
+  const enter = applyDebugJumpInput(debugPanel, id, totalLevelCount(), progress.currentLevel);
+  if (enter) void enterFromDebug();
+}
+
+/** 从调试面板进入某一关。 */
+async function enterFromDebug(): Promise<void> {
+  const total = totalLevelCount();
+  const idx = Number(debugPanel.input);
+  if (!(idx >= 1 && idx <= total)) return;
+
+  debugPanel.open = false;
+  debugPanel.input = '';
+  // 跳关等于「我不在别人的挑战里了」。不清掉的话，排行榜那套
+  // 「和好友比谁重来少」会挂在一张不相干的棋盘上。
+  challenge = null;
+  challengeResult = null;
+  // **不埋点**：调试跳关是测试行为，混进线上的漏斗分析比少一条事件糟得多
+  console.log('[debug] 直达第', idx, '关');
+  await jumpAndEnter(idx);
+}
+
+/**
+ * 调试面板的键盘操作（**仅浏览器端**）。
+ *
+ * 微信小游戏没有键盘，那边的入口是地图页右上角的牌子 ——
+ * 这条路径不能省，因为手机才是这个游戏的主场，测试也多半在手机上。
+ *
+ * 键位：`` ` ``（或 F2）开 / 关，数字填号，Backspace 退格，Enter 直达，Esc 关闭。
+ * 选 `` ` `` 是因为它在浏览器里不触发任何默认行为，也不会被输入法抢走。
+ */
+function bindDebugKeys(): void {
+  window.addEventListener('keydown', (e) => {
+    // 别抢浏览器自己的快捷键（Cmd+R 刷新、Ctrl+数字 切标签页）
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    if (e.code === 'Backquote' || e.key === '`' || e.key === 'F2') {
+      e.preventDefault();
+      applyDebugJumpKey(debugPanel.open ? 'dj:close' : 'dj:open');
+      return;
+    }
+
+    if (!debugPanel.open) return;
+
+    if (e.key === 'Escape') { e.preventDefault(); applyDebugJumpKey('dj:close'); return; }
+    if (e.key === 'Enter') { e.preventDefault(); applyDebugJumpKey('dj:enter'); return; }
+    if (e.key === 'Backspace') { e.preventDefault(); applyDebugJumpKey('dj:back'); return; }
+    if (/^[0-9]$/.test(e.key)) { e.preventDefault(); applyDebugJumpKey(`dj:d:${e.key}`); }
+  });
+}
+
+/**
+ * 进入关卡。
+ *
+ * ## 失败必须有用户可见反馈
+ *
+ * 以前这里只 `console.error` 然后 return —— 界面零变化。
+ * 玩家点「下一关」看到的就是「点了没反应」，
+ * 而且 `phase` 还停在 `'result'`，反复点反复没反应。
+ *
+ * 现在：
+ * - 弹出提示条说明发生了什么；
+ * - 兜底回大厅（不留在结算页空转）；
+ * - 埋一条 `level_load_fail` 便于排查。
+ */
+async function enterLevel(idx: number) {
+  // 关号越界（通关最后一关后点「下一关」会到这里）
+  if (idx < 1 || idx > totalLevelCount()) {
+    console.error('关号越界', idx);
+    showToast('已经是最后一关啦');
+    phase = 'home';
+    return;
+  }
+
+  let entry;
+  try {
+    entry = await levels.ensure(idx);
+  } catch (e) {
+    console.error('关卡加载失败', idx, e);
+    showToast('关卡加载失败，请重试');
+    reportEvent('level_load_fail', { level_idx: idx, reason: 'throw' });
+    if (phase === 'result') phase = 'home';
+    return;
+  }
+
+  if (!entry) {
+    console.error('关卡加载失败', idx);
+    showToast('关卡加载失败，请重试');
+    reportEvent('level_load_fail', { level_idx: idx, reason: 'missing' });
+    // 别把玩家留在结算页反复点「下一关」
+    if (phase === 'result') phase = 'home';
+    return;
+  }
+
+  const level = decodeCoverLevel(entry);
+  session.load(buildCoverRuntime(level));
   phase = 'playing';
   winAnimStart = 0;
   waveLit = new Set();
   fx.clear();
-  reportEvent('level_start', { level_idx: idx, diff: lv.diff, w: lv.w, h: lv.h });
+  reportEvent('level_start', { level_idx: idx, diff: level.diff, w: level.w, h: level.h });
 }
 
-/** 使用提示。 */
+/**
+ * 使用提示。
+ *
+ * cover 模式的提示 = **在剩余盘面上实时求一条路径**（`coverHint.ts`），
+ * 一次算出**整条剩下怎么走**，交给会话装成「路线计划」。
+ *
+ * 不是「查参考解」—— 玩家走岔之后参考解就接不回去了，
+ * 硬接会让线突然倒退，体验极差。所以实时求解，实测只要几毫秒。
+ *
+ * 盘面上同时只亮 5 格（`HINT_WINDOW`），玩家顺着最亮的那头走，
+ * 窗口会自己往前滑 —— 不需要走两步就回来点一次提示。
+ */
 async function useHint() {
   const st = session.state;
-  if (!st || (st.phase !== 'idle' && st.phase !== 'dragging')) return;
-  const head = st.path.length ? st.path[st.path.length - 1] : findStartIdx(st);
-  const hint = findHint(st.level.grid, { x: head % st.level.w, y: Math.floor(head / st.level.w) }, 2);
-  if (hint.length === 0) {
-    console.log('当前无法给出提示');
-    return;
-  }
+  if (!st) return;
+
+  // `paused` = 松手后那 1.5 秒宽限期。路径没清、线头还在，
+  // 问一句「下一步」完全合理 —— 旧实现只认 idle/dragging，
+  // 玩家刚抬手就问提示，点下去毫无反应。
+  if (st.phase !== 'idle' && st.phase !== 'dragging' && st.phase !== 'paused') return;
 
   // 首次使用需看广告
   let viaAd = false;
-  if (needsAdForHint(st.level.idx, st.hintUsed)) {
+  if (needsAdForHint(st.runtime.level.idx, st.hintUsed)) {
+    // 激励视频在微信端有自己的界面，但 web / 调试环境的模拟广告只是干等三秒。
+    // 不说一句，这三秒就是纯「点了没反应」。
+    showToast('提示准备中…', 3200);
     const ok = await ads.showRewarded('hint');
     if (!ok) return; // 中途退出 → 不给提示
+    // 等广告的这几秒里玩家可能已经换了关 / 结算：不能往旧状态上贴提示
+    if (session.state !== st) return;
     viaAd = true;
   }
 
-  session.setHint(hint);
-  reportEvent('hint_use', { level_idx: st.level.idx, via_ad: viaAd });
+  const hint = findCoverHint(st);
+  if (!hint.found || hint.cells.length === 0) {
+    // 走岔了 → 告诉他「退回到哪里还有救」
+    if (hint.backtrackTo !== undefined) {
+      session.setHint([hint.backtrackTo]);
+      showToast('这条线已经走不通了，退回到高亮格试试');
+      reportEvent('hint_use', { level_idx: st.runtime.level.idx, via_ad: viaAd, dead_end: 1 });
+    } else {
+      // 真给不出（理论上只剩「关卡数据缺参考解」这一种）也要说一声，
+      // 静默失败是最糟的反馈：玩家会以为按钮坏了，然后一直点。
+      showToast('这一关暂时给不出提示');
+    }
+    return;
+  }
+
+  session.setHint(hint.cells);
+  // 一次给整条，玩家只需要顺着亮的那头走。
+  // 报一下还剩多少格 —— 不然「路线到底有多长」只能靠数亮点，越走越没底。
+  showToast(`跟着亮的路走，还剩 ${hint.cells.length} 格`, 1900);
+  reportEvent('hint_use', { level_idx: st.runtime.level.idx, via_ad: viaAd, solve_ms: hint.ms });
 }
 
 /** 跳过关卡。 */
 async function useSkip() {
   const st = session.state;
   if (!st) return;
-  if (!canSkipToday(st.level.idx)) {
+  if (!canSkipToday(st.runtime.level.idx)) {
     console.log('本关今天已跳过');
     return;
   }
   const ok = await ads.showRewarded('skip');
   if (!ok) return;
 
-  markSkippedToday(st.level.idx);
-  await reportSkip(st.level.idx);
+  markSkippedToday(st.runtime.level.idx);
   session.markSkipped();
-  reportEvent('skip_use', { level_idx: st.level.idx, via_ad: true });
-  void onWin(st.level.shortest, 0, [], true);
+  reportEvent('skip_use', { level_idx: st.runtime.level.idx, via_ad: true });
+  void onWin(st.runtime.level.required - 1, 0, [], true);
 }
 
 /**
@@ -366,8 +808,29 @@ function equipSelectedSkin() {
   if (!skinsPage.unlocked.has(id) || skinsPage.equipped === id) return;
   skinsPage.equipped = id;
   progress.equipSkin(id);
-  audio.light();
+  audio.tap();
   reportEvent('skin_equip', { skin_id: id });
+}
+
+/** 装备当前选中（展台上）的棋盘主题。空串 = 回到经典黏土盘面。 */
+function equipSelectedTheme() {
+  const id = skinsPage.themeSelected ?? '';
+  if (id) {
+    const t = themeById(id);
+    // 未解锁时展台摆的是「拿不到的目标」，不是可装备项 —— 按钮本来就不该画出来，
+    // 这里再挡一次是因为「画」和「点」是两条路径，防守要放在动作侧。
+    if (!t || !isThemeOwned(skinsPage, t)) return;
+  }
+  if (skinsPage.themeEquipped === id) return;
+  skinsPage.themeEquipped = id;
+  progress.equipTheme(id);
+  // 装备 = 换耳朵 + 播签名动机。
+  //
+  // **必须在这里换音色**，而不是等进游戏 —— 玩家在展台上按下「使用」的瞬间
+  // 就该听到这套主题的声音，否则八套音色要等他真打一关才发现，
+  // 那和「没有音效」没区别。`preview` 内部同时做了 `setVoice`。
+  audio.preview(id);
+  reportEvent('theme_equip', { theme_id: id || 'classic' });
 }
 
 /** 广告解锁皮肤。 */
@@ -392,7 +855,7 @@ async function refreshProgress() {
       totalTimeMs: res.totalTimeMs,
       totalSteps: res.totalSteps,
     });
-    skinsPage.unlocked = new Set(progress.current.unlockedSkins);
+    syncSkinsPage();
   } catch { /* 用本地缓存兜底 */ }
 }
 
@@ -413,21 +876,39 @@ function publishMyProfile() {
 function doShare() {
   const st = session.state;
   if (!st) return;
-  const query = buildShareQuery({ levelIdx: st.level.idx, steps: st.level.shortest });
-  const poster = renderPoster(st.level, progress.current.currentSkin, st.level.shortest, '我');
+  const level = st.runtime.level;
+  // cover 模式分享的是**重来次数** —— 步数恒定，比步数没意义。
+  const undos = st.undos ?? 0;
+  const nickname = progress.current.nickname || '我';
+  // 带 uid / name —— 好友打开链接才知道「谁在挑战我」，
+  // 结算页也要跟**他**比（而不是跟全服最佳比）。
+  const query = buildShareQuery({
+    levelIdx: level.idx,
+    undos,
+    uid: progress.current.uid,
+    name: nickname,
+  });
+  const poster = renderPoster({ idx: level.idx, w: level.w, h: level.h }, progress.current.currentSkin, undos, nickname);
   if (platform.name === 'web' && poster.toDataURL) {
     const url = poster.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = url;
-    a.download = `level-${st.level.idx}.png`;
+    a.download = `level-${level.idx}.png`;
     a.click();
   }
-  void platform.share({ title: shareCopy(st.level.idx, st.level.shortest), query });
-  reportEvent('share_click', { level_idx: st.level.idx });
+  void platform.share({ title: shareCopy(level.idx, undos), query });
+  reportEvent('share_click', { level_idx: level.idx });
 }
 
-/** 绘制挑战结算面板。 */
-function drawChallengeResult(ctx: CanvasRenderingContext2D, r: { win: boolean; mySteps: number; bestSteps: number; fromName: string; isNewBest: boolean }): Button[] {
+/**
+ * 绘制挑战结算面板。
+ *
+ * ## 显示的是「重来次数」而不是步数
+ *
+ * cover 模式的步数恒为 `required − 1`，比步数没有意义。
+ * 真正的对比维度是**重来次数**（和星级口径一致）。
+ */
+function drawChallengeResult(ctx: CanvasRenderingContext2D, r: { win: boolean; myUndos: number; bestUndos: number; fromName: string; isNewBest: boolean }): Button[] {
   // 遮罩：陶土棕的暗，不是夜空的紫黑
   ctx.fillStyle = 'rgba(58,38,24,0.62)';
   ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
@@ -437,7 +918,7 @@ function drawChallengeResult(ctx: CanvasRenderingContext2D, r: { win: boolean; m
   const cx = px + pw / 2;
   const accent = r.win ? CLAY.mint : CLAY.rose;
 
-  // 面板：一块奶油黏土板
+  // 面板：��块奶油黏土板
   clayBlock(ctx, px, py, pw, ph, 44, CLAY.cream, 841, { depth: 22, hi: 0.035, jitter: 0.002 });
 
   // 标题带：胜=薄荷，负=玫瑰
@@ -454,7 +935,7 @@ function drawChallengeResult(ctx: CanvasRenderingContext2D, r: { win: boolean; m
     outlineWidth: 0,
     emboss: false,
   });
-  clayText(ctx, `我的步数 ${r.mySteps} · 最佳 ${r.bestSteps}`, cx, py + 208, 26, {
+  clayText(ctx, `我重来 ${r.myUndos} 次 · 最佳 ${r.bestUndos} 次`, cx, py + 208, 26, {
     weight: 600,
     fill: CLAY_UI.ink,
     outlineWidth: 0,
@@ -496,19 +977,21 @@ async function openFriends() {
   setTimeout(() => { rankPage.friends.loadingOpenData = false; }, 500);
 }
 
-/** 找起点索引。 */
-function findStartIdx(st: GameState): number {
-  for (let y = 0; y < st.level.h; y++) {
-    for (let x = 0; x < st.level.w; x++) {
-      if (st.level.grid[y][x].type === CellType.START) return y * st.level.w + x;
-    }
-  }
-  return 0;
-}
-
 /** 指针按下。 */
 function onDown(clientX: number, clientY: number) {
   const d = toDesign(clientX, clientY);
+
+  // ── 调试面板压在所有页面之上 ──
+  //
+  // 展开时它是**模态**的：下面那一页一个都不许响应。
+  // 否则在关卡里打开面板、手指从面板上滑出去，就会拖到棋盘。
+  if (DEBUG_ENABLED && debugPanel.open) {
+    for (const b of debugJumpButtons) {
+      if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
+    }
+    pressedBtn = null;
+    return;
+  }
 
   // ── 大厅体系：先判导航栏（导航栏压在所有页面内容之上）──
   if (isNavPhase(phase)) {
@@ -526,15 +1009,42 @@ function onDown(clientX: number, clientY: number) {
     for (const b of mapButtons) {
       if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
     }
+    // ── 右侧导轨优先于节点 ──
+    //
+    // 导轨只手势落在 656 以右（节点最右到 643，见 `RAIL.hitLeft`）。
+    // 先判导轨，手指落在那一带就绝不会被当成「点了个节点」。
+    const rail = pickRail(d.x, d.y, mapPage);
+    if (rail) {
+      // 任何新的触摸都要掐掉正在跑的惯性与缓动，
+      // 否则「按停」这个最自然的手势会失效
+      mapPage.fling = 0;
+      mapPage.scrollTarget = null;
+      mapDragStart = null;
+      if (rail.kind === 'world' || rail.kind === 'current') {
+        mapPage.scrollTarget = scrollToLevel(rail.level ?? mapPage.currentLevel);
+        audio.tap();
+        return;
+      }
+      mapRailGrab = rail.grab;
+      mapPage.scrub = true;
+      mapPage.scrollY = railScrollAt(d.y, mapPage, rail.grab);
+      return;
+    }
+
     // 命中关卡节点 → 可能是点击，也可能是拖动起点
     const idx = pickMapNode(d.x, d.y, mapPage);
-    if (idx > 0) {
-      pressedBtn = 'map:' + idx;
-      mapDragStart = { x: d.x, y: d.y, scrollY: mapPage.scrollY, moved: false };
-    } else {
-      // 空白处也可拖动滚动
-      mapDragStart = { x: d.x, y: d.y, scrollY: mapPage.scrollY, moved: false };
-    }
+    mapPage.fling = 0;
+    mapPage.scrollTarget = null;
+    if (idx > 0) pressedBtn = 'map:' + idx;
+    mapDragStart = {
+      x: d.x,
+      y: d.y,
+      scrollY: mapPage.scrollY,
+      moved: false,
+      lastY: d.y,
+      lastAt: Date.now(),
+      v: 0,
+    };
     return;
   }
   if (phase === 'rank') {
@@ -550,13 +1060,33 @@ function onDown(clientX: number, clientY: number) {
     return;
   }
   if (phase === 'skins') {
-    // 点陶片只「选中」—— 装备留给展台上的按钮。
-    // 两件事挤在一次点击里，挑的过程就被跳过了，也容易误换皮肤。
-    const skin = pickSkinCard(d.x, d.y, skinsPage);
-    if (skin) {
-      skinsPage.selected = skin.id;
-      audio.light();
+    // 页签优先：它压在陶片网格上方，先判它就不会出现「点页签顺手换了皮肤」
+    const tab = pickSkinsTab(d.x, d.y);
+    if (tab) {
+      skinsPage.tab = tab;
+      audio.tap();
       return;
+    }
+    if ((skinsPage.tab ?? 'skin') === 'theme') {
+      const chip = pickThemeChip(d.x, d.y);
+      if (chip >= 0) {
+        const id = themeIdAt(chip);
+        skinsPage.themeSelected = id;
+        // 点选就试一声：挑主题时耳朵比眼睛快。
+        // 用 `probe` 而不是 `preview` —— 玩家会连着点八套，播完整签名动机太吵。
+        // 未解锁的也照播：这是「先听再决定要不要打」，属于陈列的一部分。
+        audio.probe(id);
+        return;
+      }
+    } else {
+      // 点陶片只「选中」—— 装备留给展台上的按钮。
+      // 两件事挤在一次点击里，挑的过程就被跳过了，也容易误换皮肤。
+      const skin = pickSkinCard(d.x, d.y, skinsPage);
+      if (skin) {
+        skinsPage.selected = skin.id;
+        audio.tap();
+        return;
+      }
     }
     for (const b of skinButtons) {
       if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
@@ -573,7 +1103,7 @@ function onDown(clientX: number, clientY: number) {
   if (phase !== 'playing') return;
   if (hitButton(backHomeBtn, d.x, d.y)) { pressedBtn = 'backHome'; return; }
   if (hitButton(hintBtn, d.x, d.y)) { pressedBtn = 'hint'; return; }
-  if (hitButton(skipBtn, d.x, d.y)) { pressedBtn = 'skip'; return; }
+  if (!challenge && hitButton(skipBtn, d.x, d.y)) { pressedBtn = 'skip'; return; }
   session.pointerDown(d.x, d.y);
 }
 
@@ -581,13 +1111,28 @@ function onDown(clientX: number, clientY: number) {
 function onMove(clientX: number, clientY: number) {
   const d = toDesign(clientX, clientY);
 
-  // 地图拖动滚动
+  // 面板展开时不让手势漏到下面那一页（尤其别去拖棋盘）
+  if (DEBUG_ENABLED && debugPanel.open) return;
+
+  // 地图：导轨拖动 / 山道拖动
+  if (phase === 'map' && mapRailGrab !== null) {
+    mapPage.scrollY = railScrollAt(d.y, mapPage, mapRailGrab);
+    return;
+  }
   if (phase === 'map' && mapDragStart) {
     const dy = d.y - mapDragStart.y;
     if (Math.abs(dy) > 6) mapDragStart.moved = true;
     if (mapDragStart.moved) {
-      const next = mapDragStart.scrollY - dy;
-      mapPage.scrollY = Math.max(0, Math.min(mapPage.maxScrollY, next));
+      mapPage.scrollY = Math.max(0, Math.min(mapPage.maxScrollY, mapDragStart.scrollY - dy));
+
+      // 速度：指数平滑，别用瞬时值 —— 抬手前那一下抖一下就决定了去哪，
+      // 用瞬时值会变成「想停却飞出去三屏」
+      const at = Date.now();
+      const dt = Math.max(1, at - mapDragStart.lastAt);
+      const inst = -(d.y - mapDragStart.lastY) / dt;
+      mapDragStart.v = mapDragStart.v * 0.6 + inst * 0.4;
+      mapDragStart.lastY = d.y;
+      mapDragStart.lastAt = at;
     }
     return;
   }
@@ -598,9 +1143,29 @@ function onMove(clientX: number, clientY: number) {
 
 /** 指针抬起。 */
 function onUp() {
+  // 面板开着时只认面板上的键（地图拖动 / 棋盘拖动都不该留下状态）
+  if (DEBUG_ENABLED && debugPanel.open) {
+    mapDragStart = null;
+    const id = pressedBtn;
+    pressedBtn = null;
+    if (id && id.startsWith('dj:')) applyDebugJumpKey(id);
+    return;
+  }
+
   // 地图拖动结束必须在 pressedBtn 分支之前处理，否则 'map:N' 会先被消费掉
+  if (phase === 'map' && mapRailGrab !== null) {
+    mapRailGrab = null;
+    mapPage.scrub = false;
+    pressedBtn = null;
+    return;
+  }
   if (phase === 'map' && mapDragStart) {
     const wasMoved = mapDragStart.moved;
+    // 甩出去：0.18 是「划得动但不算甩」的门槛，低于它只当普通拖动，
+    // 免得轻飘飘一次点击也让地图滑走
+    if (wasMoved && Math.abs(mapDragStart.v) > 0.18) {
+      mapPage.fling = Math.max(-6, Math.min(6, mapDragStart.v));
+    }
     mapDragStart = null;
     if (wasMoved) { pressedBtn = null; return; }
   }
@@ -609,26 +1174,47 @@ function onUp() {
     const id = pressedBtn;
     pressedBtn = null;
 
+    // 调试面板的键（入口牌子 `dj:open` 也走这里）
+    if (DEBUG_ENABLED && id.startsWith('dj:')) { applyDebugJumpKey(id); return; }
+
     // 底部导航
     if (id.startsWith('nav:')) { void gotoTab(id.slice(4) as NavTab); return; }
 
     // 大厅 / 地图
     if (id === 'homeStart') {
-      reportEvent('home_start_click', { level_idx: progress.current.maxLevel });
-      void enterLevel(progress.current.maxLevel || 1);
+      reportEvent('home_start_click', { level_idx: progress.currentLevel });
+      void enterLevel(progress.currentLevel);
       return;
     }
     if (id === 'navHome') { void gotoTab('home'); return; }
     if (id === 'playCurrent') {
-      // 吸底的「继续」：地图上一屏 16 关，让玩家自己找当前关太苛刻
-      reportEvent('map_level_click', { level_idx: progress.current.maxLevel });
-      void enterLevel(progress.current.maxLevel || 1);
+      // 吸底的「继续」：地图一屏只有 8 关，让玩家自己找当前关太苛刻
+      reportEvent('map_level_click', { level_idx: progress.currentLevel });
+      void enterLevel(progress.currentLevel);
+      return;
+    }
+    if (id === 'mapHome') {
+      // 拖到别处之后回到自己：以缓动回去，不是瞬移 ——
+      // 瞬移之后玩家不知道「刚才看的和现在的是不是同一个地方」
+      mapPage.fling = 0;
+      mapPage.scrollTarget = scrollToLevel(mapPage.currentLevel);
+      audio.tap();
       return;
     }
     if (id.startsWith('map:')) {
       const idx = parseInt(id.slice(4), 10);
-      if (idx <= progress.current.maxLevel) {
-        reportEvent('map_level_click', { level_idx: idx });
+      if (isLevelPlayable(idx, mapPage)) {
+        // 调试模式下点未解锁的关 → 先让服务端把进度推上去，
+        // 这样目标关就是「当前关」，地图显示才对得上。
+        //
+        // `DEBUG_ENABLED &&` 让生产构建把这一整块 tree-shake 掉
+        // （连同 `debugJump` 这个 API 一起）。
+        const needJump = DEBUG_ENABLED && idx > progress.currentLevel;
+        reportEvent('map_level_click', { level_idx: idx, debug: needJump });
+        if (needJump) {
+          void jumpAndEnter(idx);
+          return;
+        }
         void enterLevel(idx);
       } else {
         mapPage.toast = `先通过第 ${progress.current.maxLevel} 关`;
@@ -647,7 +1233,15 @@ function onUp() {
     }
 
     // 我的页功能行
-    if (id === 'toggleSound') { profilePage.soundOn = !profilePage.soundOn; return; }
+    if (id === 'toggleSound') {
+      profilePage.soundOn = !profilePage.soundOn;
+      // 这个开关以前是死的：改了 `profilePage.soundOn`，`audio` 从来没读过它。
+      // 玩家以为静音了，进关卡照样响 —— 比没有开关更糟。
+      audio.setEnabled(profilePage.soundOn);
+      platform.storage.set(KEY_SOUND, profilePage.soundOn ? '' : '1');
+      if (profilePage.soundOn) audio.tap();
+      return;
+    }
     if (id === 'toggleVibrate') { profilePage.vibrateOn = !profilePage.vibrateOn; return; }
     if (id === 'shareGame') { void doShare(); return; }
     if (id === 'clearCache') { platform.storage.remove('levels_cache'); return; }
@@ -658,24 +1252,65 @@ function onUp() {
     else if (id === 'backHome') { phase = 'home'; return; }
     else if (id === 'next') void enterLevel(pendingLevel);
     else if (id === 'home') { phase = 'home'; challenge = null; challengeResult = null; return; }
-    else if (id === 'retry') { challengeResult = null; void enterLevel(challenge ? challenge.levelIdx : pendingLevel); }
+    // 「重来」要回到**刚打完的这一关**，不是下一关。
+    //
+    // 以前写的是 `pendingLevel`（= 当前关 + 1）——
+    // 玩家通关第 1 关后点「重来」，直接被带到第 2 关，
+    // 语义完全错了（「重来」= 再玩一次刚才那关）。
+    // `resultData.levelIdx` 才是刚打完的关号。
+    else if (id === 'retry') {
+      challengeResult = null;
+      const target = challenge ? challenge.levelIdx : (resultData?.levelIdx ?? pendingLevel);
+      void enterLevel(target);
+    }
     else if (id === 'share') doShare();
-    else if (id === 'skins') { phase = 'skins'; ads.showBanner(); reportEvent('skin_page_view', { owned: skinsPage.unlocked.size, total: SKINS.length }); }
+    else if (id === 'skins') { phase = 'skins'; syncSkinsPage(); ads.showBanner(); reportEvent('skin_page_view', { owned: skinsPage.unlocked.size, total: SKINS.length }); }
     else if (id === 'back') { phase = 'home'; ads.hideBanner(); }
     else if (id === 'prevPage') skinsPage.page = Math.max(0, skinsPage.page - 1);
     else if (id === 'nextPage') skinsPage.page = Math.min(Math.ceil(SKINS.length / PER_PAGE) - 1, skinsPage.page + 1);
     else if (id === 'equipSkin') equipSelectedSkin();
+    else if (id === 'equipTheme') equipSelectedTheme();
     else if (id === 'unlockByAd') void unlockByAd(skinsPage.selected);
     return;
   }
   if (phase === 'playing') {
-    const wasDragging = session.state?.phase === 'dragging';
+    // 松手后**不再**立即结算 —— 见 `CoverSession.pointerUp`。
+    // 判定（通关）、处罚（undos+1）、上报（level_fail）三件事被拆开了：
+    // 通关仍在这一刻确认，失败要等宽限期过完（`expired` 事件）。
     session.pointerUp();
-    // 松手未通关 → 记一次 level_fail
-    if (wasDragging && session.state && session.state.phase !== 'won') {
-      reportEvent('level_fail', { level_idx: session.state.level.idx, steps: session.state.path.length - 1 });
-    }
   }
+}
+
+/**
+ * 重新测量画布并重建视口。
+ *
+ * ## 为什么必须有
+ *
+ * 画布尺寸只在启动时读一次。手机端地址栏收缩、横竖屏切换、窗口缩放之后，
+ * 画布的 CSS 尺寸变了，但记录下来的 `width` / `height` / `dpr` 还是旧的 ——
+ *
+ * - 渲染：`viewport.applyTo` 用旧尺寸算缩放 → 画面被拉伸 / 偏移
+ * - 输入：`toDesign` 用旧尺寸反解 → **点击位置整体偏移**
+ *
+ * 这和历史上修过的「渲染与输入坐标变换不一致」是同一类问题，
+ * 只是这次的触发条件是窗口尺寸变化。
+ */
+function applyResize(): void {
+  if (!platform.resizeCanvas) return;
+  const m = platform.resizeCanvas();
+  if (m.width === width && m.height === height && m.dpr === dpr) return;
+
+  width = m.width;
+  height = m.height;
+  dpr = m.dpr;
+  viewport = createViewport({
+    width,
+    height,
+    dpr,
+    designWidth: DESIGN_W,
+    designHeight: DESIGN_H,
+  });
+  reportEvent('canvas_resize', { width, height, dpr });
 }
 
 // 事件绑定（平台分支）
@@ -684,6 +1319,8 @@ if (platform.name === 'web') {
   canvas.addEventListener('pointermove', (e) => onMove(e.clientX, e.clientY));
   canvas.addEventListener('pointerup', onUp);
   canvas.addEventListener('pointercancel', onUp);
+  if (DEBUG_ENABLED) bindDebugKeys();
+  platform.onResize?.(applyResize);
 } else {
   type TouchEvent = { touches: Array<{ clientX: number; clientY: number }> };
   const wx = (globalThis as {
@@ -704,7 +1341,12 @@ if (platform.name === 'web') {
     void tracker.flush();   // 补传埋点
     session.abandon();
   });
-  wx?.onShow?.(() => { void refreshProgress(); });
+  wx?.onShow?.(() => {
+    // 从后台回来：窗口尺寸可能已经变了（横竖屏切换 / 状态栏高度变化）
+    applyResize();
+    void refreshProgress();
+  });
+  platform.onResize?.(applyResize);
 }
 
 /** 记录帧时间。 */
@@ -721,10 +1363,11 @@ function updateWave(now: number) {
   const st = session.state;
   if (!st || !winAnimStart) return;
   const elapsed = now - winAnimStart;
+  const rs = st.runtime.rs;
   const total = st.path.length;
   for (let i = 0; i < total; i++) {
     const delay = (total - 1 - i) * 60;
-    if (elapsed >= delay) waveLit.add(st.path[i]);
+    if (elapsed >= delay) waveLit.add(rs.flatOf[st.path[i]]);
   }
 }
 
@@ -733,44 +1376,205 @@ function frame() {
   const { now, dt } = tick();
   updateWave(now);
 
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.scale(dpr * scale, dpr * scale);
-  ctx.translate(offsetX / dpr, offsetY / dpr);
+  // 松手宽限期到点 → 这一段作废（见 `CoverSession.tick`）。
+  // 必须每帧比对时间戳，不能靠 `setTimeout`：切后台时定时器被节流，
+  // 回前台时「早该过期了」却还要等下一次触发。
+  if (phase === 'playing') session.tick(now);
 
-  // 背景：全站统一陶土桌面（黏土工坊），各页面不再自己画背景
-  clayBackdrop(ctx);
+  // 渲染异常不能拖垮整个游戏。
+  //
+  // `requestAnimationFrame(frame)` 在函数**末尾**调用，
+  // 所以 `frame` 一旦抛异常，这行永远不会执行 —— 渲染循环就此中断，
+  // 画面停在最后一帧，之后点任何按钮都没反应。
+  //
+  // 真实踩过的坑：通关后 `progress.current.unlockedSkins.length` 抛
+  // `Cannot read properties of undefined`，画面卡在结算动画、
+  // 『下一关』点不动，而且**不会报任何网络错误**，极难定位。
+  //
+  // 所以这里兜住异常：打日志、保持循环继续，
+  // 下一帧还能重新渲染（甚至能自愈）。
+  try {
+    renderFrame(now, dt);
+  } catch (e) {
+    console.error('[render] 渲染帧异常', e);
+  }
+
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+
+/**
+ * 当前屏幕在设计坐标系里覆盖的矩形。
+ *
+ * 等比缩放是「整张设计稿缩到屏幕里，多出来的边留白」——
+ * 把留白反算回设计坐标就是负数，范围会大于 750×1334。
+ * 背景按这个盒子画才能铺满整屏。
+ */
+function visibleDesignBox(): { x: number; y: number; w: number; h: number } {
+  const s = viewport.scale;
+  return {
+    x: -viewport.offsetX / s,
+    y: -viewport.offsetY / s,
+    w: width / s,
+    h: height / s,
+  };
+}
+
+/** 渲染一帧的具体内容（与 `frame` 分离，方便统一兜异常）。 */
+function renderFrame(now: number, dt: number): void {
+  // ── 设计坐标系 → 设备像素 ──
+  //
+  // 变换由视口统一提供，保证和 `toDesign` 严格互逆。
+  viewport.applyTo(ctx);
 
   const st = session.state;
-  if (st && session.layout && (phase === 'playing' || phase === 'result')) {
-    const lit = new Set(st.lit);
-    for (const idx of waveLit) lit.add(idx);
+  const playing = !!st && !!session.layout && (phase === 'playing' || phase === 'result');
 
-    drawBoard(ctx, st.level, session.layout, {
-      lit,
-      path: st.path,
+  /**
+   * 已装备的棋盘主题。
+   *
+   * **只在盘面阶段生效**：大厅 / 地图 / 皮肤页仍是陶土工坊。
+   * 主题是「换棋盘」，不是「换整个 App」—— 菜单一旦跟着变深色，
+   * 黏土按钮和浅色文字会立刻打架，而那不是主题该负责的事。
+   */
+  const boardTheme = playing ? themeById(progress.current.currentTheme) : undefined;
+
+  // 背景：全站统一陶土桌面（黏土工坊），各页面不再画背景。
+  //
+  // **必须覆盖「实际可视范围」而不是 750×1334**：等比缩放后上下（或左右）
+  // 会留下几十像素的空白，那段区域不在设计稿里，背景渐变就断在边界上 ——
+  // 观感是一道横贯屏幕的接缝（375×667 满屏，但 390×844 上下各留 75px）。
+  // 传入反算出来的设计坐标盒子后，一块渐变铺满整屏，接缝消失。
+  //
+  // 主题接管后由主题自己铺（每套的底纹是它成立的一半）。
+  if (boardTheme) boardTheme.backdrop(ctx, visibleDesignBox());
+  else clayBackdrop(ctx, visibleDesignBox());
+
+  if (st && session.layout && playing) {
+    const rs = st.runtime.rs;
+    const level = st.runtime.level;
+
+    /** 当前路径（拍平索引序列）。 */
+    const flat = st.path.map((l) => rs.flatOf[l]);
+    /** 已覆盖的格（拍平索引集合）。 */
+    const covered = new Set<number>(flat);
+    for (const idx of waveLit) covered.add(idx);
+
+    /** 已拾取的钥匙 / 已过的星星（分组集合）。 */
+    const keysHeld = new Set<number>();
+    const shardsGot = new Set<number>();
+    let shardTotal = 0;
+    for (let i = 0; i < rs.typeOf.length; i++) if (rs.typeOf[i] === 4 /* SHARD */) shardTotal++;
+    for (const l of st.path) {
+      const t = rs.typeOf[l];
+      if (t === 5 /* KEY */) keysHeld.add(rs.groupOf[l]);
+      if (t === 4 /* SHARD */) shardsGot.add(rs.groupOf[l]);
+    }
+    // 星屑编号是 1..k 顺序必经 —— 所以「下一个」= 已收集的数量。
+    // 不能靠「最后走过的那颗 +1」：一颗没走过时它会是 -1，
+    // HUD 就不显示「下一个 ★1」，玩家开局不知道要先捡星。
+    const shardNext = shardsGot.size < shardTotal ? shardsGot.size : -1;
+
+    // 画序固定：板 → 格 → 连线 → 筹码 → 当前格/提示 → 端点。
+    //
+    // 旧实现把「提示高亮」塞在格子层里画，连线横穿时会把高亮切断；
+    // 而当前格（玩家在哪）**根本没有标记**，只能靠线头猜。
+    const boardArg = { w: level.w, h: level.h, grid: level.grid };
+    const coverState = {
+      covered,
+      path: flat,
       hint: st.hint,
-      shakeCell: st.shakeCell,
-      shakeAt: st.shakeAt,
-    }, skinById(progress.current.currentSkin), now);
+      keysHeld,
+      shardsGot,
+      shardNext,
+      shakeCell: -1,
+      shakeAt: 0,
+    };
+    if (boardTheme) {
+      // 主题接管整块盘面。提示只给窗口内的 5 格 —— 和黏土管线同一规则，
+      // 整条路线一次点亮等于把答案摊在桌上。
+      const hintWindow =
+        st.hint && st.hint.cells.length > 0
+          ? st.hint.cells.slice(st.hint.at, st.hint.at + 5)
+          : undefined;
+      boardTheme.board({
+        ctx,
+        board: boardArg,
+        layout: session.layout,
+        state: {
+          covered,
+          path: flat,
+          keysHeld,
+          shardsGot,
+          shardNext,
+          hint: hintWindow,
+          // 松手宽限：线要变淡。旧管线是在这里用 globalAlpha 包住的，
+          // 主题接管后必须显式传下去，否则宽限期的线会全亮。
+          paused: st.phase === 'paused',
+          shakeCell: -1,
+          shakeAt: 0,
+        },
+        now,
+        dpr: viewport.scale * viewport.dpr,
+      });
+    } else {
+      const curSkin = skinById(progress.current.currentSkin);
 
-    drawTrail(ctx, st.path, st.level.w, session.layout, CLAY.terracotta);
-    // 端点圆片必须在连线之后，否则线头会横穿圆片、把「起」「终」压成一团
-    drawEndpoints(ctx, st.level, session.layout);
+      drawCoverPlate(ctx, boardArg, session.layout, level.idx, viewport.scale * viewport.dpr);
+      drawCoverCells(ctx, boardArg, session.layout, coverState, curSkin, now);
+      // 松手宽限期间线还在，但要读得出「这是暂存的」——
+      // 全亮会让玩家以为只要别按就有救，全灭又等于已经清空了。
+      const pausedGrace = st.phase === 'paused';
+      ctx.save();
+      if (pausedGrace) ctx.globalAlpha = 0.55;
+      drawCoverTrail(ctx, flat, level.w, level.grid, session.layout, CLAY.terracotta);
+      ctx.restore();
+      drawCoverMarks(ctx, boardArg, session.layout, coverState);
+      drawCoverHead(ctx, boardArg, session.layout, coverState, now);
+      // 端点圆片必须在连线之后，否则线头会横穿圆片、把「起」「终」压成一团
+      drawCoverEndpoints(ctx, boardArg, session.layout);
+    }
 
-    drawHud(ctx, st.level.idx, progress.current.currentSkin, progress.current.unlockedSkins.length, config?.skins?.length ?? 13);
-    drawProgressBar(ctx, progress.current.maxLevel, config?.levelCount ?? 1000);
+    // 主题的界面配色。空 = 黏土（经典盘面）
+    const chrome = boardTheme?.chrome;
 
-    // 顶部按钮
-    drawButton(ctx, hintBtn, pressedBtn === 'hint');
-    drawButton(ctx, skipBtn, pressedBtn === 'skip');
-    drawButton(ctx, backHomeBtn, pressedBtn === 'backHome');
+    drawHud(
+      ctx, level.idx, progress.current.currentSkin, progress.current.unlockedSkins.length,
+      config?.skins?.length ?? 13,
+      { done: st.path.length, total: level.required, shardNext },
+      chrome,
+    );
 
-    // 挑战模式横幅：直接盖在关号胶囊上（原来的全宽横幅会同时压住
-    // 左右三颗顶部按钮和关号，视觉上三者糊成一团）
+    // D=0 的关卡两端都自由：开局面对一张空盘没有任何锚点。
+    if (level.deadEnds === 0 && st.path.length === 0) {
+      drawCoverFreeStartHint(ctx, session.layout, chrome?.inkSoft);
+    }
+    drawProgressBar(
+      ctx,
+      progress.current.maxLevel,
+      totalLevelCount(),
+      `皮肤 ${progress.current.unlockedSkins.length}/${config?.skins?.length ?? 13}`,
+      chrome,
+    );
+
+    // 顶部按钮。
+    // 「提示」是这一屏唯一的行动点，有主题时升成主色 —— 黏土版把它画成 ghost
+    // 是因为浅底上一个沙色块已经够显眼，深底上同样的暗块会沉进背景。
+    drawButton(ctx, chrome ? { ...hintBtn, kind: 'primary' } : hintBtn, pressedBtn === 'hint', undefined, chrome);
+    // 挑战关不给「跳过」：比的就是谁真能走完，花钱跳过是另一种玩法
+    if (!challenge) drawButton(ctx, skipBtn, pressedBtn === 'skip', undefined, chrome);
+    drawButton(ctx, backHomeBtn, pressedBtn === 'backHome', undefined, chrome);
+
+    // 挑战模式横幅：放**棋盘下方**那条空带里。
+    //
+    // 原来盖在关号胶囊上（y 84~160），胶囊加高到 84 之后它会同时压住
+    // 「提示」按钮的左半边 —— 两个都可点的东西叠在一起，误触只会更糟。
+    // 棋盘底最多到 1031（11×11），1100 往下是完全空的，横幅放这里不抢任何东西。
     if (challenge) {
       const name = challenge.fromName.length > 6 ? `${challenge.fromName.slice(0, 6)}…` : challenge.fromName;
-      clayBlock(ctx, 185, 84, 380, 76, 32, CLAY.mustard, 881, { depth: 9, hi: 0.08 });
-      clayText(ctx, `${name} 的挑战 · 第 ${challenge.levelIdx} 关`, DESIGN_W / 2, 122, 24, {
+      clayBlock(ctx, 90, 240, DESIGN_W - 180, 62, 28, CLAY.mustard, 881, { depth: 8, hi: 0.07 });
+      clayText(ctx, `${name} 的挑战 · 第 ${challenge.levelIdx} 关`, DESIGN_W / 2, 271, 26, {
         fill: '#4A3327',
         outlineWidth: 0,
         emboss: false,
@@ -786,15 +1590,18 @@ function frame() {
     homePage = {
       ...homePage,
       maxLevel: progress.current.maxLevel,
+      currentLevel: progress.currentLevel,
       skinCount: progress.current.unlockedSkins.length,
     };
     homeButtons = drawHomePage(ctx, homePage, now);
   }
   if (phase === 'map') {
-    // 星级与最高关可能在通关后变化，每帧对齐一次
+    // 星级与当前关可能在通关后变化，每帧对齐一次
     mapPage.stars = progress.current.stars;
-    mapPage.maxLevel = progress.current.maxLevel;
-    mapButtons = drawMapView(ctx, mapPage, now);
+    mapPage.currentLevel = progress.currentLevel;
+    // 惯性 / 缓动按帧推进（换算见 `stepMapScroll`）
+    stepMapScroll(mapPage, dt);
+    mapButtons = drawMapView(ctx, mapPage, now, progress.current.currentTheme);
   }
   if (phase === 'rank') {
     rankButtons = drawRankPage(ctx, rankPage, now);
@@ -808,40 +1615,188 @@ function frame() {
 
   // ── 底部导航 ──
   if (isNavPhase(phase)) {
-    drawNav(ctx, navTabOf(phase), now);
+    drawNav(ctx, navTabOf(phase), now, themeById(progress.current.currentTheme)?.chrome);
   }
 
   if (phase === 'result' && challengeResult) {
     resultButtons = drawChallengeResult(ctx, challengeResult);
   } else if (phase === 'result' && resultData) {
+    // 全部通关 = 通关的关号已经等于总关数
+    const isAllCleared = resultData.levelIdx >= totalLevelCount();
     resultButtons = drawResult(
       ctx, resultData.levelIdx, resultData.steps, resultData.shortest,
       resultData.timeMs, resultData.unlockedSkin,
-      progress.current.maxLevel / (config?.levelCount ?? 1000),
+      progress.current.maxLevel / totalLevelCount(),
+      resultData.undos,
+      resultData.skipped === true,
+      isAllCleared,
     );
   }
 
-  requestAnimationFrame(frame);
+  // ── 调试面板 ──
+  //
+  // 画在横屏提示**之前**：横向时面板本身也放不下（几乎占满屏宽），
+  // 该让「请竖屏」盖住它，而不是反过来把提示压住。
+  if (DEBUG_ENABLED && debugPanel.open) {
+    debugJumpButtons = drawDebugJump(ctx, debugPanel, now, totalLevelCount(), visibleDesignBox());
+  }
+
+  // ── 横屏提示 ──
+  //
+  // 等比缩放把 750×1334 塞进 844×390 时只剩 32% 宽，格子不到 20px，
+  // 拖着拖着手指就出界了。桌面浏览器窗口拉宽不算（短边 > 560）。
+  if (width > height * 1.05 && Math.min(width, height) < 560) drawRotateHint(ctx);
+
+  // ── 全局提示条（最后画，压在所有页面之上）──
+  drawToast(ctx, now);
 }
-requestAnimationFrame(frame);
+
+/**
+ * 横屏时的「请竖屏」遮罩。
+ *
+ * ## 为什么用 CSS 像素画，而不是设计坐标
+ *
+ * 横屏时等比缩放的系数只有 0.29（750 宽的设计稿塞进 844×390），
+ * 在设计坐标里写 46 号字，落到屏上只有 13px —— 正是这条提示要告诉玩家
+ * 「屏幕不够用」，它自己先看不清就滑稽了。
+ * 所以这里临时把变换换成 `1 单位 = 1 CSS px`，按真实像素排版。
+ *
+ * 只提示、不拦截 —— 输入层没做方向判断，玩家硬要横着玩也点得动，
+ * 只是画面被盖住了。真做拦截还要处理「转回来之后按下的按钮还停在
+ * `pressedBtn` 里」这类状态残留，得不偿失。
+ */
+function drawRotateHint(ctx: CanvasRenderingContext2D): void {
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  ctx.fillStyle = '#3A2618';
+  ctx.fillRect(0, 0, width, height);
+
+  const cx = width / 2;
+  const cy = height / 2;
+
+  // 图标：一部横躺的手机（竖版圆角矩形转 90°）
+  ctx.save();
+  ctx.translate(cx, cy - 46);
+  ctx.rotate(Math.PI / 2);
+  ctx.strokeStyle = 'rgba(255,246,233,0.9)';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') ctx.roundRect(-18, -28, 36, 56, 7);
+  else ctx.rect(-18, -28, 36, 56);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,246,233,0.5)';
+  ctx.beginPath();
+  ctx.arc(0, 18, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '800 24px system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = '#FFF6E9';
+  ctx.fillText('请竖屏游玩', cx, cy + 22);
+
+  ctx.font = '500 14px system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = 'rgba(255,246,233,0.66)';
+  ctx.fillText('横屏时棋盘只剩三分之一宽，手指放不下', cx, cy + 52);
+
+  ctx.restore();
+}
+
+/**
+ * 画全局提示条。
+ *
+ * 画在**所有**页面之上 —— 失败提示不能被某个页面盖住，
+ * 否则玩家还是看不到「刚才那下没成功」。
+ */
+function drawToast(ctx: CanvasRenderingContext2D, now: number): void {
+  if (!toastMsg) return;
+  const age = now - toastAt;
+  if (age > toastMs) { toastMsg = ''; return; }
+
+  // 淡入 150ms / 淡出 300ms
+  const alpha = Math.min(1, age / 150, (toastMs - age) / 300);
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+
+  ctx.font = '600 26px system-ui, -apple-system, "PingFang SC", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const tw = ctx.measureText(toastMsg).width;
+  const bw = Math.min(DESIGN_W - 80, tw + 56);
+  const bh = 64;
+  const bx = (DESIGN_W - bw) / 2;
+  // 240 = 进度读数下方、盘面顶部上方那条空带。
+  //
+  // 原来钉在底部（DESIGN_H − 320），但在游戏内那一片是「盘面底缘 + 提示按钮」，
+  // toast 要么压住棋盘的下沿、要么贴到按钮顶上 —— 5×5 这种下缘不规则的盘面尤其难看。
+  // 挪到上部后它不压任何东西，位置也像一条系统通知。
+  const by = 240;
+
+  ctx.fillStyle = 'rgba(58,38,24,0.92)';
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') ctx.roundRect(bx, by, bw, bh, 32);
+  else ctx.rect(bx, by, bw, bh);
+  ctx.fill();
+
+  ctx.fillStyle = '#FFF6E9';
+  ctx.fillText(toastMsg, DESIGN_W / 2, by + bh / 2);
+  ctx.globalAlpha = 1;
+}
 
 /** 启动。 */
+/**
+ * 启动。
+ *
+ * ## 「没有后端也能玩」
+ *
+ * 登录 / 配置 / 星级都是**可选**的 —— 拿不到就退到本地默认值，
+ * 关卡表本身是内置的（`data/levels-v3-client.json`），
+ * 所以断网时游戏依然完整可玩（只是进度不会同步到服务端）。
+ *
+ * 这对本地开发特别重要：以前必须先起 Go 服务才能看到一关，
+ * 现在 `npm run dev` 直接就能玩。
+ */
 async function boot() {
   tracker.init();
   progress.restore();
+
+  // ── 声音：偏好与音色 ──
+  //
+  // 必须在 `restore()` 之后：装备的主题存在本地进度里。
+  // 这里只「登记」，不发声 —— 真正的 AudioContext 要等第一次用户手势
+  // （浏览器自动播放策略），由 `audio.light()` 首次调用时惰性创建。
+  profilePage.soundOn = platform.storage.get(KEY_SOUND) !== '1';
+  audio.setEnabled(profilePage.soundOn);
+  audio.setVoice(progress.current.currentTheme);
+
+  // ① 登录（失败不致命）
   try {
     const loginRes = await login();
-    reportEvent('login_success', { uid: loginRes.uid, is_new: (loginRes.maxLevel || 1) <= 1 });
+    reportEvent('login_success', { uid: loginRes.uid, is_new: loginRes.maxLevel <= 0 });
     progress.sync({
-      maxLevel: loginRes.maxLevel || 1,
+      // maxLevel = 最高已通关关号。**不要** `|| 1` ——
+      // 新用户是 0（没通关过任何一关），`|| 1` 会把它变成 1，
+      // 于是 currentLevel 算成 2 —— 新玩家直接被跳过第 1 关。
+      maxLevel: loginRes.maxLevel,
       unlockedSkins: loginRes.unlockedSkins,
       totalTimeMs: loginRes.totalTimeMs,
       totalSteps: loginRes.totalSteps,
       nickname: loginRes.nickname || '玩家',
       avatar: loginRes.avatar || '',
+      uid: loginRes.uid,
     });
-    skinsPage.equipped = progress.current.currentSkin;
-    skinsPage.unlocked = new Set(progress.current.unlockedSkins);
+    syncSkinsPage();
+    // 登录成功后补传缓冲 —— 这批事件（app_start 等）现在能带上 uid 了。
+    // 不 flush 的话它们要等到攒满 20 条才发，而登录前那几条
+    // 已经是「无 uid 的匿名事件」，白白丢掉按玩家聚合的价值。
+    void tracker.flush();
+  } catch (e) {
+    console.warn('[boot] 登录失败，使用本地进度', e);
+  }
+
+  // ② 服务器配置（失败用默认值）
+  try {
     config = await fetchConfig();
     if (platform.name === 'wechat' && config.ad) {
       configureAds({
@@ -849,31 +1804,42 @@ async function boot() {
         interstitialId: config.ad.interstitialId,
       });
     }
-    await levels.init(config.levelVersion);
-    challenge = parseChallenge();
-    // 分享挑战 → 直接进关卡；普通启动 → 回大厅
-    if (challenge) {
-      await enterLevel(challenge.levelIdx);
-    } else {
-      phase = 'home';
-      homePage = {
-        ...homePage,
-        maxLevel: progress.current.maxLevel,
-        levelCount: config?.levelCount ?? 1000,
-        nickname: progress.current.nickname || '玩家',
-        avatar: progress.current.avatar || '',
-        skinCount: progress.current.unlockedSkins.length,
-        totalSkins: SKINS.length,
-      };
-      // 异步拉星级，不阻塞进大厅
-      void fetchStars()
-        .then((res) => progress.setStars(res.stars))
-        .catch(() => { /* 忽略 */ });
-    }
-    reportEvent('app_start', {});
   } catch (e) {
-    console.error('启动失败', e);
-    phase = 'loading';
+    console.warn('[boot] 配置拉取失败，使用默认配置', e);
   }
+
+  // ③ 关卡表（内置表兜底，一定成功）
+  //
+  // 用 **cover 表的版本号** —— cover 是现行玩法，它的表才是真正在用的那张。
+  // 之前传的是经典表的版本号，改了 cover 表客户端却以为没变，永远不重拉。
+  await levels.init(config?.coverLevelVersion ?? config?.levelVersion ?? '');
+
+  // ④ 挑战参数
+  challenge = parseChallenge();
+
+  // 分享挑战 → 直接进关卡；普通启动 → 回大厅
+  if (challenge) {
+    await enterLevel(challenge.levelIdx);
+  } else {
+    phase = 'home';
+    homePage = {
+      ...homePage,
+      maxLevel: progress.current.maxLevel,
+      currentLevel: progress.currentLevel,
+      levelCount: config?.coverLevelCount ?? config?.levelCount ?? levels.total,
+      nickname: progress.current.nickname || '玩家',
+      avatar: progress.current.avatar || '',
+      skinCount: progress.current.unlockedSkins.length,
+      totalSkins: SKINS.length,
+    };
+    // 异步拉星级，不阻塞进大厅
+    //
+    // 拉的是 **cover 模式**的星级 —— cover 的星级按悔棋次数算，
+    // 经典那套（步数比）在 cover 模式下恒为 3 星，没有意义。
+    void fetchStars('cover')
+      .then((res) => progress.setStars(res.stars))
+      .catch(() => { /* 忽略 */ });
+  }
+  reportEvent('app_start', {});
 }
 boot();

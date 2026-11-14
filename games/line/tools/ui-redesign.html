@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>UI 重设计 · 三方向对比</title>
+<style>
+  html, body { margin: 0; background: #141414; color: #EDEAE4; font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+  .wrap { width: 1240px; margin: 0 auto; padding: 28px 0 40px; }
+  .head { display: flex; align-items: baseline; gap: 14px; padding: 0 8px 18px; }
+  .logo { width: 22px; height: 22px; background: #C94B30; }
+  .title { font-size: 18px; letter-spacing: .12em; font-weight: 600; }
+  .sub { font-size: 12px; color: #8A857C; letter-spacing: .06em; }
+  .row { display: flex; gap: 20px; }
+  .col { width: 375px; }
+  canvas { display: block; width: 375px; height: 700px; border-radius: 2px; }
+  .cap { padding: 14px 4px 0; }
+  .name { font-size: 15px; font-weight: 600; letter-spacing: .04em; }
+  .tag { margin-top: 6px; font-size: 11px; color: #8F8A80; letter-spacing: .04em; }
+  .dots { margin-top: 10px; display: flex; gap: 6px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="logo"></div>
+    <div class="title">连连看 · Cover 玩法 UI 重设计</div>
+    <div class="sub">三个方向 / 同一棋盘与同一进度 / 仅替换视觉语言</div>
+  </div>
+  <div class="row" id="row"></div>
+</div>
+<script>
+const DPR = 2;
+const W = 375, H = 700;
+
+// ───────────── 棋盘数据（7×7，左下 2×2 为空洞） ─────────────
+const CELL = 40, BX = 47.5, BY = 152, COLS = 7, ROWS = 7;
+const VOID = new Set(['0,5', '1,5', '0,6', '1,6']);
+const PATH = [];
+for (let r = 0; r < 4; r++) {
+  for (let i = 0; i < COLS; i++) PATH.push([r % 2 === 0 ? i : COLS - 1 - i, r]);
+}
+for (let c = 0; c <= 4; c++) PATH.push([c, 4]);
+
+const PATH_SET = new Set(PATH.map(([c, r]) => `${c},${r}`));
+const REQUIRED = COLS * ROWS - VOID.size;
+const COVERED = PATH.length;
+const LEFT = REQUIRED - COVERED;
+
+const CHIPS = [
+  { c: 6, r: 0, kind: 'shard', n: 1, got: true },
+  { c: 6, r: 2, kind: 'shard', n: 2, got: true },
+  { c: 2, r: 4, kind: 'oneway', dir: 'right', got: true },
+  { c: 4, r: 5, kind: 'shard', n: 3, got: false },
+];
+
+const cx = (c) => BX + c * CELL + CELL / 2;
+const cy = (r) => BY + r * CELL + CELL / 2;
+
+// ───────────── 基础工具 ─────────────
+function setup(canvas) {
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(DPR, DPR);
+  return ctx;
+}
+function rr(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  const k = Math.min(r, w / 2, h / 2);
+  ctx.moveTo(x + k, y);
+  ctx.arcTo(x + w, y, x + w, y + h, k);
+  ctx.arcTo(x + w, y + h, x, y + h, k);
+  ctx.arcTo(x, y + h, x, y, k);
+  ctx.arcTo(x, y, x + w, y, k);
+  ctx.closePath();
+}
+function grain(ctx, w, h, count, color, alpha, seed = 7) {
+  let s = seed;
+  const rnd = () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; };
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.globalAlpha = alpha;
+  for (let i = 0; i < count; i++) ctx.fillRect(rnd() * w, rnd() * h, 1, 1);
+  ctx.restore();
+}
+function star(ctx, x, y, r) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const rad = i % 2 === 0 ? r : r * 0.44;
+    const px = x + Math.cos(a) * rad, py = y + Math.sin(a) * rad;
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+function polyline(ctx, pts) {
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+}
+
+// ───────────── 三个主题 ─────────────
+const A = {
+  bg: '#F2E9D8',
+  ink: '#22201C',
+  sub: '#7A7164',
+  hair: '#D8C9B0',
+  accent: '#C14A2E',
+  accentInk: '#FBF6EA',
+  tile: '#2E6B58',
+  tileEdge: '#245647',
+  paper: '#FBF6EA',
+  paperEdge: '#E4D6BE',
+  chip: '#FBF6EA',
+  chipInk: '#22201C',
+  serif: 'Georgia, "Songti SC", "SimSun", serif',
+  sans: '"PingFang SC", "Microsoft YaHei", sans-serif',
+};
+
+const B = {
+  bg0: '#0B1315',
+  bg1: '#12211F',
+  ink: '#E8F1EC',
+  sub: '#7E9A94',
+  hair: 'rgba(232,241,236,0.10)',
+  accent: '#63DFC0',
+  accentInk: '#07100E',
+  tile: '#17332F',
+  tileEdge: '#2E5F52',
+  chip: '#0E1B19',
+  chipInk: '#E8F1EC',
+  sans: '"Helvetica Neue", "Segoe UI Light", "PingFang SC", "Microsoft YaHei", sans-serif',
+};
+
+const C = {
+  bg: '#E7D3BC',
+  ink: '#3B2418',
+  sub: '#8A6A54',
+  hair: '#CDB29A',
+  accent: '#C9553A',
+  accentInk: '#FFF6E9',
+  slab: '#C08F6D',
+  carved: '#9F6A4B',
+  tile: '#F8E9D2',
+  tileEdge: '#D8BE9C',
+  chip: '#FBF0DC',
+  chipInk: '#6E3A23',
+  sans: '"PingFang SC", "Microsoft YaHei", sans-serif',
+};
+
+// ───────────── 共用：头部 ─────────────
+function header(ctx, t, opt) {
+  const { ink, sub, sans, accent, hair } = t;
+  // 返回
+  ctx.save();
+  ctx.strokeStyle = ink;
+  ctx.globalAlpha = 0.75;
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(26, 50); ctx.lineTo(19, 57); ctx.lineTo(26, 64);
+  ctx.stroke();
+  ctx.restore();
+
+  // 关号
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = ink;
+  ctx.font = opt.serif ? `600 27px ${opt.serif}` : `300 30px ${sans}`;
+  ctx.fillText('27', 187.5 + (opt.serif ? -7 : -5), 57);
+  ctx.font = `500 10px ${sans}`;
+  ctx.globalAlpha = 0.55;
+  ctx.fillText('关', 187.5 + (opt.serif ? 21 : 19), 62);
+  ctx.restore();
+
+  // 角落按钮
+  ctx.save();
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.font = `500 12px ${sans}`;
+  ctx.fillStyle = opt.buttonInk ?? ink;
+  ctx.globalAlpha = 0.8;
+  ctx.fillText('提示', 356, 57);
+  ctx.textAlign = 'left';
+  ctx.fillText('重来', 20, 92);
+  ctx.textAlign = 'right';
+  ctx.fillText(`${LEFT} 格未铺`, 356, 92);
+  ctx.restore();
+
+  // 进度条
+  const bx = 20, by = 106, bw = 336, bh = 3;
+  ctx.save();
+  ctx.fillStyle = opt.track ?? hair;
+  rr(ctx, bx, by, bw, bh, 2); ctx.fill();
+  ctx.fillStyle = accent;
+  rr(ctx, bx, by, bw * (COVERED / REQUIRED), bh, 2); ctx.fill();
+  ctx.restore();
+}
+
+// ───────────── 三个棋盘的画法 ─────────────
+function boardA(ctx) {
+  // 纸片
+  ctx.save();
+  ctx.fillStyle = 'rgba(60,48,32,0.10)';
+  rr(ctx, BX - 14, BY - 14 + 5, CELL * COLS + 28, CELL * ROWS + 28, 8);
+  ctx.fill();
+  ctx.fillStyle = A.paper;
+  rr(ctx, BX - 14, BY - 14, CELL * COLS + 28, CELL * ROWS + 28, 8);
+  ctx.fill();
+  ctx.strokeStyle = A.paperEdge;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+
+  // 空格 + 已铺
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (VOID.has(`${c},${r}`)) continue;
+      const x = BX + c * CELL, y = BY + r * CELL;
+      if (PATH_SET.has(`${c},${r}`)) {
+        ctx.fillStyle = 'rgba(34,32,28,0.13)';
+        rr(ctx, x + 3, y + 3 + 2, CELL - 6, CELL - 6, 3); ctx.fill();
+        ctx.fillStyle = A.tile;
+        rr(ctx, x + 3, y + 3, CELL - 6, CELL - 6, 3); ctx.fill();
+        ctx.strokeStyle = A.tileEdge;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      } else {
+        ctx.strokeStyle = 'rgba(120,104,80,0.30)';
+        ctx.lineWidth = 1;
+        rr(ctx, x + 4.5, y + 4.5, CELL - 9, CELL - 9, 3);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // 路径
+  const pts = PATH.map(([c, r]) => [cx(c), cy(r)]);
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(34,32,28,0.16)';
+  ctx.lineWidth = 6;
+  polyline(ctx, pts.map(([x, y]) => [x, y + 2])); ctx.stroke();
+  ctx.strokeStyle = A.accent;
+  ctx.lineWidth = 4.5;
+  polyline(ctx, pts); ctx.stroke();
+  ctx.restore();
+}
+
+function boardB(ctx) {
+  // 极淡的盘面
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.018)';
+  rr(ctx, BX - 14, BY - 14, CELL * COLS + 28, CELL * ROWS + 28, 10); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (VOID.has(`${c},${r}`)) continue;
+      const x = BX + c * CELL, y = BY + r * CELL;
+      if (PATH_SET.has(`${c},${r}`)) {
+        ctx.fillStyle = B.tile;
+        rr(ctx, x + 3, y + 3, CELL - 6, CELL - 6, 4); ctx.fill();
+        ctx.strokeStyle = B.tileEdge;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        const g = ctx.createLinearGradient(0, y + 3, 0, y + 3 + 14);
+        g.addColorStop(0, 'rgba(111,227,196,0.10)');
+        g.addColorStop(1, 'rgba(111,227,196,0)');
+        ctx.fillStyle = g;
+        rr(ctx, x + 4, y + 4, CELL - 8, 14, 3); ctx.fill();
+      } else {
+        ctx.fillStyle = 'rgba(255,255,255,0.022)';
+        rr(ctx, x + 3, y + 3, CELL - 6, CELL - 6, 3); ctx.fill();
+        ctx.strokeStyle = 'rgba(232,241,236,0.20)';
+        ctx.lineWidth = 1;
+        rr(ctx, x + 3.5, y + 3.5, CELL - 7, CELL - 7, 3);
+        ctx.stroke();
+      }
+    }
+  }
+
+  const pts = PATH.map(([c, r]) => [cx(c), cy(r)]);
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(111,227,196,0.16)';
+  ctx.lineWidth = 11;
+  polyline(ctx, pts); ctx.stroke();
+  ctx.shadowColor = 'rgba(111,227,196,0.85)';
+  ctx.shadowBlur = 9;
+  ctx.strokeStyle = B.accent;
+  ctx.lineWidth = 3.6;
+  polyline(ctx, pts); ctx.stroke();
+  ctx.restore();
+}
+
+function boardC(ctx) {
+  // 陶土板
+  ctx.save();
+  ctx.fillStyle = 'rgba(80,40,20,0.20)';
+  rr(ctx, BX - 16, BY - 16 + 7, CELL * COLS + 32, CELL * ROWS + 32, 18); ctx.fill();
+  ctx.fillStyle = C.slab;
+  rr(ctx, BX - 16, BY - 16, CELL * COLS + 32, CELL * ROWS + 32, 18); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,235,210,0.22)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.restore();
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (VOID.has(`${c},${r}`)) continue;
+      const x = BX + c * CELL, y = BY + r * CELL;
+      if (PATH_SET.has(`${c},${r}`)) {
+        ctx.fillStyle = 'rgba(70,35,18,0.22)';
+        rr(ctx, x + 3, y + 3 + 2.5, CELL - 6, CELL - 6, 4); ctx.fill();
+        ctx.fillStyle = C.tile;
+        rr(ctx, x + 3, y + 3, CELL - 6, CELL - 6, 4); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        rr(ctx, x + 5, y + 5, CELL - 10, 2, 1); ctx.fill();
+      } else {
+        ctx.fillStyle = C.carved;
+        rr(ctx, x + 3, y + 3, CELL - 6, CELL - 6, 4); ctx.fill();
+        ctx.strokeStyle = 'rgba(70,35,18,0.28)';
+        ctx.lineWidth = 1;
+        rr(ctx, x + 3.5, y + 3.5, CELL - 7, CELL - 7, 4); ctx.stroke();
+        ctx.fillStyle = 'rgba(255,235,210,0.10)';
+        rr(ctx, x + 5, y + 5, CELL - 10, 2, 1); ctx.fill();
+      }
+    }
+  }
+
+  const pts = PATH.map(([c, r]) => [cx(c), cy(r)]);
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#6E3A23';
+  ctx.lineWidth = 6;
+  polyline(ctx, pts); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,238,214,0.35)';
+  ctx.lineWidth = 2;
+  polyline(ctx, pts); ctx.stroke();
+  ctx.restore();
+}
+
+// ───────────── 机制筹码 ─────────────
+function chips(ctx, t, style) {
+  const P = {
+    A: { disc: '#FBF6EA', edge: 'rgba(34,32,28,0.38)', glyph: '#C14A2E', num: '#22201C', ghost: 'rgba(34,32,28,0.28)' },
+    B: { disc: '#0E1B19', edge: 'rgba(232,241,236,0.24)', glyph: '#8FE9D2', num: '#E8F1EC', ghost: 'rgba(143,233,210,0.40)' },
+    C: { disc: '#7E452B', edge: 'rgba(255,240,220,0.40)', glyph: '#F8E9D2', num: '#FFF6E9', ghost: 'rgba(255,246,233,0.55)' },
+  }[style];
+
+  for (const ch of CHIPS) {
+    const x = cx(ch.c), y = cy(ch.r);
+    ctx.save();
+
+    if (ch.got) {
+      ctx.fillStyle = P.disc;
+      ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = P.edge;
+      ctx.lineWidth = 1.2; ctx.stroke();
+    }
+
+    const ink = ch.got ? P.glyph : P.ghost;
+    if (ch.kind === 'shard') {
+      if (ch.got) {
+        ctx.fillStyle = ink;
+        star(ctx, x, y - 2.2, 6); ctx.fill();
+        ctx.fillStyle = P.num;
+        ctx.font = '700 7.5px "PingFang SC", "Microsoft YaHei", sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(String(ch.n), x, y + 6.6);
+      } else {
+        ctx.strokeStyle = ink;
+        ctx.lineWidth = 1.2;
+        star(ctx, x, y, 7); ctx.stroke();
+      }
+    } else {
+      const s = ch.dir === 'right' ? 1 : -1;
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 1.8;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x - 5 * s, y); ctx.lineTo(x + 5 * s, y);
+      ctx.moveTo(x + 1 * s, y - 4.2); ctx.lineTo(x + 5.5 * s, y);
+      ctx.lineTo(x + 1 * s, y + 4.2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // 当前格
+  const [hc, hr] = PATH[PATH.length - 1];
+  const hx = cx(hc), hy = cy(hr);
+  ctx.save();
+  if (style === 'C') {
+    ctx.strokeStyle = 'rgba(110,58,35,0.45)';
+    ctx.lineWidth = 4.4;
+    ctx.beginPath(); ctx.arc(hx, hy, 10, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  ctx.lineWidth = 3;
+  if (style === 'B') { ctx.shadowColor = 'rgba(255,255,255,0.7)'; ctx.shadowBlur = 8; }
+  ctx.beginPath(); ctx.arc(hx, hy, 10, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+
+// ───────────── 底部 ─────────────
+function footer(ctx, t, style) {
+  const y = 584;
+  // 机制说明
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `400 11px ${t.sans}`;
+  ctx.fillStyle = t.sub;
+  const note = '星屑需按 1 → 2 → 3 顺序点亮';
+  ctx.fillText(note, 187.5, y - 79);
+  ctx.restore();
+
+  if (style === 'A') {
+    ctx.save();
+    ctx.fillStyle = 'rgba(34,32,28,0.10)';
+    rr(ctx, 20, y + 4, 152, 50, 7); ctx.fill();
+    ctx.fillStyle = A.paper;
+    rr(ctx, 20, y, 152, 50, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(34,32,28,0.32)';
+    ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.fillStyle = A.ink;
+    ctx.font = `600 15px ${A.sans}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('撤销一步', 96, y + 25);
+
+    ctx.fillStyle = 'rgba(34,32,28,0.16)';
+    rr(ctx, 186, y + 4, 169, 50, 7); ctx.fill();
+    ctx.fillStyle = A.accent;
+    rr(ctx, 186, y, 169, 50, 7); ctx.fill();
+    ctx.fillStyle = A.accentInk;
+    ctx.font = `600 15px ${A.sans}`;
+    ctx.fillText('提示 · 看视频', 270, y + 25);
+    ctx.restore();
+  } else if (style === 'B') {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(232,241,236,0.28)';
+    ctx.lineWidth = 1;
+    rr(ctx, 20, y, 152, 50, 10); ctx.stroke();
+    ctx.fillStyle = B.ink;
+    ctx.font = `300 15px ${B.sans}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('撤销一步', 96, y + 25);
+
+    ctx.fillStyle = B.accent;
+    rr(ctx, 186, y, 169, 50, 10); ctx.fill();
+    ctx.fillStyle = B.accentInk;
+    ctx.font = `500 15px ${B.sans}`;
+    ctx.fillText('提示 · 看视频', 270, y + 25);
+    ctx.restore();
+  } else {
+    ctx.save();
+    ctx.fillStyle = '#EFDCC4';
+    rr(ctx, 20, y, 152, 50, 25); ctx.fill();
+    ctx.fillStyle = C.ink;
+    ctx.font = `600 15px ${C.sans}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('撤销一步', 96, y + 25);
+
+    ctx.fillStyle = '#A84A2C';
+    rr(ctx, 186, y + 4, 169, 50, 25); ctx.fill();
+    ctx.fillStyle = C.accent;
+    rr(ctx, 186, y, 169, 50, 25); ctx.fill();
+    ctx.fillStyle = C.accentInk;
+    ctx.font = `600 15px ${C.sans}`;
+    ctx.fillText('提示 · 看视频', 270, y + 25);
+    ctx.restore();
+  }
+}
+
+// ───────────── 三个面板 ─────────────
+function panelA(ctx) {
+  ctx.fillStyle = A.bg;
+  ctx.fillRect(0, 0, W, H);
+  grain(ctx, W, H, 2600, '#8A7350', 0.055, 11);
+
+  // 顶部一条极细的分隔，建立「纸页」感
+  ctx.save();
+  ctx.strokeStyle = 'rgba(34,32,28,0.10)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, 132); ctx.lineTo(W, 132); ctx.stroke();
+  ctx.restore();
+
+  header(ctx, A, { serif: A.serif });
+  boardA(ctx);
+  chips(ctx, A, 'A');
+  footer(ctx, A, 'A');
+}
+
+function panelB(ctx) {
+  const g = ctx.createRadialGradient(187, 240, 40, 187, 300, 460);
+  g.addColorStop(0, B.bg1);
+  g.addColorStop(1, B.bg0);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  grain(ctx, W, H, 3200, '#BFE8DC', 0.035, 23);
+
+  // 星点
+  let s = 99;
+  const rnd = () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; };
+  ctx.save();
+  for (let i = 0; i < 46; i++) {
+    const x = rnd() * W, y = rnd() * 420, a = 0.05 + rnd() * 0.16;
+    ctx.fillStyle = `rgba(232,241,236,${a})`;
+    ctx.beginPath(); ctx.arc(x, y, rnd() * 1.1 + 0.3, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+
+  header(ctx, B, { serif: null, buttonInk: B.ink, track: 'rgba(232,241,236,0.12)' });
+  boardB(ctx);
+  chips(ctx, B, 'B');
+  footer(ctx, B, 'B');
+}
+
+function panelC(ctx) {
+  ctx.fillStyle = C.bg;
+  ctx.fillRect(0, 0, W, H);
+  grain(ctx, W, H, 2400, '#7A4A2E', 0.05, 31);
+
+  header(ctx, C, { serif: null });
+  boardC(ctx);
+  chips(ctx, C, 'C');
+  footer(ctx, C, 'C');
+}
+
+// ───────────── 渲染 ─────────────
+const DEFS = [
+  { key: 'A', draw: panelA, name: 'A · 纸上园林', tags: '纸雕 / 墨色 / 单一朱红强调 · 最克制、棋盘最清楚',
+    dots: ['#F2E9D8', '#2E6B58', '#C14A2E', '#22201C', '#FBF6EA'] },
+  { key: 'B', draw: panelB, name: 'B · 夜航星图', tags: '深色 / 发光路径 / 高对比 · 最沉浸、最「贵」',
+    dots: ['#0B1315', '#17332F', '#6FE3C4', '#E8F1EC', '#F0B44C'] },
+  { key: 'C', draw: panelC, name: 'C · 陶土工坊 2.0', tags: '保留黏土 / 重做明度层次 · 改动最小、最稳',
+    dots: ['#E7D3BC', '#BF8A67', '#F8E9D2', '#C9553A', '#3B2418'] },
+];
+
+const row = document.getElementById('row');
+for (const d of DEFS) {
+  const col = document.createElement('div');
+  col.className = 'col';
+  const cv = document.createElement('canvas');
+  col.appendChild(cv);
+  const cap = document.createElement('div');
+  cap.className = 'cap';
+  cap.innerHTML = `<div class="name">${d.name}</div><div class="tag">${d.tags}</div>
+    <div class="dots">${d.dots.map((c) => `<span class="dot" style="background:${c}"></span>`).join('')}</div>`;
+  col.appendChild(cap);
+  row.appendChild(col);
+  d.draw(setup(cv));
+}
+document.title = 'ready';
+</script>
+</body>
+</html>
