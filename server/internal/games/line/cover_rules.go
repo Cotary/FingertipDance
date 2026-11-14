@@ -1,0 +1,471 @@
+package line
+
+import (
+	"encoding/base64"
+	"fmt"
+)
+
+// Cover v3：格子类型与位布局。
+//
+// 与 TypeScript 侧 `src/core/cover/v3/types.ts` **逐位一致** ——
+// 这是「生成器 / 校验器 / 服务端」三方能互认的前提。
+//
+// 位布局（每格 1 字节）：
+//
+//	byte = (type << 4) | (dir << 2) | group
+//	  type  4 bit  格子类型
+//	  dir   2 bit  方向（单向门用：允许的离开方向）
+//	  group 2 bit  分组（钥匙/门配对、星星编号、传送门配对）
+const (
+	CoverVoid   = 0  // 缺口：不可走，与盘外连通
+	CoverBrick  = 1  // 普通可走格
+	CoverBlock  = 2  // 石头：不可走，被可走格包围
+	CoverOneway = 3  // 单向门：只能沿 dir 方向离开
+	CoverShard  = 4  // 星星：必须按 group 编号顺序经过
+	CoverKey    = 5  // 钥匙：走过即拾取
+	CoverGate   = 6  // 门：未持有对应钥匙不可进入
+	CoverPortal = 7  // 传送门：group 相同的一对格之间存在额外通道
+	CoverIce    = 8  // 冰块：踩上后沿进入方向滑行至撞墙
+	CoverStart  = 9  // 起点标记
+	CoverEnd    = 10 // 终点标记
+)
+
+// Cover 方向编码：0=上 1=下 2=左 3=右。
+const (
+	CoverDirUp    = 0
+	CoverDirDown  = 1
+	CoverDirLeft  = 2
+	CoverDirRight = 3
+)
+
+// coverCellType 解出格子类型。
+func coverCellType(b byte) int { return int(b>>4) & 0x0f }
+
+// coverCellDir 解出方向。
+func coverCellDir(b byte) int { return int(b>>2) & 0x03 }
+
+// coverCellGroup 解出分组。
+func coverCellGroup(b byte) int { return int(b) & 0x03 }
+
+// packCoverCell 打包一个格子（与 TS 侧 `packCell` 一致）。
+func packCoverCell(typ, dir, group int) byte {
+	return byte(((typ & 0x0f) << 4) | ((dir & 0x03) << 2) | (group & 0x03))
+}
+
+// CoverGrid 是解码后的 cover 盘面。
+type CoverGrid struct {
+	W, H  int
+	Bytes []byte
+}
+
+// decodeCoverGrid 解码 base64 网格（每格 1 字节）。
+func decodeCoverGrid(b64 string, w, h int) (*CoverGrid, error) {
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return nil, fmt.Errorf("base64 解码: %w", err)
+	}
+	if len(raw) != w*h {
+		return nil, fmt.Errorf("网格长度 %d != %d", len(raw), w*h)
+	}
+	return &CoverGrid{W: w, H: h, Bytes: raw}, nil
+}
+
+// TypeAt 返回某格类型（拍平索引）。
+func (g *CoverGrid) TypeAt(idx int) int {
+	if idx < 0 || idx >= len(g.Bytes) {
+		return CoverVoid
+	}
+	return coverCellType(g.Bytes[idx])
+}
+
+// DirAt 返回某格方向（单向门用）。
+func (g *CoverGrid) DirAt(idx int) int {
+	if idx < 0 || idx >= len(g.Bytes) {
+		return 0
+	}
+	return coverCellDir(g.Bytes[idx])
+}
+
+// GroupAt 返回某格分组（星星编号 / 钥匙配对 / 传送门配对）。
+func (g *CoverGrid) GroupAt(idx int) int {
+	if idx < 0 || idx >= len(g.Bytes) {
+		return 0
+	}
+	return coverCellGroup(g.Bytes[idx])
+}
+
+// Walkable 返回可走格（拍平索引，升序）。
+//
+// **可走 = 除 VOID 与 BLOCK 以外的所有格** —— 与 TypeScript 侧
+// `walkableCells` 完全一致。
+func (g *CoverGrid) Walkable() []int {
+	out := make([]int, 0, len(g.Bytes))
+	for i, b := range g.Bytes {
+		t := coverCellType(b)
+		if t == CoverVoid || t == CoverBlock {
+			continue
+		}
+		out = append(out, i)
+	}
+	return out
+}
+
+// CoverRuleSet 是局部编号体系的规则集（与 TS 侧 RuleSet 同构）。
+//
+// 为什么要有局部编号：哈密顿求解器在 0..n-1 的密集编号上跑，
+// 拍平索引会有大量空洞（VOID/BLOCK），缓存与剪枝都不划算。
+type CoverRuleSet struct {
+	N  int
+	W  int
+	H  int
+	// LocalOf: 拍平索引 -> 局部编号；不可走为 -1
+	LocalOf []int
+	// FlatOf: 局部编号 -> 拍平索引
+	FlatOf []int
+	// TypeOf / DirOf / GroupOf: 局部编号 -> 对应属性
+	TypeOf  []byte
+	DirOf   []byte
+	GroupOf []byte
+	// Nbr: 局部编号 * 4 + 方向 -> 相邻局部编号；无则为 -1
+	Nbr []int
+	// PortalOf: 局部编号 -> 传送门搭档；无则为 -1
+	PortalOf []int
+	// StartAt / EndAt: 起终点约束；-1 = 自由
+	StartAt int
+	EndAt   int
+}
+
+// buildCoverRuleSet 由盘面与可走格列表构造规则集。
+func buildCoverRuleSet(cells []int, g *CoverGrid) *CoverRuleSet {
+	n := len(cells)
+	rs := &CoverRuleSet{
+		N:        n,
+		W:        g.W,
+		H:        g.H,
+		LocalOf:  make([]int, g.W*g.H),
+		FlatOf:   make([]int, n),
+		TypeOf:   make([]byte, n),
+		DirOf:    make([]byte, n),
+		GroupOf:  make([]byte, n),
+		Nbr:      make([]int, n*4),
+		PortalOf: make([]int, n),
+		StartAt:  -1,
+		EndAt:    -1,
+	}
+	for i := range rs.LocalOf {
+		rs.LocalOf[i] = -1
+	}
+	for i := range rs.Nbr {
+		rs.Nbr[i] = -1
+	}
+	for i := range rs.PortalOf {
+		rs.PortalOf[i] = -1
+	}
+	for i, c := range cells {
+		rs.LocalOf[c] = i
+		rs.FlatOf[i] = c
+		// **只存解出来的字段**，不存原始字节 ——
+		// 存原始字节的话 `rs.TypeOf[v] == CoverGate` 这类比较永远不成立
+		// （类型在高位，字节值是 type<<4|dir<<2|group）。
+		rs.TypeOf[i] = byte(g.TypeAt(c))
+		rs.DirOf[i] = byte(g.DirAt(c))
+		rs.GroupOf[i] = byte(g.GroupAt(c))
+	}
+	for i := 0; i < n; i++ {
+		c := rs.FlatOf[i]
+		x := c % rs.W
+		y := c / rs.W
+		if y > 0 {
+			rs.Nbr[i*4+CoverDirUp] = rs.LocalOf[c-rs.W]
+		}
+		if y < rs.H-1 {
+			rs.Nbr[i*4+CoverDirDown] = rs.LocalOf[c+rs.W]
+		}
+		if x > 0 {
+			rs.Nbr[i*4+CoverDirLeft] = rs.LocalOf[c-1]
+		}
+		if x < rs.W-1 {
+			rs.Nbr[i*4+CoverDirRight] = rs.LocalOf[c+1]
+		}
+	}
+	// 传送门配对：同 group 的格按顺序两两配对
+	byGroup := map[int][]int{}
+	for i := 0; i < n; i++ {
+		if int(rs.TypeOf[i]) != CoverPortal {
+			continue
+		}
+		g := int(rs.GroupOf[i])
+		byGroup[g] = append(byGroup[g], i)
+	}
+	for _, arr := range byGroup {
+		for k := 0; k+1 < len(arr); k += 2 {
+			rs.PortalOf[arr[k]] = arr[k+1]
+			rs.PortalOf[arr[k+1]] = arr[k]
+		}
+	}
+	return rs
+}
+
+// coverEnterable 某格能否进入（不考虑已走状态之外的一切）。
+func coverEnterable(rs *CoverRuleSet, v int, visited []bool, keyMask int) bool {
+	if v < 0 || visited[v] {
+		return false
+	}
+	if int(rs.TypeOf[v]) == CoverGate {
+		grp := int(rs.GroupOf[v])
+		if keyMask&(1<<grp) == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// coverStepMove 从 cur 沿 dir 移动一步；若是冰块则滑行到撞墙。
+//
+// 返回新消耗的局部编号序列；不可移动返回 nil。
+//
+// **与 TS 侧 `stepMove` 逐行对应** —— 冰块沿「进入方向」滑行，
+// 传送门是「可选边」（不算传送也能走进去）。
+func coverStepMove(rs *CoverRuleSet, cur, dir int, visited []bool, keyMask int) []int {
+	// 单向门：只能沿指定方向离开
+	if int(rs.TypeOf[cur]) == CoverOneway && int(rs.DirOf[cur]) != dir {
+		return nil
+	}
+	first := rs.Nbr[cur*4+dir]
+	if !coverEnterable(rs, first, visited, keyMask) {
+		return nil
+	}
+	consumed := []int{first}
+	if int(rs.TypeOf[first]) != CoverIce {
+		return consumed
+	}
+	// 冰块：沿进入方向继续滑行，直到下一格不可进入
+	curCell := first
+	for {
+		nx := rs.Nbr[curCell*4+dir]
+		if !coverEnterable(rs, nx, visited, keyMask) {
+			break
+		}
+		consumed = append(consumed, nx)
+		curCell = nx
+	}
+	return consumed
+}
+
+// coverCandidateMoves 枚举 cur 的所有候选移动。
+//
+// 除四邻接移动外，传送门格额外提供一条「跳到搭档」的边。
+func coverCandidateMoves(rs *CoverRuleSet, cur int, visited []bool, keyMask int) []coverMove {
+	out := make([]coverMove, 0, 5)
+	for dir := 0; dir < 4; dir++ {
+		consumed := coverStepMove(rs, cur, dir, visited, keyMask)
+		if consumed == nil {
+			continue
+		}
+		out = append(out, coverMakeMove(rs, consumed))
+	}
+	if int(rs.TypeOf[cur]) == CoverPortal {
+		partner := rs.PortalOf[cur]
+		if partner >= 0 && !visited[partner] {
+			out = append(out, coverMakeMove(rs, []int{partner}))
+		}
+	}
+	return out
+}
+
+// coverMove 是一次移动的结果。
+type coverMove struct {
+	Dir       int
+	Consumed  []int
+	Target    int
+	Shard     int // 拾取的星星分组（1 基）；0 = 无
+	Key       int // 拾取的钥匙分组（1 基）；0 = 无
+	ViaPortal bool
+}
+
+// coverMakeMove 组装一次移动（含星星/钥匙拾取信息）。
+//
+// **必须走这个函数** —— 直接构造 `coverMove` 会丢掉 Shard/Key 字段，
+// 于是回放时「星星顺序」永远看不到正确的编号，
+// 表现为「星星顺序错误：期望 0，实际 1」。
+func coverMakeMove(rs *CoverRuleSet, consumed []int) coverMove {
+	mv := coverMove{
+		Dir:      -1,
+		Consumed: consumed,
+		Target:   consumed[len(consumed)-1],
+	}
+	for _, c := range consumed {
+		switch int(rs.TypeOf[c]) {
+		case CoverShard:
+			mv.Shard = int(rs.GroupOf[c]) + 1
+		case CoverKey:
+			mv.Key = int(rs.GroupOf[c]) + 1
+		}
+	}
+	return mv
+}
+
+// ValidateCoverPath 按**完整规则**回放并校验一条 cover 路径。
+//
+// 校验项（与 TS 侧 `replay` 一致）：
+//   1. 路径长度 == 可走格数（必须铺满）
+//   2. 每一步是合法移动（冰块滑行、单向门方向、钥匙门、传送门）
+//   3. 星星按编号顺序收集
+//   4. 起终点约束
+//   5. 覆盖全部可走格（不重复、不交叉）
+//
+// @param cells 解码后的可走格（拍平索引，升序）
+// @param grid  解码后的盘面
+// @param path  拍平索引序列（客户端上报的格式）
+// @param startAt 起点拍平索引；-1 = 自由
+// @param endAt   终点拍平索引；-1 = 自由
+func ValidateCoverPath(cells []int, grid *CoverGrid, path []int, startAt, endAt int) error {
+	rs := buildCoverRuleSet(cells, grid)
+	if startAt >= 0 {
+		rs.StartAt = rs.LocalOf[startAt]
+	}
+	if endAt >= 0 {
+		rs.EndAt = rs.LocalOf[endAt]
+	}
+	// **拍平索引 → 局部编号**。
+	//
+	// 客户端上报的是拍平索引（`y*w+x`，能直接定位到 grid），
+	// 而回放用的是局部编号（0..n-1 的密集编号）。
+	// 两者混用会让第一格就「越界」—— 拍平索引在 9×9 盘上最大 80，
+	// 而局部编号只有 0..n-1。
+	localPath := make([]int, len(path))
+	for i, f := range path {
+		if f < 0 || f >= len(rs.LocalOf) {
+			return &PathValidationError{Reason: fmt.Sprintf("第 %d 步索引越界", i)}
+		}
+		l := rs.LocalOf[f]
+		if l < 0 {
+			return &PathValidationError{Reason: fmt.Sprintf("第 %d 步落在不可走格上", i)}
+		}
+		localPath[i] = l
+	}
+	return replayCoverPath(rs, localPath)
+}
+
+// replayCoverPath 回放校验（局部编号路径）。
+func replayCoverPath(rs *CoverRuleSet, pathLocal []int) error {
+	n := rs.N
+	if len(pathLocal) != n {
+		return &PathValidationError{Reason: fmt.Sprintf("路径长度 %d != 可走格数 %d", len(pathLocal), n)}
+	}
+	visited := make([]bool, n)
+	keyMask := 0
+	shardNext := 0 // 0 基：下一个必须收集的星星分组
+
+	cur := pathLocal[0]
+	if cur < 0 || cur >= n {
+		return &PathValidationError{Reason: "起点越界"}
+	}
+	if rs.StartAt >= 0 && cur != rs.StartAt {
+		return &PathValidationError{Reason: fmt.Sprintf("起点应为 %d，实际 %d", rs.StartAt, cur)}
+	}
+	visited[cur] = true
+	if int(rs.TypeOf[cur]) == CoverKey {
+		keyMask |= 1 << int(rs.GroupOf[cur])
+	}
+	if int(rs.TypeOf[cur]) == CoverShard {
+		shardNext = int(rs.GroupOf[cur]) + 1
+	}
+
+	p := 1
+	for p < len(pathLocal) {
+		moves := coverCandidateMoves(rs, cur, visited, keyMask)
+		var matched *coverMove
+		for i := range moves {
+			mv := &moves[i]
+			if p+len(mv.Consumed) > len(pathLocal) {
+				continue
+			}
+			ok := true
+			for k, c := range mv.Consumed {
+				if c != pathLocal[p+k] {
+					ok = false
+					break
+				}
+			}
+			if ok {
+				matched = mv
+				break
+			}
+		}
+		if matched == nil {
+			return &PathValidationError{Reason: fmt.Sprintf("第 %d 步不是合法移动（当前 %d）", p, cur)}
+		}
+		// 星星顺序
+		for _, c := range matched.Consumed {
+			if int(rs.TypeOf[c]) == CoverShard && int(rs.GroupOf[c]) != shardNext {
+				return &PathValidationError{Reason: fmt.Sprintf("星星顺序错误：期望 %d，实际 %d", shardNext, int(rs.GroupOf[c]))}
+			}
+		}
+		for _, c := range matched.Consumed {
+			visited[c] = true
+		}
+		if matched.Key > 0 {
+			keyMask |= 1 << (matched.Key - 1)
+		}
+		if matched.Shard > 0 {
+			shardNext = matched.Shard
+		}
+		cur = matched.Target
+		p += len(matched.Consumed)
+	}
+
+	if rs.EndAt >= 0 && cur != rs.EndAt {
+		return &PathValidationError{Reason: fmt.Sprintf("终点应为 %d，实际 %d", rs.EndAt, cur)}
+	}
+	for i := 0; i < n; i++ {
+		if !visited[i] {
+			return &PathValidationError{Reason: fmt.Sprintf("未覆盖格 %d", i)}
+		}
+	}
+	return nil
+}
+
+// DecodeCoverSolution 解码解（"起点,步数,base64(方向序列)"）。
+//
+// 返回拍平索引序列。
+//
+// 编码格式见 TS 侧 `codec.ts` 的 `encodeSolution`：
+// 每 4 个方向打包成 1 字节（每个方向 2 bit，高位在前）。
+func DecodeCoverSolution(s string, w int) ([]int, error) {
+	parts := splitComma(s)
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("解格式非法")
+	}
+	start, err := atoiSafe(parts[0])
+	if err != nil {
+		return nil, err
+	}
+	steps, err := atoiSafe(parts[1])
+	if err != nil {
+		return nil, err
+	}
+	bin, err := base64.StdEncoding.DecodeString(parts[2])
+	if err != nil {
+		return nil, fmt.Errorf("解 base64 解码: %w", err)
+	}
+	path := make([]int, 0, steps+1)
+	path = append(path, start)
+	cur := start
+	for i := 0; i < steps; i++ {
+		b := bin[i/4]
+		d := int(b>>(6-(i%4)*2)) & 0b11
+		switch d {
+		case CoverDirUp:
+			cur -= w
+		case CoverDirDown:
+			cur += w
+		case CoverDirLeft:
+			cur--
+		default:
+			cur++
+		}
+		path = append(path, cur)
+	}
+	return path, nil
+}

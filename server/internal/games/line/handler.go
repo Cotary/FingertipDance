@@ -19,12 +19,24 @@ type SkinConfig struct {
 }
 
 // ConfigHandler 返回关卡版本、皮肤表与广告配置。
+//
+// ## 两套关卡表
+//
+// 经典模式（起终点连线）与 cover 模式（铺满全盘）各有自己的表，
+// 版本号必须**分别**下发 —— 客户端按版本号决定要不要重拉，
+// 只报一个版本号的话，改了 cover 表客户端却以为没变。
+//
+// `levelVersion` / `levelCount` 保留**经典模式**的语义（老客户端在用），
+// cover 的用 `coverLevelVersion` / `coverLevelCount`。
 func ConfigHandler(skins []SkinConfig, adID string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		core.OK(c, gin.H{
 			"levelVersion": Levels.Version(),
 			"levelCount":   Levels.Count(),
-			"skins":        skins,
+			// cover 模式（现行玩法）的表版本与关数
+			"coverLevelVersion": CoverLevels.Version(),
+			"coverLevelCount":   CoverLevels.Count(),
+			"skins":             skins,
 			"ad": gin.H{
 				"rewardedVideoId": adID,
 				"interstitialId":  "",
@@ -40,6 +52,10 @@ func ConfigHandler(skins []SkinConfig, adID string) gin.HandlerFunc {
 }
 
 // LevelsHandler 分批下发关卡表。
+//
+// Deprecated: **经典模式已下线** —— 客户端现在只用 cover 模式
+// （`/api/levels-v3`）。这个接口保留是为了兼容老客户端，
+// 新的客户端代码不要调用它。
 func LevelsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		from, err := strconv.Atoi(c.DefaultQuery("from", "1"))

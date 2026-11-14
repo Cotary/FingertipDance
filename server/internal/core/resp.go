@@ -12,6 +12,7 @@ const (
 	CodeBadRequest    = 4000
 	CodeUnauthorized  = 4001
 	CodeRateLimit     = 4002
+	CodeForbidden     = 4003
 	CodeLevelNotFound = 4004
 	CodeStepsTooLow   = 4005
 	CodeTimeInvalid   = 4006

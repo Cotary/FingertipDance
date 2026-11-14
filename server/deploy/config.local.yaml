@@ -1,15 +1,47 @@
 server:
-  port: 8080
-  addr: ":8080"
+  # 本地开发端口。
+  # 8080 这类低位端口容易被别的服务占用，且占用者可能带自动重启的 supervisor，
+  # 一旦被抢占我们这边就会「莫名连不上」。统一挪到 50001 高位段。
+  port: 50001
+  addr: ":50001"
 db:
   dsn: "postgres://fgame:fgame@127.0.0.1:15432/fgame?sslmode=disable"
 redis:
   addr: "127.0.0.1:6379"
   db: 0
 jwt:
+  # ⚠️ 本地开发用的弱密钥。**生产环境必须用环境变量 JWT_SECRET 覆盖**
+  # （见 internal/core/config.go 的 overrideFromEnv）。
   secret: "dev-secret-change-me"
+  # 令牌有效期（小时）。720 = 30 天。
+  # 本地开发图省事设长一点；生产建议 24~72 小时 ——
+  # 令牌泄露后的可用窗口太长得不偿失。
   ttl_hours: 720
 wechat:
   appid: "wxmock"
   secret: "mocksecret"
   mock: true
+cors:
+  # 跨域白名单。
+  #
+  # `*` = 允许所有来源 —— **只限本地开发**。
+  # 生产环境请改成自己的域名，例如：
+  #   allowed_origins:
+  #     - "https://game.example.com"
+  #
+  # 也可以用环境变量 CORS_ALLOWED_ORIGINS（逗号分隔）覆盖。
+  allowed_origins:
+    - "*"
+  # 是否允许携带 Cookie。与 `*` 不能共存（浏览器规范），配 `*` 时会被忽略。
+  allow_credentials: false
+debug:
+  # 调试功能开关（跳关接口 `/api/debug/jump`）。
+  #
+  # **仅限本地/测试环境**。打开后可以在地图上直接点任意一关，
+  # 服务端会同步把 `max_level` 推到那一关的前一关。
+  #
+  # 生产环境必须保持关闭（默认 false）——
+  # 关闭时该接口直接返回 403，数据一点不动。
+  #
+  # 也可以用环境变量 DEBUG_ENABLED（true/false）覆盖。
+  enabled: true

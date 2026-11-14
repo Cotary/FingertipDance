@@ -22,6 +22,16 @@ type progressReq struct {
 	Skipped  bool  `json:"skipped"`
 }
 
+// 关卡记录模式（`level_records.mode`）。
+//
+// 经典模式与 cover 模式**共用同一套关号空间**（1..1000），
+// 但记录必须隔离 —— 否则同一个 (uid, level_idx) 会被两种模式覆写，
+// 星级也会按错误的 `shortest` 算。
+const (
+	ModeClassic = 0 // 经典模式（起终点连线）
+	ModeCover   = 1 // cover 模式（铺满全盘）
+)
+
 // unlockedSkinInfo 解锁的皮肤信息。
 type unlockedSkinInfo struct {
 	ID   string `json:"id"`
@@ -32,12 +42,11 @@ type unlockedSkinInfo struct {
 var nowFunc = func() time.Time { return time.Now() }
 
 // ProgressHandler 上报通关成绩，校验合法性并推进进度。
+//
+// Deprecated: **经典模式已下线** —— 客户端现在只用 cover 模式
+// （`/api/cover/progress`）。这个接口保留是为了兼容老客户端，
+// 新的客户端代码不要调用它。
 func ProgressHandler(db *core.DB, rdb *core.Redis, skins []SkinConfig) gin.HandlerFunc {
-	skinMap := make(map[string]string, len(skins))
-	for _, s := range skins {
-		skinMap[s.ID] = s.Name
-	}
-
 	return func(c *gin.Context) {
 		var req progressReq
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -84,7 +93,7 @@ func ProgressHandler(db *core.DB, rdb *core.Redis, skins []SkinConfig) gin.Handl
 		}
 
 		// ── 事务写入 ──
-		res, err := applyProgress(db, uid, lv, req, skinMap)
+		res, err := applyProgress(db, uid, lv, req, skins)
 		if err != nil {
 			core.Fail(c, core.CodeInternal, "写入进度失败: "+err.Error())
 			return
@@ -116,12 +125,18 @@ type progressResult struct {
 }
 
 // applyProgress 在事务内更新关卡记录、用户进度、排行榜与皮肤。
-func applyProgress(db *core.DB, uid int64, lv *SerializedLevel, req progressReq, skinMap map[string]string) (*progressResult, error) {
+func applyProgress(db *core.DB, uid int64, lv *SerializedLevel, req progressReq, skins []SkinConfig) (*progressResult, error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return nil, fmt.Errorf("开启事务: %w", err)
 	}
 	defer tx.Rollback()
+
+	// 锁 `users` 行，把「读-改-写」串行化（详见 lockUserRow 的说明）。
+	// 不锁的话并发提交会撞主键（INSERT firstPass）或丢一次 `total_steps` 累加。
+	if err := lockUserRow(tx, uid); err != nil {
+		return nil, err
+	}
 
 	now := nowFunc()
 
@@ -129,8 +144,8 @@ func applyProgress(db *core.DB, uid int64, lv *SerializedLevel, req progressReq,
 	var oldSteps, oldTime int
 	var oldSkipped bool
 	err = tx.QueryRow(
-		"SELECT steps, time_ms, skipped FROM level_records WHERE uid=$1 AND level_idx=$2",
-		uid, lv.Idx,
+		"SELECT steps, time_ms, skipped FROM level_records WHERE uid=$1 AND mode=$2 AND level_idx=$3",
+		uid, ModeClassic, lv.Idx,
 	).Scan(&oldSteps, &oldTime, &oldSkipped)
 	firstPass := errors.Is(err, sql.ErrNoRows)
 	if err != nil && !firstPass {
@@ -147,13 +162,13 @@ func applyProgress(db *core.DB, uid int64, lv *SerializedLevel, req progressReq,
 
 	if firstPass {
 		_, err = tx.Exec(
-			"INSERT INTO level_records (uid, level_idx, steps, time_ms, path, skipped, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
-			uid, lv.Idx, req.Steps, req.TimeMs, string(pathJSON), skipped, now,
+			"INSERT INTO level_records (uid, mode, level_idx, steps, time_ms, path, skipped, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+			uid, ModeClassic, lv.Idx, req.Steps, req.TimeMs, string(pathJSON), skipped, now,
 		)
 	} else if isNewBest {
 		_, err = tx.Exec(
-			"UPDATE level_records SET steps=$1, time_ms=$2, path=$3, skipped=$4 WHERE uid=$5 AND level_idx=$6",
-			req.Steps, req.TimeMs, string(pathJSON), skipped, uid, lv.Idx,
+			"UPDATE level_records SET steps=$1, time_ms=$2, path=$3, skipped=$4 WHERE uid=$5 AND mode=$6 AND level_idx=$7",
+			req.Steps, req.TimeMs, string(pathJSON), skipped, uid, ModeClassic, lv.Idx,
 		)
 	}
 	if err != nil {
@@ -184,39 +199,21 @@ func applyProgress(db *core.DB, uid int64, lv *SerializedLevel, req progressReq,
 
 	// 皮肤解锁：仅在真正通关（未跳过）且该关有关联皮肤时发放
 	var unlocked *unlockedSkinInfo
-	if !req.Skipped && lv.UnlockSkin != nil && *lv.UnlockSkin != "" {
-		var unlockedJSON string
-		row := tx.QueryRow("SELECT unlocked_skins FROM users WHERE id=$1", uid)
-		if err := row.Scan(&unlockedJSON); err != nil {
-			return nil, fmt.Errorf("查询皮肤: %w", err)
-		}
-		var list []string
-		_ = json.Unmarshal([]byte(unlockedJSON), &list)
-		if list == nil {
-			list = []string{}
-		}
-		found := false
-		for _, id := range list {
-			if id == *lv.UnlockSkin {
-				found = true
-				break
-			}
-		}
-		if !found {
-			list = append(list, *lv.UnlockSkin)
-			newJSON, _ := json.Marshal(list)
-			_, err = tx.Exec("UPDATE users SET unlocked_skins=$1 WHERE id=$2", string(newJSON), uid)
-			if err != nil {
-				return nil, fmt.Errorf("写入皮肤: %w", err)
-			}
-			unlocked = &unlockedSkinInfo{ID: *lv.UnlockSkin, Name: skinMap[*lv.UnlockSkin]}
+	if !req.Skipped {
+		unlocked, err = grantSkinForLevel(tx, uid, lv.UnlockSkin, skins)
+		if err != nil {
+			return nil, err
 		}
 	}
 
 	// 成绩流水
+	//
+	// 必须带 `mode`（=经典）与 `undos`（=0）——
+	// 挑战接口查历史最佳时按 `mode` 过滤，两种模式共用关号空间，
+	// 不写 mode 的话 cover 的记录会被当成经典的。
 	_, err = tx.Exec(
-		"INSERT INTO scores (uid, level_idx, steps, time_ms, created_at) VALUES ($1,$2,$3,$4,$5)",
-		uid, lv.Idx, req.Steps, req.TimeMs, now,
+		"INSERT INTO scores (uid, mode, level_idx, steps, time_ms, undos, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+		uid, ModeClassic, lv.Idx, req.Steps, req.TimeMs, 0, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("写入成绩流水: %w", err)
