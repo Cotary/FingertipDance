@@ -5,6 +5,7 @@ node_modules/
 dist/
 games/line/dist/
 games/line/out/
+games/line/.vite/
 
 # 本地环境
 .env
