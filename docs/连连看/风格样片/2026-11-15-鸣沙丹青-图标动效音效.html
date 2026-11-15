@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>鸣沙·丹青 · 图标/动效/音效 细化</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --ink: #141118;
+  --ink2: #1C1822;
+  --ink3: #242030;
+  --paper: #F2EDE2;
+  --dim: #948A7C;
+  --dim2: #6B6152;
+  --gold: #C99B3F;
+  --gold-hi: #E2B558;
+  --red: #B5472E;
+  --green: #5E8C6E;
+  --blue: #4A6E8A;
+  --serif: 'Noto Serif SC', serif;
+  --sans: 'Noto Sans SC', sans-serif;
+}
+body {
+  background: var(--ink);
+  background-image:
+    radial-gradient(1100px 480px at 50% -8%, rgba(201,155,63,.06), transparent 60%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+  color: var(--paper);
+  font-family: var(--sans); font-weight: 300;
+}
+.wrap { max-width: 1180px; margin: 0 auto; padding: 56px 40px 80px; }
+
+/* 报头 */
+.head { text-align: center; margin-bottom: 60px; }
+.head .kicker { font-family: var(--serif); font-size: 12px; letter-spacing: .55em; color: var(--gold); margin-bottom: 18px; font-weight: 600; }
+.head h1 { font-family: var(--serif); font-size: 42px; font-weight: 900; letter-spacing: .18em; line-height: 1.35; }
+.head h1 em { font-style: normal; color: var(--gold-hi); }
+.head .sub { margin-top: 16px; font-size: 13px; letter-spacing: .14em; color: var(--dim); line-height: 2.1; }
+.rule { width: 56px; height: 1px; background: var(--gold); margin: 26px auto 0; opacity: .7; }
+
+/* 区块 */
+.sec { margin-bottom: 72px; }
+.sec-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 28px; }
+.sec-head .no { font-family: var(--serif); font-size: 13px; color: var(--gold); letter-spacing: .3em; font-weight: 700; }
+.sec-head h2 { font-family: var(--serif); font-size: 24px; font-weight: 700; letter-spacing: .22em; }
+.sec-head .en { font-size: 10px; letter-spacing: .34em; color: var(--dim2); text-transform: uppercase; }
+.sec-lead { font-size: 12.5px; line-height: 2.1; letter-spacing: .05em; color: var(--dim); margin-bottom: 28px; max-width: 860px; }
+.sec-lead b { color: var(--paper); font-weight: 500; }
+
+/* ============ 图标系统 ============ */
+.icon-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 30px; }
+.icon-card {
+  background: var(--ink2); border: 1px solid rgba(201,155,63,.12);
+  border-radius: 16px; padding: 26px 16px 20px; text-align: center;
+}
+.icon-stage {
+  width: 92px; height: 92px; margin: 0 auto 16px; border-radius: 18px;
+  display: flex; align-items: center; justify-content: center;
+  position: relative; overflow: hidden;
+}
+.icon-stage svg { width: 62px; height: 62px; }
+.icon-card .nm { font-family: var(--serif); font-size: 14px; letter-spacing: .26em; margin-bottom: 6px; font-weight: 700; }
+.icon-card .en { font-size: 9px; letter-spacing: .28em; color: var(--dim2); text-transform: uppercase; margin-bottom: 10px; }
+.icon-card .ds { font-size: 10px; line-height: 1.9; color: var(--dim); letter-spacing: .05em; }
+
+.sil-test {
+  background: var(--ink2); border: 1px solid rgba(255,255,255,.06);
+  border-radius: 16px; padding: 24px 28px; margin-bottom: 30px;
+}
+.sil-test h3 { font-family: var(--serif); font-size: 13px; letter-spacing: .3em; margin-bottom: 4px; font-weight: 700; }
+.sil-test .hint { font-size: 10.5px; color: var(--dim2); letter-spacing: .1em; margin-bottom: 18px; }
+.sil-row { display: flex; align-items: center; gap: 26px; flex-wrap: wrap; }
+.sil-item { text-align: center; }
+.sil-item .box { display: flex; gap: 8px; align-items: center; justify-content: center; }
+.sil-item .big svg { width: 44px; height: 44px; }
+.sil-item .small svg { width: 28px; height: 28px; }
+.sil-item .gs { filter: grayscale(1) contrast(1.1); }
+.sil-item .cap { margin-top: 8px; font-size: 9px; letter-spacing: .18em; color: var(--dim2); }
+
+.glyph-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.glyph-cell {
+  width: 84px; padding: 16px 8px 12px; border-radius: 13px;
+  background: rgba(201,155,63,.05); border: 1px solid rgba(201,155,63,.12);
+  text-align: center;
+}
+.glyph-cell svg { width: 38px; height: 38px; }
+.glyph-cell .cap { margin-top: 8px; font-family: var(--serif); font-size: 9.5px; letter-spacing: .22em; color: var(--dim); }
+
+/* ============ 动效系统 ============ */
+.motion-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 30px; }
+.motion-card {
+  background: var(--ink2); border: 1px solid rgba(255,255,255,.06);
+  border-radius: 16px; overflow: hidden;
+}
+.motion-stage {
+  height: 190px; position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.motion-info { padding: 18px 20px 20px; }
+.motion-info .nm { font-family: var(--serif); font-size: 15px; letter-spacing: .22em; font-weight: 700; margin-bottom: 6px; }
+.motion-info .tk { font-size: 10px; letter-spacing: .12em; color: var(--gold); margin-bottom: 8px; font-family: monospace; }
+.motion-info .ds { font-size: 10.5px; line-height: 1.95; color: var(--dim); letter-spacing: .05em; }
+.play-hint {
+  position: absolute; right: 12px; top: 12px; z-index: 5;
+  font-size: 9px; letter-spacing: .22em; color: rgba(255,245,220,.55);
+  padding: 5px 11px; border-radius: 999px;
+  background: rgba(20,15,10,.35); border: 1px solid rgba(255,245,220,.18);
+}
+
+/* 壁纸舞台 */
+.stage-wall {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.32'/%3E%3C/svg%3E"),
+    radial-gradient(130% 110% at 30% 20%, #EFE0C2, #DCC79E 55%, #CBB087 100%);
+  background-blend-mode: overlay, normal;
+}
+
+/* 棋子 */
+.mp {
+  width: 54px; height: 54px; border-radius: 11px; position: relative; overflow: hidden;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2'/%3E%3C/filter%3E%3Crect width='80' height='80' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E"),
+    linear-gradient(148deg, #6E9580, #56786A 55%, #456055);
+  background-blend-mode: overlay, normal;
+  box-shadow: 0 3px 6px rgba(110,70,30,.3), inset 0 1px 1px rgba(255,245,220,.35), inset 0 -3px 7px rgba(60,35,10,.3);
+  clip-path: polygon(3% 0, 97% 2%, 100% 96%, 4% 100%, 0 8%);
+}
+.mp.red {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2'/%3E%3C/filter%3E%3Crect width='80' height='80' filter='url(%23n)' opacity='0.45'/%3E%3C/svg%3E"),
+    linear-gradient(148deg, #B5472E, #8F3220 55%, #713A20);
+}
+.mp.pale {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2'/%3E%3C/filter%3E%3Crect width='80' height='80' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E"),
+    linear-gradient(148deg, #E8D6B0, #D2BC8E 55%, #BFA176);
+  box-shadow: 0 3px 6px rgba(110,70,30,.22), inset 0 1px 1px rgba(255,250,235,.4), inset 0 -3px 7px rgba(120,80,30,.22);
+}
+
+/* 尘粒 */
+.dust {
+  position: absolute; border-radius: 50%; pointer-events: none; z-index: 6;
+  background: radial-gradient(circle, rgba(160,110,50,.65), rgba(160,110,50,0) 70%);
+}
+
+/* 落子动效 */
+@keyframes dropIn {
+  0%   { transform: translateY(-16px) scale(1.14); opacity: 0; }
+  55%  { transform: translateY(2px) scale(.97); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes dustOut {
+  0%   { transform: translate(0,0) scale(.4); opacity: .85; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(1.5); opacity: 0; }
+}
+.anim-drop { animation: dropIn 260ms cubic-bezier(.22,1,.36,1) both; }
+.dust.puff { animation: dustOut 420ms cubic-bezier(.22,1,.36,1) forwards; }
+
+/* 连径动效 */
+.path-draw { stroke-dasharray: 460; stroke-dashoffset: 0; }
+.path-draw.go { animation: drawLine 420ms cubic-bezier(.4,0,.2,1) forwards; }
+@keyframes drawLine { from { stroke-dashoffset: 460; } to { stroke-dashoffset: 0; } }
+@keyframes giltPulse {
+  0% { opacity: .0; } 30% { opacity: .85; } 100% { opacity: .45; }
+}
+.path-glow.go { animation: giltPulse 420ms ease-out forwards; }
+
+/* 铺满级联 */
+@keyframes settleSand {
+  0%   { transform: translateY(-10px) scale(1.08); opacity: 0; }
+  60%  { transform: translateY(1px) scale(.98); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+.anim-settle { animation: settleSand 260ms cubic-bezier(.22,1,.36,1) both; }
+
+/* 盖印动效 */
+@keyframes sealDrop {
+  0%   { transform: translateY(-70px) rotate(-8deg) scale(1.15); opacity: 0; }
+  55%  { transform: translateY(3px) rotate(-2deg) scale(.96); opacity: 1; }
+  72%  { transform: translateY(-3px) rotate(-1deg) scale(1.02); }
+  100% { transform: translateY(0) rotate(0deg) scale(1); opacity: 1; }
+}
+@keyframes wallShake {
+  0%,100% { transform: translate(0,0); }
+  25% { transform: translate(-3px,1px); }
+  50% { transform: translate(2px,-2px); }
+  75% { transform: translate(-1px,1px); }
+}
+.anim-seal { animation: sealDrop 320ms cubic-bezier(.34,1.56,.64,1) both; }
+.shake { animation: wallShake 260ms ease-out; }
+
+/* 按压动效 */
+@keyframes pressDown {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(.93); }
+  100% { transform: scale(1); }
+}
+@keyframes ringOut {
+  0%   { transform: scale(.6); opacity: .75; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+.anim-press { animation: pressDown 220ms cubic-bezier(.22,1,.36,1); }
+.ring {
+  position: absolute; inset: 0; border-radius: 12px; pointer-events: none;
+  border: 2.5px solid rgba(185,120,45,.75); z-index: 5;
+  animation: ringOut 380ms cubic-bezier(.22,1,.36,1) forwards;
+}
+
+/* 印章 */
+.seal {
+  width: 64px; height: 64px; border-radius: 10px;
+  background: linear-gradient(155deg, #C24A30, #A93A24 55%, #8F3220);
+  box-shadow: 0 6px 14px rgba(80,30,10,.45), inset 0 2px 3px rgba(255,220,190,.35), inset 0 -4px 8px rgba(70,25,8,.4);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 30px; font-weight: 900; color: rgba(255,240,225,.92);
+  letter-spacing: 0;
+}
+.seal .chao { transform: rotate(-2deg); }
+
+/* token 表 */
+.token-table { width: 100%; border-collapse: collapse; }
+.token-table th {
+  text-align: left; font-family: var(--serif); font-size: 10.5px; letter-spacing: .26em;
+  color: var(--gold); font-weight: 700; padding: 10px 12px;
+  border-bottom: 1px solid rgba(201,155,63,.25);
+}
+.token-table td {
+  padding: 11px 12px; border-bottom: 1px solid rgba(255,255,255,.05);
+  font-size: 11px; letter-spacing: .04em; color: var(--dim); line-height: 1.8; vertical-align: top;
+}
+.token-table td:first-child { font-family: var(--serif); color: var(--paper); letter-spacing: .16em; font-size: 11px; width: 88px; }
+.token-table td b { color: var(--gold-hi); font-weight: 500; font-family: monospace; font-size: 10.5px; }
+.token-wrap {
+  background: var(--ink2); border: 1px solid rgba(255,255,255,.06);
+  border-radius: 16px; padding: 26px 30px;
+}
+
+/* ============ 音效系统 ============ */
+.snd-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 30px; }
+.snd-card {
+  background: var(--ink2); border: 1px solid rgba(255,255,255,.06);
+  border-radius: 16px; padding: 24px 26px;
+  display: flex; gap: 20px; align-items: center; cursor: pointer;
+  transition: border-color .2s;
+}
+.snd-card:hover { border-color: rgba(201,155,63,.4); }
+.snd-card:active { transform: scale(.985); }
+.snd-wave {
+  width: 96px; height: 56px; flex-shrink: 0; border-radius: 10px;
+  background: rgba(201,155,63,.06); border: 1px solid rgba(201,155,63,.14);
+  display: flex; align-items: center; justify-content: center;
+}
+.snd-meta .nm { font-family: var(--serif); font-size: 16px; letter-spacing: .22em; font-weight: 700; margin-bottom: 3px; }
+.snd-meta .en { font-size: 9px; letter-spacing: .3em; color: var(--dim2); text-transform: uppercase; margin-bottom: 8px; }
+.snd-meta .ds { font-size: 10.5px; line-height: 1.95; color: var(--dim); letter-spacing: .05em; }
+.snd-meta .tk { margin-top: 7px; font-family: monospace; font-size: 9.5px; color: var(--gold); letter-spacing: .06em; }
+.snd-play {
+  margin-left: auto; width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
+  border: 1.5px solid rgba(201,155,63,.5); background: rgba(201,155,63,.1);
+  display: flex; align-items: center; justify-content: center;
+}
+.snd-play svg { width: 16px; height: 16px; }
+
+.vibe-bar {
+  background: rgba(201,155,63,.05); border: 1px solid rgba(201,155,63,.16);
+  border-radius: 16px; padding: 24px 30px;
+}
+.vibe-bar h3 { font-family: var(--serif); font-size: 13px; letter-spacing: .32em; color: var(--gold); margin-bottom: 16px; font-weight: 700; }
+.vibe-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.vibe-btn {
+  padding: 13px 22px; border-radius: 12px; cursor: pointer;
+  background: var(--ink2); border: 1px solid rgba(255,255,255,.1);
+  font-family: var(--serif); font-size: 12px; letter-spacing: .22em; color: var(--paper);
+  transition: all .18s;
+}
+.vibe-btn:hover { border-color: rgba(201,155,63,.5); color: var(--gold-hi); }
+.vibe-btn:active { transform: scale(.95); }
+.vibe-btn .pat {
+  display: block; margin-top: 4px; font-family: monospace; font-size: 9px;
+  letter-spacing: .1em; color: var(--dim2);
+}
+.vibe-btn.goldish { border-color: rgba(201,155,63,.5); background: rgba(201,155,63,.1); }
+
+.foot {
+  margin-top: 66px; padding-top: 26px; border-top: 1px solid rgba(255,255,255,.06);
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 10px; letter-spacing: .3em; color: var(--dim2);
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="head">
+    <div class="kicker">MINGSHA &middot; MINERAL FRESCO</div>
+    <h1>鸣沙 · 丹青　<em>图标 / 动效 / 音效</em>　细化</h1>
+    <div class="sub">
+      主题 03 三通道规格稿 · 可点可听可看<br>
+      矿物颗粒 + 壁画剥蚀的语法轴，贯穿每一个图标、每一帧动效、每一声响
+    </div>
+    <div class="rule"></div>
+  </header>
+
+  <!-- ================= 壹 · 图标系统 ================= -->
+  <section class="sec">
+    <div class="sec-head">
+      <span class="no">壹</span>
+      <h2>图标系统</h2>
+      <span class="en">Iconography</span>
+    </div>
+    <div class="sec-lead">
+      图标不是画出来的「图案」，是从壁面上<b>剥下来的色块</b>。三条画法纪律：
+      ① 每个图标都有<b>缺口</b>（剥蚀，不能是完美几何形）；
+      ② 表面必须有<b>矿物颗粒</b>（feTurbulence 噪点 ≥0.35 透明度）；
+      ③ 颜色从<b>矿物色族</b>里拿（赭石/朱砂/石绿/石青/土红/沥金），不发明新色。
+    </div>
+
+    <div class="icon-grid" id="mech-icons"></div>
+
+    <div class="sil-test">
+      <h3>28px 灰度剪影测试</h3>
+      <div class="hint">doc 32 硬规矩：机制图标在 28px 灰度下仍可辨。左 44px 原色 / 中 28px 原色 / 右 28px 去色</div>
+      <div class="sil-row" id="sil-row"></div>
+    </div>
+
+    <div class="sil-test">
+      <h3>棋面纹样 · 六字纹</h3>
+      <div class="hint">格面刻纹（已铺格内），魏碑感钝笔线刻 + 颗粒；线宽 1.6 不许细过发丝</div>
+      <div class="glyph-row" id="glyph-row"></div>
+    </div>
+  </section>
+
+  <!-- ================= 贰 · 动效系统 ================= -->
+  <section class="sec">
+    <div class="sec-head">
+      <span class="no">贰</span>
+      <h2>动效系统</h2>
+      <span class="en">Motion Language</span>
+    </div>
+    <div class="sec-lead">
+      动效语言只有一个字：<b>沙</b>。所有东西都像沙一样「落下、堆起、扬起、沉淀」。
+      三个缓动族：<b>沙落</b> cubic-bezier(.22,1,.36,1) 用于沉淀类｜<b>沥线</b> cubic-bezier(.4,0,.2,1) 用于绘制类｜
+      <b>石顿</b> cubic-bezier(.34,1.56,.64,1) 用于砸击类（唯一允许回弹的地方）。<b>点卡片舞台即可重播。</b>
+    </div>
+
+    <div class="motion-grid">
+      <!-- 落子 -->
+      <div class="motion-card">
+        <div class="motion-stage stage-wall" id="st-drop" onclick="playDrop()">
+          <div class="play-hint">点击播放</div>
+          <div style="position:relative">
+            <div class="mp pale" id="drop-pale" style="position:absolute;left:-64px;top:0"></div>
+            <div class="mp" id="drop-target"></div>
+          </div>
+        </div>
+        <div class="motion-info">
+          <div class="nm">落子 · 扬尘</div>
+          <div class="tk">260ms · 沙落 · 8ms 颗粒震</div>
+          <div class="ds">色块从上方落下，触底瞬间 4 粒沙尘向斜下扬出（顺光源方向偏右下），块体先胀 14% 再沉回。声音与触感在触底帧对齐。</div>
+        </div>
+      </div>
+
+      <!-- 连径 -->
+      <div class="motion-card">
+        <div class="motion-stage stage-wall" id="st-path" onclick="playPath()">
+          <div class="play-hint">点击播放</div>
+          <svg viewBox="0 0 240 120" style="width:220px;height:110px">
+            <path class="path-glow" id="p-glow" d="M 24 88 L 92 88 L 92 36 L 210 36" fill="none" stroke="rgba(180,120,40,.5)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" opacity="0"/>
+            <path class="path-draw" id="p-line" d="M 24 88 L 92 88 L 92 36 L 210 36" fill="none" stroke="#C99B3F" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+            <path class="path-draw" id="p-hi" d="M 24 88 L 92 88 L 92 36 L 210 36" fill="none" stroke="#E8CE96" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="24" cy="88" r="5" fill="#D9A745"/>
+            <circle cx="210" cy="36" r="5" fill="#D9A745"/>
+          </svg>
+        </div>
+        <div class="motion-info">
+          <div class="nm">连径 · 沥金</div>
+          <div class="tk">420ms · 沥线 · 15ms 微颤</div>
+          <div class="ds">沥金线不是「画」出来，是「堆」出来的：主线以 dashoffset 匀速生长，高光线滞后 60ms 跟上，辉光在 30% 处脉冲一次后衰减。</div>
+        </div>
+      </div>
+
+      <!-- 铺满 -->
+      <div class="motion-card">
+        <div class="motion-stage stage-wall" id="st-cas" onclick="playCascade()">
+          <div class="play-hint">点击播放</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+            <div class="mp pale cas"></div><div class="mp cas"></div><div class="mp red cas"></div><div class="mp cas"></div>
+            <div class="mp cas"></div><div class="mp pale cas"></div><div class="mp cas"></div><div class="mp red cas"></div>
+          </div>
+        </div>
+        <div class="motion-info">
+          <div class="nm">铺满 · 沙落级联</div>
+          <div class="tk">48ms 步进 · 260ms/粒 · [10,25,10,25,18] 震</div>
+          <div class="ds">像沙子依次落进格槽：按棋盘扫掠顺序 48ms 一粒，每粒都是「落子」的压缩版。最后一粒落地时全盘沙光脉冲一次 + 土埙一记。</div>
+        </div>
+      </div>
+
+      <!-- 盖印 -->
+      <div class="motion-card">
+        <div class="motion-stage stage-wall" id="st-seal" onclick="playSeal()">
+          <div class="play-hint">点击播放</div>
+          <div id="seal-holder" style="position:relative">
+            <div class="seal" id="seal-el"><span class="chao">过</span></div>
+          </div>
+        </div>
+        <div class="motion-info">
+          <div class="nm">盖印 · 石章落壁</div>
+          <div class="tk">320ms · 石顿 · 40ms 重震</div>
+          <div class="ds">石章从高处砸下，唯一允许回弹的动效（回弹 ≤3px）。落定瞬间整面墙抖 3 帧，同时壁面从印章边缘崩落 3 粒墙屑。低频一击，不带任何欢呼。</div>
+        </div>
+      </div>
+
+      <!-- 按压 -->
+      <div class="motion-card">
+        <div class="motion-stage stage-wall" onclick="playPress()">
+          <div class="play-hint">点击播放</div>
+          <div class="mp" id="press-el" style="position:relative"></div>
+        </div>
+        <div class="motion-info">
+          <div class="nm">按压 · 掐尘环</div>
+          <div class="tk">220ms 回弹 · 380ms 尘环 · 8ms 轻震</div>
+          <div class="ds">按钮/棋子按压缩到 93%，同时一圈土红细尘环向外扩散消失——按下去是「掐起一点土」的感觉，不是玻璃拟态的光环。</div>
+        </div>
+      </div>
+
+      <!-- 转场 -->
+      <div class="motion-card">
+        <div class="motion-stage stage-wall" id="st-tr" onclick="playTrans()">
+          <div class="play-hint">点击播放</div>
+          <div id="tr-panel" style="width:150px;height:92px;border-radius:10px;background:linear-gradient(148deg,#5E8C6E,#456055);position:relative;overflow:hidden">
+            <div id="tr-veil" style="position:absolute;inset:0;background:
+              url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E&quot;),
+              linear-gradient(148deg,#E3D2B4,#CBB087); background-blend-mode: overlay, normal;"></div>
+          </div>
+        </div>
+        <div class="motion-info">
+          <div class="nm">转场 · 剥壁揭示</div>
+          <div class="tk">480ms · 沥线 · 禁用淡入淡出</div>
+          <div class="ds">页面/弹层不淡入，用「壁面剥落」揭示：新内容带着噪点撕边 mask 从一侧抹出（遮罩用 feTurbulence 粗颗粒）。永远不用纯 opacity 渐变——那是玻璃的语言，不是壁的语言。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="token-wrap">
+      <div class="col-label" style="font-family:var(--serif);font-size:11px;letter-spacing:.38em;color:var(--gold);margin-bottom:18px;font-weight:700">动效 TOKEN 表</div>
+      <table class="token-table">
+        <tr><th>动效</th><th>时长</th><th>缓动族</th><th>关键参数</th></tr>
+        <tr><td>按压</td><td><b>120 / 220ms</b></td><td>沙落</td><td>scale 0.93；尘环 380ms 扩散至 1.9 倍；禁 blur 光晕</td></tr>
+        <tr><td>落子</td><td><b>260ms</b></td><td>沙落</td><td>前 55% 下落带 14% 胀大，触底 4 粒尘向右下 35° 扬出（与光源同向）</td></tr>
+        <tr><td>连径</td><td><b>420ms</b></td><td>沥线</td><td>主线匀速生长；高光线 +60ms 滞后；辉光在 30% 处脉冲至 0.85 再衰减到 0.45</td></tr>
+        <tr><td>铺满级联</td><td><b>48ms 步进</b></td><td>沙落</td><td>扫掠顺序逐粒；末粒触发全盘「沙光脉冲」180ms + 玉磬位换土埙</td></tr>
+        <tr><td>盖印</td><td><b>320ms</b></td><td>石顿</td><td>回弹 ≤3px（全主题唯一）；墙体 3 帧抖动 ±3px；3 粒墙屑崩落</td></tr>
+        <tr><td>转场</td><td><b>480ms</b></td><td>沥线</td><td>噪点撕边 mask 推移；禁 opacity 渐变、禁缩放弹跳</td></tr>
+        <tr><td>背景常驻</td><td><b>8–14s 循环</b></td><td>linear</td><td>尘埃 6–9 粒缓慢上浮（±8px 漂移）；壁画亮度呼吸 0.98–1.02，周期 6s</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================= 叁 · 音效系统 ================= -->
+  <section class="sec">
+    <div class="sec-head">
+      <span class="no">叁</span>
+      <h2>音效系统</h2>
+      <span class="en">Sound &amp; Haptics</span>
+    </div>
+    <div class="sec-lead">
+      五声全部 Web Audio 实时合成，零音频文件。总纲与天青同源：<b>短促、克制、不拖泥</b>——
+      但音色从「瓷的清」换成「土的钝」：主能量落在中低频，高频只做颗粒感不做亮感。
+      <b>点卡片即试听（建议戴耳机）。</b>
+    </div>
+
+    <div class="snd-grid" id="snd-grid"></div>
+
+    <div class="vibe-bar">
+      <h3>触感 · 试一试（安卓浏览器直接生效）</h3>
+      <div class="vibe-row">
+        <button class="vibe-btn" onclick="vib([8])">落子 · 颗粒<span class="pat">8ms</span></button>
+        <button class="vibe-btn" onclick="vib([15])">连径 · 微颤<span class="pat">15ms</span></button>
+        <button class="vibe-btn" onclick="vib([10,25,10,25,18])">铺满 · 沙落<span class="pat">[10,25,10,25,18]</span></button>
+        <button class="vibe-btn goldish" onclick="vib([40])">盖印 · 石顿<span class="pat">40ms</span></button>
+        <button class="vibe-btn" onclick="vib([5])">按钮 · 轻点<span class="pat">5ms</span></button>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">
+    <span>主题 03 鸣沙 · 丹青 · 三通道细化</span>
+    <span>SAND &middot; MINERAL &middot; RELIEF GOLD</span>
+  </div>
+</div>
+
+<script>
+/* ================= 图标 SVG ================= */
+const GRAIN = `<defs>
+  <filter id="gr"><feTurbulence type="fractalNoise" baseFrequency="1.15" numOctaves="2" result="t"/>
+    <feColorMatrix in="t" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.32 0"/>
+    <feComposite operator="in" in2="SourceGraphic"/>
+  </filter>
+  <filter id="gr2"><feTurbulence type="fractalNoise" baseFrequency="1.3" numOctaves="2" result="t"/>
+    <feColorMatrix in="t" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.26 0"/>
+    <feComposite operator="in" in2="SourceGraphic"/>
+  </filter>
+</defs>`;
+
+const ICONS = {
+  stone: `<svg viewBox="0 0 48 48">${GRAIN}
+    <path d="M7 30 L11 13 L23 7 L39 12 L43 27 L35 41 L15 42 L7 34 Z" fill="#A2664A"/>
+    <path d="M11 13 L23 7 L27 19 L17 25 Z" fill="#C08055"/>
+    <path d="M27 19 L39 12 L43 27 L33 30 Z" fill="#8A5236"/>
+    <path d="M7 30 L15 42 L35 41 L33 30 Z" fill="#6B4526"/>
+    <path d="M7 30 L11 13 L23 7 L39 12 L43 27 L35 41 L15 42 L7 34 Z" fill="#000" filter="url(#gr)"/>
+    <path d="M14 22 L30 18" stroke="rgba(60,35,10,.55)" stroke-width="1.4" stroke-linecap="round"/>
+    <path d="M16 31 L32 27" stroke="rgba(60,35,10,.42)" stroke-width="1.2" stroke-linecap="round"/>
+    <path d="M20 36 L31 33.5" stroke="rgba(60,35,10,.35)" stroke-width="1" stroke-linecap="round"/>
+    <path d="M7 30 L11 13 L23 7 L39 12 L43 27 L35 41 L15 42 L7 34 Z" fill="none" stroke="rgba(50,28,8,.5)" stroke-width="1.1"/>
+  </svg>`,
+
+  arrow: `<svg viewBox="0 0 48 48">${GRAIN}
+    <path d="M5 24 L27 24 L27 14 L42 24 L27 34 L27 24 Z" fill="#B5472E" stroke="none"/>
+    <path d="M5 21.2 L27 21.2 L27 14 L42 24 L27 34 L27 26.8 L5 26.8 Z" fill="#B5472E"/>
+    <path d="M5 21.2 L27 21.2 L27 14 L42 24 L27 34 L27 26.8 L5 26.8 Z" fill="#D4643F" opacity="0.45" transform="translate(0,-1.4)"/>
+    <path d="M5 21.2 L27 21.2 L27 14 L42 24 L27 34 L27 26.8 L5 26.8 Z" fill="#000" filter="url(#gr)"/>
+    <circle cx="11" cy="24" r="1.4" fill="#E3D2B4" opacity=".7"/>
+    <circle cx="19" cy="22.4" r="1" fill="#E3D2B4" opacity=".55"/>
+    <circle cx="16" cy="26.2" r="1.1" fill="#E3D2B4" opacity=".5"/>
+    <path d="M5 21.2 L27 21.2 L27 14 L42 24 L27 34 L27 26.8 L5 26.8 Z" fill="none" stroke="rgba(90,30,15,.55)" stroke-width="1.1"/>
+  </svg>`,
+
+  star: `<svg viewBox="0 0 48 48">${GRAIN}
+    <path d="M24 4.5 L28.2 16.8 L41 17.2 L31 25.4 L34.4 37.8 L24 30.4 L13.2 38 L17 25.6 L7.2 17.4 L19.8 16.8 Z" fill="#D9A745"/>
+    <path d="M24 4.5 L28.2 16.8 L41 17.2 L31 25.4 L34.4 37.8 L24 30.4 L13.2 38 L17 25.6 L7.2 17.4 L19.8 16.8 Z" fill="#F0C868" opacity=".55" transform="translate(-.8,-1.2)"/>
+    <path d="M24 4.5 L28.2 16.8 L41 17.2 L31 25.4 L34.4 37.8 L24 30.4 L13.2 38 L17 25.6 L7.2 17.4 L19.8 16.8 Z" fill="#000" filter="url(#gr)"/>
+    <path d="M22.5 12 L25.5 20 L24 24" stroke="#F6E7B8" stroke-width="1.6" stroke-linecap="round" fill="none" opacity=".85"/>
+    <path d="M24 4.5 L28.2 16.8 L41 17.2 L31 25.4 L34.4 37.8 L24 30.4 L13.2 38 L17 25.6 L7.2 17.4 L19.8 16.8 Z" fill="none" stroke="rgba(120,80,20,.5)" stroke-width="1"/>
+  </svg>`,
+
+  ice: `<svg viewBox="0 0 48 48">${GRAIN}
+    <path d="M24 5 L40 15 L40 33 L24 43 L8 33 L8 15 Z" fill="#4A6E8A"/>
+    <path d="M24 5 L40 15 L24 24 Z" fill="#6E93AE"/>
+    <path d="M24 24 L40 15 L40 33 L24 33 Z" fill="#3A5A74"/>
+    <path d="M24 5 L40 15 L40 33 L24 43 L8 33 L8 15 Z" fill="#000" filter="url(#gr)"/>
+    <path d="M24 5 L24 43" stroke="rgba(230,245,255,.55)" stroke-width="1.3"/>
+    <path d="M8 15 L40 33" stroke="rgba(230,245,255,.3)" stroke-width="1"/>
+    <path d="M40 15 L8 33" stroke="rgba(230,245,255,.3)" stroke-width="1"/>
+    <path d="M24 5 L40 15 L40 33 L24 43 L8 33 L8 15 Z" fill="none" stroke="rgba(20,45,65,.55)" stroke-width="1.2"/>
+  </svg>`,
+
+  portal: `<svg viewBox="0 0 48 48">${GRAIN}
+    <circle cx="19" cy="24" r="12.5" fill="none" stroke="#5E8C6E" stroke-width="3.4"/>
+    <circle cx="30" cy="24" r="12.5" fill="none" stroke="#5E8C6E" stroke-width="3.4"/>
+    <circle cx="19" cy="24" r="12.5" fill="none" stroke="#7FA88C" stroke-width="1.4" stroke-dasharray="3 4" opacity=".8"/>
+    <circle cx="30" cy="24" r="12.5" fill="none" stroke="#7FA88C" stroke-width="1.4" stroke-dasharray="3 4" opacity=".8"/>
+    <path d="M19 11.5 A12.5 12.5 0 0 1 31 11.5" stroke="#A8C9A0" stroke-width="1.6" fill="none" stroke-linecap="round" opacity=".7"/>
+  </svg>`
+};
+
+const MECH_META = [
+  ['stone', '石障', 'STONE BLOCK', '赭石岩块 · 三道层理<br>不透明死物，反衬釉彩格'],
+  ['arrow', '单向', 'ONE WAY', '朱砂厚笔箭 · 干笔缺口<br>指向即规则，无字'],
+  ['star', '星屑', 'STAR DUST', '贴金箔星 · 撕边不齐<br>1→2→3 星递进'],
+  ['ice', '冰砖', 'ICE BRICK', '石青六边晶 · 冷 8°<br>比普通格亮，占「更亮」'],
+  ['portal', '传送门', 'PORTAL', '石绿双环 · 前实后虚<br>两枚一组，成对出现']
+];
+
+const mechHost = document.getElementById('mech-icons');
+mechHost.innerHTML = MECH_META.map(([k, nm, en, ds]) => `
+  <div class="icon-card">
+    <div class="icon-stage stage-wall">${ICONS[k]}</div>
+    <div class="nm">${nm}</div>
+    <div class="en">${en}</div>
+    <div class="ds">${ds}</div>
+  </div>`).join('');
+
+document.getElementById('sil-row').innerHTML = MECH_META.map(([k, nm]) => `
+  <div class="sil-item">
+    <div class="box">
+      <div class="big">${ICONS[k]}</div>
+      <div class="small">${ICONS[k]}</div>
+      <div class="small gs">${ICONS[k]}</div>
+    </div>
+    <div class="cap">${nm}</div>
+  </div>`).join('');
+
+/* 棋面纹样 */
+const GLYPHS = {
+  moon: `<svg viewBox="0 0 48 48" fill="none" stroke="#5E4A2E" stroke-width="1.9" stroke-linecap="round"><path d="M31 9 A15.5 15.5 0 1 0 31 39 A12.5 12.5 0 1 1 31 9Z"/></svg>`,
+  plum: `<svg viewBox="0 0 48 48" fill="none" stroke="#7A3B28" stroke-width="1.9" stroke-linecap="round"><circle cx="24" cy="16" r="4.2"/><circle cx="15" cy="26" r="4.2"/><circle cx="33" cy="26" r="4.2"/><circle cx="24" cy="35" r="4.2"/><circle cx="24" cy="25.5" r="2"/></svg>`,
+  wave: `<svg viewBox="0 0 48 48" fill="none" stroke="#3E5E72" stroke-width="1.9" stroke-linecap="round"><path d="M6 22 Q13 13, 24 22 T42 22"/><path d="M6 31 Q13 22, 24 31 T42 31"/></svg>`,
+  mount: `<svg viewBox="0 0 48 48" fill="none" stroke="#4A5E3E" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 37 L18 13 L27 27 L32 19 L43 37Z"/></svg>`,
+  cloud: `<svg viewBox="0 0 48 48" fill="none" stroke="#5E4A2E" stroke-width="1.9" stroke-linecap="round"><path d="M12 32 Q9 22, 18 24 Q19 15, 29 18 Q39 16, 37 26 Q43 28, 39 33 L14 33 Q8 34, 12 32Z"/></svg>`,
+  star: `<svg viewBox="0 0 48 48" fill="none" stroke="#8A6A28" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M24 8 L28 20 L40 20 L30.5 27.5 L34 39 L24 32 L14 39 L17.5 27.5 L8 20 L20 20Z"/></svg>`
+};
+const GLYPH_META = [['moon','月'],['plum','梅'],['wave','浪'],['mount','山'],['cloud','云'],['star','星']];
+document.getElementById('glyph-row').innerHTML = GLYPH_META.map(([k, nm]) =>
+  `<div class="glyph-cell">${GLYPHS[k]}<div class="cap">${nm}</div></div>`).join('');
+
+/* ================= 动效 ================= */
+function spawnDust(parent, x, y, n) {
+  for (let i = 0; i < n; i++) {
+    const d = document.createElement('div');
+    d.className = 'dust puff';
+    const ang = (Math.PI / 6) + Math.random() * (Math.PI / 2.6); // 右下 35°附近
+    const dist = 16 + Math.random() * 18;
+    d.style.cssText = `left:${x}px;top:${y}px;width:10px;height:10px;--dx:${Math.cos(ang)*dist}px;--dy:${Math.sin(ang)*dist}px;`;
+    parent.appendChild(d);
+    setTimeout(() => d.remove(), 460);
+  }
+}
+
+function playDrop() {
+  const el = document.getElementById('drop-target');
+  const stage = document.getElementById('st-drop');
+  el.style.opacity = '0';
+  el.classList.remove('anim-drop');
+  void el.offsetWidth;
+  el.style.opacity = '1';
+  el.classList.add('anim-drop');
+  setTimeout(() => spawnDust(stage, 148, 118, 4), 130);
+  sfx('grind'); vib([8]);
+}
+
+function playPath() {
+  ['p-line', 'p-hi'].forEach(id => {
+    const el = document.getElementById(id);
+    el.classList.remove('go'); void el.offsetWidth; el.classList.add('go');
+    const hi = document.getElementById('p-hi');
+    if (id === 'p-hi') { el.style.animationDelay = '60ms'; }
+  });
+  const glow = document.getElementById('p-glow');
+  glow.classList.remove('go'); void glow.offsetWidth; glow.classList.add('go');
+  sfx('gilt'); vib([15]);
+}
+
+function playCascade() {
+  const cells = [...document.querySelectorAll('#st-cas .cas')];
+  cells.forEach((c, i) => {
+    c.classList.remove('anim-settle');
+    void c.offsetWidth;
+    c.style.animationDelay = (i * 48) + 'ms';
+    c.classList.add('anim-settle');
+  });
+  setTimeout(() => sfx('xun'), cells.length * 48 + 120);
+  vib([10, 25, 10, 25, 18]);
+  cells.forEach((c, i) => setTimeout(() => sfx('grind', 0.35), i * 48));
+}
+
+function playSeal() {
+  const el = document.getElementById('seal-el');
+  const stage = document.getElementById('st-seal');
+  el.classList.remove('anim-seal');
+  stage.classList.remove('shake');
+  void el.offsetWidth;
+  el.style.opacity = '1';
+  el.classList.add('anim-seal');
+  setTimeout(() => {
+    stage.classList.add('shake');
+    spawnDust(stage, 120, 110, 3);
+    sfx('stamp'); vib([40]);
+  }, 175);
+}
+
+function playPress() {
+  const el = document.getElementById('press-el');
+  el.classList.remove('anim-press');
+  void el.offsetWidth;
+  el.classList.add('anim-press');
+  const ring = document.createElement('div');
+  ring.className = 'ring';
+  el.appendChild(ring);
+  setTimeout(() => ring.remove(), 400);
+  sfx('tap'); vib([5]);
+}
+
+function playTrans() {
+  const veil = document.getElementById('tr-veil');
+  veil.style.transition = 'none';
+  veil.style.transform = 'translateX(0)';
+  void veil.offsetWidth;
+  veil.style.transition = 'transform 480ms cubic-bezier(.4,0,.2,1)';
+  veil.style.transform = 'translateX(102%)';
+  setTimeout(() => {
+    veil.style.transition = 'none';
+    veil.style.transform = 'translateX(-102%)';
+    void veil.offsetWidth;
+    veil.style.transition = 'transform 480ms cubic-bezier(.4,0,.2,1)';
+    veil.style.transform = 'translateX(0)';
+  }, 700);
+}
+
+/* ================= 音频引擎 ================= */
+let actx = null, master = null;
+function ac() {
+  if (!actx) {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    master = actx.createGain(); master.gain.value = 0.9; master.connect(actx.destination);
+  }
+  if (actx.state === 'suspended') actx.resume();
+  return actx;
+}
+let noiseBuf = null;
+function noise(a) {
+  if (!noiseBuf) {
+    noiseBuf = a.createBuffer(1, a.sampleRate * 0.6, a.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  const s = a.createBufferSource(); s.buffer = noiseBuf; return s;
+}
+
+/* 矿物研磨 · Pigment Grind */
+function playGrind(vol = 1) {
+  const a = ac(), t = a.currentTime;
+  const n = noise(a);
+  const bp = a.createBiquadFilter(); bp.type = 'bandpass';
+  bp.frequency.setValueAtTime(2400, t);
+  bp.frequency.exponentialRampToValueAtTime(850, t + 0.085);
+  bp.Q.value = 1.1;
+  const g = a.createGain();
+  g.gain.setValueAtTime(0.5 * vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+  n.connect(bp); bp.connect(g); g.connect(master);
+  n.start(t); n.stop(t + 0.1);
+  // 低钝垫
+  const o = a.createOscillator(); o.type = 'triangle';
+  o.frequency.setValueAtTime(160, t);
+  o.frequency.exponentialRampToValueAtTime(95, t + 0.07);
+  const g2 = a.createGain();
+  g2.gain.setValueAtTime(0.22 * vol, t);
+  g2.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+  o.connect(g2); g2.connect(master);
+  o.start(t); o.stop(t + 0.09);
+}
+
+/* 沥粉细响 · Gilt Relief */
+function playGilt() {
+  const a = ac(), t = a.currentTime;
+  [3180, 4720].forEach((f, i) => {
+    const o = a.createOscillator(); o.type = 'triangle';
+    o.frequency.value = f;
+    const g = a.createGain();
+    g.gain.setValueAtTime(i ? 0.12 : 0.2, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.055);
+    o.connect(g); g.connect(master);
+    o.start(t + i * 0.012); o.stop(t + 0.07);
+  });
+  const n = noise(a);
+  const hp = a.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 5200;
+  const g3 = a.createGain();
+  g3.gain.setValueAtTime(0.09, t);
+  g3.gain.exponentialRampToValueAtTime(0.001, t + 0.075);
+  n.connect(hp); hp.connect(g3); g3.connect(master);
+  n.start(t); n.stop(t + 0.08);
+}
+
+/* 土埙一记 · Xun */
+function playXun() {
+  const a = ac(), t = a.currentTime;
+  const o = a.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(196, t); // G3
+  const o2 = a.createOscillator(); o2.type = 'sine';
+  o2.frequency.setValueAtTime(194.6, t); // 微失谐，埙的气感
+  const o3 = a.createOscillator(); o3.type = 'sine';
+  o3.frequency.setValueAtTime(392.8, t); // 二倍频极弱
+  const g = a.createGain();
+  g.gain.setValueAtTime(0.001, t);
+  g.gain.exponentialRampToValueAtTime(0.34, t + 0.045);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.95);
+  const g3 = a.createGain(); g3.gain.value = 0.05;
+  o.connect(g); o2.connect(g); o3.connect(g3); g3.connect(g);
+  g.connect(master);
+  o.start(t); o2.start(t); o3.start(t);
+  o.stop(t + 1); o2.stop(t + 1); o3.stop(t + 1);
+  // 气声
+  const n = noise(a);
+  const lp = a.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 620;
+  const gn = a.createGain();
+  gn.gain.setValueAtTime(0.10, t);
+  gn.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+  n.connect(lp); lp.connect(gn); gn.connect(master);
+  n.start(t); n.stop(t + 0.75);
+}
+
+/* 石章落壁 · Seal on Wall */
+function playStamp() {
+  const a = ac(), t = a.currentTime;
+  const o = a.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(112, t);
+  o.frequency.exponentialRampToValueAtTime(58, t + 0.09);
+  const g = a.createGain();
+  g.gain.setValueAtTime(0.55, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+  o.connect(g); g.connect(master);
+  o.start(t); o.stop(t + 0.25);
+  // 墙面石屑
+  const n = noise(a);
+  const bp = a.createBiquadFilter(); bp.type = 'bandpass';
+  bp.frequency.setValueAtTime(1400, t);
+  bp.frequency.exponentialRampToValueAtTime(420, t + 0.12);
+  bp.Q.value = 0.9;
+  const gn = a.createGain();
+  gn.gain.setValueAtTime(0.3, t);
+  gn.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+  n.connect(bp); bp.connect(gn); gn.connect(master);
+  n.start(t); n.stop(t + 0.18);
+  // 壁体共鸣
+  const n2 = noise(a);
+  const lp = a.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 300;
+  const g2 = a.createGain();
+  g2.gain.setValueAtTime(0.18, t + 0.01);
+  g2.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+  n2.connect(lp); lp.connect(g2); g2.connect(master);
+  n2.start(t); n2.stop(t + 0.32);
+}
+
+/* 按钮轻点 · Grit Tap */
+function playTap() {
+  const a = ac(), t = a.currentTime;
+  const n = noise(a);
+  const bp = a.createBiquadFilter(); bp.type = 'bandpass';
+  bp.frequency.value = 1150; bp.Q.value = 1.4;
+  const g = a.createGain();
+  g.gain.setValueAtTime(0.32, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.035);
+  n.connect(bp); bp.connect(g); g.connect(master);
+  n.start(t); n.stop(t + 0.04);
+}
+
+function sfx(name, vol) {
+  if (name === 'grind') playGrind(vol ?? 1);
+  else if (name === 'gilt') playGilt();
+  else if (name === 'xun') playXun();
+  else if (name === 'stamp') playStamp();
+  else if (name === 'tap') playTap();
+}
+
+function vib(p) { if (navigator.vibrate) navigator.vibrate(p); }
+
+/* ================= 音效卡 ================= */
+const SND = [
+  ['grind', '矿物研磨', 'PIGMENT GRIND', '落子。带通噪声 2400→850Hz 扫落 85ms + 160→95Hz 三角低钝垫。主能量在中频——是「沙从指间磨过」，不是「石子相击」。', 'bandpass sweep + tri 160Hz · 90ms · -6dB'],
+  ['gilt', '沥粉细响', 'GILT RELIEF', '连径。3180/4720Hz 双三角 55ms + 5.2kHz 高通噪光，像金泥从笔尖挤出的一丝亮。全主题唯一允许到 4kHz 以上的声。', 'tri 3180+4720Hz + hp noise · 75ms'],
+  ['xun', '土埙一记', 'CLAY XUN', '铺满。G3=196Hz 正弦 + 微失谐 194.6（气感）+ 极弱二倍频，0.95s 长衰减，620Hz 低通气声垫底。留白是设计的一部分。', 'sine 196Hz ×2 + breath · 0.95s'],
+  ['stamp', '石章落壁', 'SEAL ON WALL', '盖印。112→58Hz 正弦下滑 90ms + 1400→420Hz 石屑 + 300Hz 壁体共鸣 0.3s。低频一击收干净，没有任何欢庆尾音。', 'sine 112→58Hz + grit + wall · 0.32s'],
+  ['tap', '按钮轻点', 'GRIT TAP', 'UI 按钮。1150Hz 带通噪声 35ms——掐起一小撮沙的感觉。禁止电子哔声、禁止水滴音。', 'bp noise 1150Hz · 35ms · 轻']
+];
+document.getElementById('snd-grid').innerHTML = SND.map(([k, nm, en, ds, tk]) => `
+  <div class="snd-card" onclick="sfx('${k}'); vib([8])">
+    <div class="snd-wave">
+      <svg viewBox="0 0 90 44" width="82" height="42">
+        ${waveBars(k)}
+      </svg>
+    </div>
+    <div class="snd-meta">
+      <div class="nm">${nm}</div>
+      <div class="en">${en}</div>
+      <div class="ds">${ds}</div>
+      <div class="tk">${tk}</div>
+    </div>
+    <div class="snd-play">
+      <svg viewBox="0 0 24 24" fill="#C99B3F"><path d="M8 5.5 L19 12 L8 18.5 Z"/></svg>
+    </div>
+  </div>`).join('');
+
+function waveBars(kind) {
+  const shapes = {
+    grind: [4, 10, 16, 22, 26, 24, 18, 12, 8, 5, 3, 2],
+    gilt:  [2, 5, 20, 8, 14, 4, 9, 3, 6, 2, 3, 2],
+    xun:   [3, 12, 20, 24, 23, 21, 18, 15, 12, 9, 6, 4],
+    stamp: [26, 22, 16, 12, 9, 7, 6, 5, 4, 3, 3, 2],
+    tap:   [3, 18, 10, 4, 2, 2, 1, 1, 1, 1, 1, 1]
+  }[kind] || [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8];
+  return shapes.map((h, i) => {
+    const x = 6 + i * 7;
+    return `<rect x="${x}" y="${22 - h / 2}" width="3.6" height="${h}" rx="1.6" fill="#C99B3F" opacity="${0.45 + (i % 3) * 0.2}"/>`;
+  }).join('');
+}
+</script>
+</body>
+</html>

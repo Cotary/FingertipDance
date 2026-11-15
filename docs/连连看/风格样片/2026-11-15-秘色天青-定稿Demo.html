@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>秘色·天青 · 定稿版全页面（功能对齐）</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --serif: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  --sans: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --c050: #E4EDE6; --c100: #D5E3D8; --c200: #B8CFC0; --c300: #93B3A2;
+  --c400: #6E9180; --c500: #4F7A66; --c600: #2E5444; --c700: #1D3A2E;
+  --i050: #F2EEE6; --i100: #EDE8DD; --i300: #B9B2A4; --i500: #7A7468;
+  --i700: #454038; --i900: #141210;
+  --g100: #FFF3D6; --g200: #F2DCA8; --g300: #D4AF6A; --g400: #B8945A; --g500: #8A6B3C;
+  --seal: #C04B33; --seal-deep: #8C2F1E;
+  --violet: #8B7EC8;
+  --well: #16241E; --well-deep: #0F1915;
+  --page: #0C1310; --phone-bg: #0E1815;
+}
+body {
+  background: var(--page);
+  background-image:
+    radial-gradient(1100px 500px at 50% -10%, rgba(212,175,106,.05), transparent 60%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+  color: var(--i050); font-family: var(--sans); font-weight: 300;
+}
+.wrap { max-width: 1280px; margin: 0 auto; padding: 54px 36px 80px; }
+
+.head { text-align: center; margin-bottom: 46px; }
+.head .kicker { font-family: var(--serif); font-size: 11px; letter-spacing: .55em; color: var(--g300); margin-bottom: 16px; font-weight: 600; }
+.head h1 { font-family: var(--serif); font-size: 42px; font-weight: 900; letter-spacing: .16em; }
+.head h1 em { font-style: normal; color: var(--g200); }
+.head .sub { margin-top: 14px; font-family: var(--serif); font-size: 13px; letter-spacing: .18em; color: var(--i500); line-height: 2; }
+.rule { width: 56px; height: 1px; background: var(--g400); margin: 24px auto 0; opacity: .7; }
+
+.sec { margin-bottom: 58px; }
+.sec-no { font-family: var(--serif); font-size: 12px; font-weight: 600; letter-spacing: .32em; color: var(--g300); }
+.sec-title { font-family: var(--serif); font-size: 23px; font-weight: 700; letter-spacing: .16em; color: var(--i050); margin: 6px 0 20px; }
+.sec-title small { font-family: var(--sans); font-size: 11px; letter-spacing: .12em; color: var(--i500); font-weight: 300; margin-left: 14px; }
+
+/* 功能对照 */
+.fix-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.fix-card {
+  background: rgba(22,36,30,.72); border: 1px solid rgba(212,175,106,.14);
+  border-radius: 14px; padding: 18px 22px;
+}
+.fix-card h4 { font-family: var(--serif); font-size: 13px; letter-spacing: .22em; color: var(--g200); margin-bottom: 8px; font-weight: 600; }
+.fix-card p { font-size: 11px; line-height: 2; color: var(--i300); letter-spacing: .04em; }
+.fix-card p b { color: var(--i050); font-weight: 500; }
+.fix-card p s { color: var(--i500); text-decoration: line-through; }
+.fix-note {
+  font-size: 11px; letter-spacing: .08em; color: var(--i500); line-height: 2;
+  padding: 12px 20px; border-left: 2px solid var(--g500);
+}
+
+/* 手机 */
+.phones { display: flex; flex-wrap: wrap; gap: 40px 34px; justify-content: center; }
+.phone-wrap { display: flex; flex-direction: column; align-items: center; }
+.phone {
+  width: 375px; height: 812px; border-radius: 42px; overflow: hidden;
+  background: var(--phone-bg); position: relative; display: flex; flex-direction: column;
+  box-shadow: 0 30px 70px rgba(0,0,0,.55), 0 0 0 8px #1B2420, 0 0 0 9px rgba(212,175,106,.18);
+}
+.phone-tag {
+  margin-top: 18px; font-family: var(--serif); font-size: 11.5px; letter-spacing: .32em; color: var(--i500);
+}
+.phone-tag b { color: var(--g300); font-weight: 600; margin-right: 10px; }
+.status {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 26px 6px; font-size: 11px; letter-spacing: .12em; color: var(--i300); flex-shrink: 0;
+}
+.status .brand { color: var(--g300); letter-spacing: .24em; font-family: var(--serif); }
+.pbody { flex: 1; padding: 10px 22px 0; overflow: hidden; position: relative; }
+.nav {
+  display: flex; justify-content: space-around; align-items: center;
+  padding: 10px 8px 22px; border-top: 1px solid rgba(212,175,106,.12); flex-shrink: 0;
+  background: rgba(12,19,16,.6);
+}
+.nav-item { text-align: center; font-size: 9.5px; letter-spacing: .2em; color: var(--i500); }
+.nav-item .ico { width: 22px; height: 22px; margin: 0 auto 4px; }
+.nav-item .ico svg { width: 22px; height: 22px; stroke: var(--i500); fill: none; stroke-width: 1.5; }
+.nav-item.on { color: var(--g200); }
+.nav-item.on .ico svg { stroke: var(--g200); }
+
+/* 通用按钮 */
+.btn-gold {
+  display: block; width: 100%;
+  background: linear-gradient(180deg, var(--g200), var(--g400) 82%);
+  color: #2A2114; font-family: var(--serif); font-weight: 700; letter-spacing: .3em;
+  border-radius: 16px; text-align: center; border: none;
+  box-shadow: 0 4px 0 var(--g500), 0 12px 26px rgba(212,175,106,.22);
+}
+.btn-ghost {
+  display: block; width: 100%;
+  background: rgba(22,36,30,.85); color: var(--c100); border: 1px solid rgba(147,179,162,.28);
+  border-radius: 14px; text-align: center; font-family: var(--serif); letter-spacing: .26em;
+}
+.btn-line {
+  display: block; width: 100%;
+  background: transparent; color: var(--i300); border: 1px solid rgba(185,178,164,.22);
+  border-radius: 14px; text-align: center; font-family: var(--serif); letter-spacing: .26em;
+}
+
+/* ============ 01 主页 ============ */
+.home-hello { font-family: var(--serif); font-size: 22px; letter-spacing: .3em; color: var(--c050); margin: 18px 2px 4px; }
+.home-date { font-size: 10px; letter-spacing: .32em; color: var(--i500); margin: 0 2px 22px; }
+.home-ticket {
+  background: linear-gradient(158deg, #1A2B23, #142219 58%, #1C2E24);
+  border: 1px solid rgba(212,175,106,.28); border-radius: 20px;
+  padding: 24px 24px 20px; position: relative; overflow: hidden;
+}
+.home-ticket::before {
+  content: ''; position: absolute; left: -30px; top: -40px; width: 160px; height: 160px;
+  background: radial-gradient(circle, rgba(212,175,106,.14), transparent 70%);
+}
+.ticket-row { display: flex; justify-content: space-between; align-items: flex-end; }
+.ticket-lv { font-family: var(--serif); font-size: 64px; font-weight: 900; line-height: .95; color: var(--g200); letter-spacing: .04em; }
+.ticket-lv small { font-size: 13px; letter-spacing: .3em; color: var(--g400); display: block; margin-bottom: 8px; font-weight: 600; }
+.ticket-world {
+  text-align: right; font-family: var(--serif); font-size: 13px; letter-spacing: .28em; color: var(--c100);
+}
+.ticket-world .num { font-size: 30px; color: var(--c050); letter-spacing: .1em; display: block; margin-bottom: 2px; }
+.ticket-perf { margin-top: 18px; padding-top: 16px; border-top: 1px dashed rgba(212,175,106,.3); display: flex; gap: 26px; }
+.ticket-perf .cell .v { font-family: var(--serif); font-size: 19px; color: var(--g100); letter-spacing: .06em; }
+.ticket-perf .cell .k { font-size: 9px; letter-spacing: .3em; color: var(--i500); margin-top: 3px; }
+.home-cta { margin-top: 22px; height: 62px; line-height: 58px; font-size: 17px; }
+.home-world-card {
+  margin-top: 16px; border-radius: 18px; padding: 18px 20px;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.3'/%3E%3C/svg%3E"),
+    linear-gradient(150deg, #24382C, #1A2B21);
+  background-blend-mode: overlay, normal;
+  border: 1px solid rgba(147,179,162,.16);
+  display: flex; align-items: center; gap: 16px;
+}
+.world-emblem {
+  width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0;
+  background: radial-gradient(circle at 32% 26%, var(--c200), var(--c500) 58%, var(--c700));
+  box-shadow: inset 0 2px 5px rgba(255,255,255,.3), inset 0 -6px 12px rgba(0,0,0,.35), 0 8px 18px rgba(0,0,0,.4);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 19px; color: var(--c700); font-weight: 900;
+}
+.world-info h4 { font-family: var(--serif); font-size: 15px; letter-spacing: .26em; color: var(--c050); font-weight: 600; }
+.world-info p { font-size: 10px; letter-spacing: .12em; color: var(--i500); margin-top: 5px; line-height: 1.8; }
+.world-bar { height: 5px; border-radius: 3px; background: rgba(0,0,0,.35); margin-top: 9px; overflow: hidden; }
+.world-bar i { display: block; height: 100%; width: 94%; border-radius: 3px; background: linear-gradient(90deg, var(--c400), var(--c200)); }
+.home-share {
+  margin-top: 14px; display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 18px; border-radius: 14px;
+  border: 1px dashed rgba(212,175,106,.3); background: rgba(212,175,106,.05);
+}
+.home-share .hs-l { font-family: var(--serif); font-size: 12px; letter-spacing: .3em; color: var(--g200); font-weight: 600; }
+.home-share .hs-r { font-size: 9px; letter-spacing: .12em; color: var(--i500); }
+.home-tip-line {
+  margin-top: 12px; text-align: center; font-size: 8.5px; letter-spacing: .22em; color: var(--i700);
+}
+
+/* ============ 02 地图 ============ */
+.map-head { display: flex; justify-content: space-between; align-items: center; margin: 8px 2px 14px; }
+.map-head h3 { font-family: var(--serif); font-size: 17px; letter-spacing: .32em; color: var(--c050); font-weight: 600; }
+.map-head .st { font-size: 10px; letter-spacing: .22em; color: var(--i500); }
+.map-scene {
+  height: 570px; border-radius: 20px; overflow: hidden; position: relative;
+  background:
+    radial-gradient(90% 80% at 50% 30%, rgba(94,138,116,0.16), rgba(0,0,0,0) 65%),
+    linear-gradient(175deg, var(--well), var(--well-deep));
+  border: 1px solid rgba(212,175,106,0.14);
+  box-shadow: inset 0 2px 24px rgba(0,0,0,0.4);
+}
+.map-scene svg.map-draw { position: absolute; inset: 0; width: 100%; height: 100%; }
+.map-legend {
+  position: absolute; left: 14px; bottom: 11px; right: 14px;
+  display: flex; justify-content: space-between; font-size: 8.5px; letter-spacing: .12em; color: var(--i500);
+}
+.map-legend b { color: var(--g200); font-weight: 500; }
+.map-foot {
+  margin-top: 12px; padding: 14px 18px;
+  display: flex; justify-content: space-between; align-items: center;
+  border-radius: 16px; border: 1px solid rgba(212,175,106,.16);
+  background: rgba(212,175,106,.05);
+}
+.map-foot .t { font-family: var(--serif); font-size: 12px; letter-spacing: .18em; color: var(--i300); }
+.map-foot .t em { font-style: normal; color: var(--g200); }
+.map-foot .n { font-family: var(--serif); font-size: 19px; font-weight: 700; letter-spacing: .08em; color: var(--g200); }
+
+/* ============ 03 游戏内 ============ */
+.g-hud { display: flex; justify-content: space-between; align-items: flex-end; margin: 6px 2px 12px; }
+.g-count { display: flex; align-items: baseline; gap: 12px; }
+.g-count .big { font-family: var(--serif); font-size: 34px; font-weight: 900; color: var(--i050); letter-spacing: .03em; }
+.g-count .big i { font-style: normal; color: var(--i500); font-size: 18px; letter-spacing: .12em; }
+.g-count .rest { font-size: 11px; letter-spacing: .22em; color: var(--i500); }
+.g-count .star-next { font-size: 10px; letter-spacing: .16em; color: var(--g300); margin-top: 4px; }
+.g-lv { font-family: var(--serif); font-size: 12px; letter-spacing: .32em; color: var(--g300); text-align: right; }
+.g-lv .n { font-size: 26px; letter-spacing: .06em; color: var(--g200); display: block; }
+.board-well {
+  border-radius: 18px; padding: 16px; position: relative; overflow: hidden;
+  background: linear-gradient(158deg, var(--well), var(--well-deep) 60%, var(--well));
+  box-shadow: inset 0 3px 18px rgba(0,0,0,.55), inset 0 -8px 20px rgba(0,0,0,.35);
+  border: 1px solid rgba(147,179,162,.1);
+}
+.board-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 7px; position: relative; z-index: 2; }
+.board-well svg.gpath { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 3; overflow: visible; }
+.pc {
+  aspect-ratio: 1; border-radius: 10px; position: relative; overflow: hidden;
+  background: radial-gradient(120% 110% at 30% 22%, #4D7A74, #35574F 48%, #26423C);
+  box-shadow: 0 3px 7px rgba(0,0,0,.4), inset 0 1px 2px rgba(255,255,255,.22), inset 0 -3px 6px rgba(0,0,0,.3);
+}
+.pc.pale {
+  background: radial-gradient(120% 110% at 30% 22%, #2E4740, #22362F 50%, #1B2B25);
+  box-shadow: 0 2px 5px rgba(0,0,0,.3), inset 0 1px 1px rgba(255,255,255,.1);
+  opacity: .82;
+}
+.pc .glint {
+  position: absolute; top: 8%; left: 12%; width: 52%; height: 28%;
+  border-radius: 50%; background: linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,0));
+  filter: blur(2.5px);
+}
+.pc .glyph { position: absolute; inset: 22%; opacity: .85; }
+.pc .glyph svg { width: 100%; height: 100%; }
+.pc.frost {
+  background: radial-gradient(120% 110% at 30% 22%, #9FC4BC, #7FA8A0 48%, #628A82);
+}
+.pc.dark { background: radial-gradient(120% 110% at 30% 22%, #3A4A52, #26333B 50%, #1B252C); }
+.pc.violet {
+  background: radial-gradient(120% 110% at 30% 22%, #7C70B8, #5C5192 50%, #443A72);
+}
+.pc.gold-star {
+  background: radial-gradient(120% 110% at 30% 22%, #D9B86A, #B89045 50%, #8A6B3C);
+}
+.pc.key {
+  background: radial-gradient(120% 110% at 30% 22%, #C8A45E, #A07E3C 50%, #7A5E2C);
+}
+.pc .num {
+  position: absolute; right: 3px; bottom: 2px;
+  font-family: var(--serif); font-size: 9px; font-weight: 900; color: rgba(42,30,10,.85);
+}
+.g-tip {
+  margin-top: 14px; height: 52px; line-height: 48px; font-size: 15px; position: relative;
+}
+.g-tip .ad {
+  position: absolute; right: 10px; top: 11px; background: var(--seal); color: var(--i050);
+  font-family: var(--sans); font-size: 8.5px; letter-spacing: .12em; padding: 3px 9px;
+  border-radius: 8px; font-weight: 500; white-space: nowrap;
+}
+.g-legend {
+  margin-top: 14px; display: flex; justify-content: space-between; padding: 0 2px;
+}
+.g-legend .li { text-align: center; font-size: 8.5px; letter-spacing: .12em; color: var(--i500); }
+.g-legend .li .sw {
+  width: 26px; height: 26px; margin: 0 auto 5px; border-radius: 7px; position: relative; overflow: hidden;
+}
+.g-retry { margin-top: 12px; text-align: center; font-size: 9.5px; letter-spacing: .26em; color: var(--i500); }
+.g-retry b { color: var(--c200); font-weight: 500; }
+
+/* ============ 04 结算 ============ */
+.set-wrap { text-align: center; padding-top: 26px; }
+.set-seal {
+  width: 96px; height: 96px; margin: 0 auto; border-radius: 16px;
+  background: linear-gradient(155deg, var(--seal), var(--seal-deep));
+  box-shadow: 0 10px 26px rgba(140,47,30,.45), inset 0 2px 4px rgba(255,210,190,.35), inset 0 -6px 12px rgba(90,25,10,.4);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 48px; font-weight: 900; color: rgba(255,240,228,.94);
+  transform: rotate(-3deg);
+}
+.set-title { font-family: var(--serif); font-size: 24px; letter-spacing: .3em; color: var(--i050); margin-top: 22px; font-weight: 700; }
+.set-stars { margin: 18px 0 6px; display: flex; justify-content: center; gap: 14px; }
+.set-stars .st { width: 34px; height: 34px; }
+.set-stars .st svg { width: 100%; height: 100%; }
+.set-phrase { font-family: var(--serif); font-size: 12px; letter-spacing: .42em; color: var(--g300); margin-bottom: 22px; }
+.set-stats { display: flex; gap: 12px; justify-content: center; margin-bottom: 26px; }
+.set-stats .cell {
+  width: 128px; padding: 13px 0; border-radius: 13px;
+  background: rgba(22,36,30,.85); border: 1px solid rgba(147,179,162,.18);
+}
+.set-stats .cell .v { font-family: var(--serif); font-size: 19px; color: var(--i050); letter-spacing: .05em; }
+.set-stats .cell .k { font-size: 8.5px; letter-spacing: .32em; color: var(--i500); margin-top: 4px; }
+.set-btns .b1 { height: 56px; line-height: 52px; font-size: 15px; }
+.set-btns .row2 { display: flex; gap: 10px; margin-top: 10px; }
+.set-btns .row2 .b { flex: 1; height: 44px; line-height: 42px; font-size: 11px; }
+.set-btns .b3 { height: 42px; line-height: 40px; font-size: 10.5px; margin-top: 10px; }
+
+/* ============ 05 主题 ============ */
+.skin-feature {
+  border-radius: 18px; padding: 20px 22px; margin-bottom: 14px;
+  background: linear-gradient(158deg, #1C2E24, #142219);
+  border: 1px solid rgba(212,175,106,.3); position: relative; overflow: hidden;
+}
+.skin-feature .tag {
+  position: absolute; right: 16px; top: 16px; background: var(--g300); color: #2A2114;
+  font-family: var(--serif); font-size: 9px; letter-spacing: .28em; padding: 4px 10px; border-radius: 8px; font-weight: 700;
+}
+.skin-feature h4 { font-family: var(--serif); font-size: 19px; letter-spacing: .24em; color: var(--g100); font-weight: 700; }
+.skin-feature p { font-size: 10px; letter-spacing: .12em; color: var(--i500); margin-top: 6px; line-height: 1.9; }
+.skin-swatches { display: flex; gap: 6px; margin-top: 12px; }
+.skin-swatches i { width: 26px; height: 26px; border-radius: 8px; border: 1px solid rgba(255,255,255,.12); }
+.skin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+.skin-card {
+  border-radius: 15px; padding: 13px 14px 12px; background: rgba(22,36,30,.8);
+  border: 1px solid rgba(147,179,162,.14);
+}
+.skin-card .prev {
+  height: 52px; border-radius: 9px; margin-bottom: 9px; position: relative; overflow: hidden;
+}
+.skin-card .nm { font-family: var(--serif); font-size: 11.5px; letter-spacing: .22em; color: var(--c050); }
+.skin-card .ax { font-size: 8px; letter-spacing: .18em; color: var(--c400); margin-top: 3px; }
+.skin-card .un { font-size: 8.5px; letter-spacing: .16em; color: var(--i500); margin-top: 4px; }
+.skin-card .un.gold { color: var(--g300); }
+.skin-card .prev.sealed { display: flex; align-items: center; justify-content: center; }
+.skin-card .prev.sealed span {
+  font-family: var(--serif); font-size: 15px; color: #C04B33;
+  width: 28px; height: 28px; line-height: 25px; text-align: center;
+  border: 1.5px solid #C04B33; border-radius: 5px; opacity: .85; letter-spacing: 0;
+}
+
+/* ============ 06 排行 ============ */
+.rank-tabs { display: flex; gap: 8px; margin: 6px 2px 18px; }
+.rank-tabs .t {
+  padding: 7px 18px; border-radius: 999px; font-family: var(--serif);
+  font-size: 11px; letter-spacing: .26em; color: var(--i500); border: 1px solid rgba(255,255,255,.08);
+}
+.rank-tabs .t.on { color: #2A2114; background: var(--g300); border-color: var(--g300); font-weight: 700; }
+.podium { display: flex; align-items: flex-end; justify-content: center; gap: 12px; margin-bottom: 22px; }
+.pod { text-align: center; }
+.pod .ava {
+  width: 54px; height: 54px; margin: 0 auto 8px; border-radius: 50%;
+  background: radial-gradient(circle at 32% 26%, var(--c200), var(--c500) 60%, var(--c700));
+  box-shadow: inset 0 2px 4px rgba(255,255,255,.28), 0 8px 18px rgba(0,0,0,.4);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 17px; color: var(--c700); font-weight: 900;
+}
+.pod.first .ava {
+  width: 66px; height: 66px; font-size: 21px;
+  background: radial-gradient(circle at 32% 26%, var(--g100), var(--g300) 55%, var(--g500));
+  color: #2A2114; box-shadow: inset 0 2px 5px rgba(255,255,255,.4), 0 10px 24px rgba(212,175,106,.35);
+}
+.pod .nm { font-family: var(--serif); font-size: 10.5px; letter-spacing: .16em; color: var(--i300); }
+.pod .sc { font-family: var(--serif); font-size: 11px; color: var(--g300); letter-spacing: .08em; margin-top: 3px; }
+.pod .base {
+  width: 54px; margin: 8px auto 0; border-radius: 8px 8px 0 0;
+  background: rgba(212,175,106,.14); border: 1px solid rgba(212,175,106,.22); border-bottom: none;
+}
+.pod.first .base { width: 66px; background: rgba(212,175,106,.22); height: 34px; }
+.pod.second .base { height: 22px; }
+.pod.third .base { height: 14px; }
+.rank-list { display: flex; flex-direction: column; gap: 8px; }
+.rank-row {
+  display: flex; align-items: center; gap: 13px; padding: 11px 15px;
+  background: rgba(22,36,30,.7); border: 1px solid rgba(147,179,162,.12); border-radius: 13px;
+}
+.rank-row .no { font-family: var(--serif); font-size: 14px; color: var(--i500); width: 22px; letter-spacing: .05em; }
+.rank-row .ava {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  background: radial-gradient(circle at 32% 26%, var(--c300), var(--c600) 65%);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 12px; color: var(--c700); font-weight: 700;
+}
+.rank-row .nm { flex: 1; font-family: var(--serif); font-size: 12px; letter-spacing: .16em; color: var(--c050); }
+.rank-row .lv { font-size: 9px; letter-spacing: .16em; color: var(--i500); margin-top: 3px; }
+.rank-row .sc { font-family: var(--serif); font-size: 13px; color: var(--g200); letter-spacing: .05em; }
+
+/* ============ 07 我的 ============ */
+.pf-head { display: flex; align-items: center; gap: 15px; margin: 12px 2px 20px; }
+.pf-ava {
+  width: 62px; height: 62px; border-radius: 50%;
+  background: radial-gradient(circle at 32% 26%, var(--c200), var(--c500) 60%, var(--c700));
+  box-shadow: inset 0 2px 5px rgba(255,255,255,.3), inset 0 -6px 12px rgba(0,0,0,.35), 0 10px 22px rgba(0,0,0,.4);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 23px; color: var(--c700); font-weight: 900;
+}
+.pf-id h3 { font-family: var(--serif); font-size: 17px; letter-spacing: .3em; color: var(--c050); font-weight: 600; }
+.pf-id p { font-size: 9.5px; letter-spacing: .22em; color: var(--i500); margin-top: 5px; }
+.pf-stats { display: flex; gap: 10px; margin-bottom: 18px; }
+.pf-stats .cell {
+  flex: 1; background: rgba(22,36,30,.8); border: 1px solid rgba(147,179,162,.14);
+  border-radius: 14px; padding: 13px 10px; text-align: center;
+}
+.pf-stats .cell .v { font-family: var(--serif); font-size: 19px; color: var(--g100); letter-spacing: .04em; }
+.pf-stats .cell .k { font-size: 8.5px; letter-spacing: .28em; color: var(--i500); margin-top: 4px; }
+.pf-wall-label {
+  font-family: var(--serif); font-size: 11px; letter-spacing: .32em; color: var(--g300);
+  margin: 16px 2px 10px; font-weight: 600;
+}
+.pf-wall { display: flex; gap: 8px; }
+.pf-wall .sw { width: 42px; height: 42px; border-radius: 11px; border: 1px solid rgba(255,255,255,.12); position: relative; overflow: hidden; }
+.pf-wall .sw.locked { opacity: .35; }
+.pf-funcs { margin-top: 18px; border-top: 1px solid rgba(147,179,162,.14); }
+.pf-func {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 2px; border-bottom: 1px solid rgba(147,179,162,.1);
+  font-family: var(--serif); font-size: 12px; letter-spacing: .22em; color: var(--c050);
+}
+.pf-func .val { font-family: var(--sans); font-size: 10px; letter-spacing: .18em; color: var(--i500); }
+.pf-func .val.on { color: var(--g200); }
+.pf-func .sw-on {
+  width: 34px; height: 19px; border-radius: 999px; background: var(--c500); position: relative;
+}
+.pf-func .sw-on::after {
+  content: ''; position: absolute; right: 2px; top: 2px; width: 15px; height: 15px;
+  border-radius: 50%; background: var(--i050);
+}
+
+/* 页脚 */
+.foot {
+  margin-top: 60px; padding-top: 24px; border-top: 1px solid rgba(255,255,255,.06);
+  display: flex; justify-content: space-between; font-size: 10px; letter-spacing: .3em; color: var(--i700);
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="head">
+    <div class="kicker">MISE CELADON · FINAL SPEC</div>
+    <h1>秘色 · 天青 <em>定稿版</em> 全页面</h1>
+    <div class="sub">
+      功能与当前游戏完全对齐：铺满全盘 · 六种机制 · 提示/跳过 · 5 Tab 大厅<br>
+      标签一律使用真实读数与真实按钮，无虚构道具
+    </div>
+    <div class="rule"></div>
+  </header>
+
+  <!-- 定稿对照 -->
+  <section class="sec">
+    <div class="sec-no">定稿说明</div>
+    <div class="sec-title">功能对齐 <small>删掉虚构的 · 校正画错的 · 保留真实的</small></div>
+    <div class="fix-grid">
+      <div class="fix-card">
+        <h4>机制 · 对齐真实六种</h4>
+        <p><s>石障 / 冰砖（虚构）</s> → 校正为真实机制：<b>单向门 · 星屑（序 1→2→3）· 钥匙与门 · 传送门 · 冰面（滑行）· 隘口与诱饵</b>。图例只展示盘上实际出现的。</p>
+      </div>
+      <div class="fix-card">
+        <h4>局内 · 只留一个行动点</h4>
+        <p><s>换位 / 洗盘 / 道具行（虚构）</s> → 删除。局内唯一行动点是<b>「提示」</b>（每关首次需看激励视频，之后免费）；失败即路径清空 + 重来计数。</p>
+      </div>
+      <div class="fix-card">
+        <h4>HUD · 用真实读数</h4>
+        <p>「<b>52 / 86</b>」加粗 +「<b>剩 34</b>」弱化 +「<b>下一个 ★2</b>」星屑顺序提示；关卡号 047 衬线大字。</p>
+      </div>
+      <div class="fix-card">
+        <h4>结算 · 真按钮与真星级</h4>
+        <p>统计为<b>「重来 0 次 / 用时 62.4s」</b>（星级按重来次数：0 次 = ★★★ 一气呵成）；按钮为<b>下一关 / 分享 / 主题 / 返回大厅</b>。跳过 =「已跳过 · 未获星」。</p>
+      </div>
+    </div>
+    <div class="fix-note">
+      导航采用真实 5 Tab：<b>主页 / 地图 / 主题 / 排行 / 我的</b>（nav.ts 的 skin 槽 = 主题货架）。地图为<b>无尽山径</b>：第 1 关起无限延伸，纸雕等高线场景 + 双段路线 + 节点四态 + 每 10 关里程碑旗 + 主题奖励（200/500/900）。全稿去除世界命名——关卡为 <b>1 → ∞</b> 连续编号。主题页按真实解锁结构呈现：<b>默认 2 / 广告解锁 11 / 里程碑 3</b>，但商品是<b>六通道主题包</b>（棋盘/机制/路径/音效/动效/触感全换），不是换色皮肤。
+    </div>
+  </section>
+
+  <!-- 七屏 -->
+  <section class="sec">
+    <div class="sec-no">七屏定稿</div>
+    <div class="sec-title">全页面 <small>375 × 812 · 天青质感 · 一屏一金</small></div>
+
+    <div class="phones">
+
+      <!-- 01 主页 -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="brand">秘色 · 天青</span></div>
+          <div class="pbody">
+            <div class="home-hello">雨过天青</div>
+            <div class="home-date">无尽征途 · 从第 1 关起 —— 你在第 047 关</div>
+            <div class="home-ticket">
+              <div class="ticket-row">
+                <div class="ticket-lv"><small>继续</small>047</div>
+                <div class="ticket-world"><span class="num">∞</span>无 尽</div>
+              </div>
+              <div class="ticket-perf">
+                <div class="cell"><div class="v">96</div><div class="k">星星</div></div>
+                <div class="cell"><div class="v">46</div><div class="k">已通关</div></div>
+                <div class="cell"><div class="v">23</div><div class="k">重来累计</div></div>
+              </div>
+            </div>
+            <button class="btn-gold home-cta">继 续 第 047 关</button>
+            <div class="home-world-card">
+              <div class="world-emblem">∞</div>
+              <div class="world-info">
+                <h4>无 尽 征 途</h4>
+                <p>第 1 关起 · 机制渐次登场 · 距里程碑 050 还差 3 关</p>
+                <div class="world-bar"><i></i></div>
+              </div>
+            </div>
+            <div class="home-share">
+              <div class="hs-l">分享挑战</div>
+              <div class="hs-r">带关卡号 + 重来数，好友同关竞速</div>
+            </div>
+            <div class="home-tip-line">每关首次「提示」需看激励视频 · 跳过不给星</div>
+          </div>
+          <div class="nav" id="nav-home"></div>
+        </div>
+        <div class="phone-tag"><b>01</b>HOME · 主页</div>
+      </div>
+
+      <!-- 02 地图 -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="brand">秘色 · 天青</span></div>
+          <div class="pbody">
+            <div class="map-head">
+              <h3>关卡地图</h3>
+              <div class="st">第 047 关 · 星 96 · 无尽</div>
+            </div>
+            <div class="map-scene">
+              <svg class="map-draw" viewBox="0 0 331 570" id="mapSvg"></svg>
+              <div class="map-legend">
+                <span><b>✓</b> 已过关</span>
+                <span><b>金珠</b> 当前关</span>
+                <span><b>旗</b> 里程碑 · 每 10 关</span>
+                <span><b>◆</b> 主题奖励 200/500/900</span>
+              </div>
+            </div>
+            <div class="map-foot">
+              <div class="t">下一里程碑 <em>050 关</em></div>
+              <div class="n">还差 3 关</div>
+            </div>
+          </div>
+          <div class="nav" id="nav-map"></div>
+        </div>
+        <div class="phone-tag"><b>02</b>MAP · 地图</div>
+      </div>
+
+      <!-- 03 游戏内 -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="brand">秘色 · 天青</span></div>
+          <div class="pbody">
+            <div class="g-hud">
+              <div class="g-count">
+                <div>
+                  <div class="big">52 <i>/ 86</i></div>
+                  <div class="rest">剩 34　·　下一个 ★2</div>
+                </div>
+              </div>
+              <div class="g-lv"><span class="n">047</span>关</div>
+            </div>
+            <div class="board-well">
+              <div class="board-grid" id="gameBoard"></div>
+              <svg class="gpath" viewBox="0 0 311 311" id="gamePath"></svg>
+            </div>
+            <button class="btn-gold g-tip">提 示<span class="ad">首提示 · 看视频</span></button>
+            <div class="g-legend" id="gLegend"></div>
+            <div class="g-retry">本关重来 <b>0</b> 次 · 零重来 = ★★★</div>
+          </div>
+          <div class="nav" id="nav-game"></div>
+        </div>
+        <div class="phone-tag"><b>03</b>IN-GAME · 游戏内</div>
+      </div>
+
+      <!-- 04 结算 -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="brand">秘色 · 天青</span></div>
+          <div class="pbody">
+            <div class="set-wrap">
+              <div class="set-seal">过</div>
+              <div class="set-title">第 047 关 通关</div>
+              <div class="set-stars" id="setStars"></div>
+              <div class="set-phrase">一 气 呵 成</div>
+              <div class="set-stats">
+                <div class="cell"><div class="v">0 次</div><div class="k">重来</div></div>
+                <div class="cell"><div class="v">62.4s</div><div class="k">用时</div></div>
+              </div>
+              <div class="set-btns">
+                <button class="btn-gold b1">下 一 关</button>
+                <div class="row2">
+                  <button class="btn-ghost b">分 享</button>
+                  <button class="btn-ghost b">主 题</button>
+                </div>
+                <button class="btn-line b3">返 回 大 厅</button>
+              </div>
+            </div>
+          </div>
+          <div class="nav" id="nav-set"></div>
+        </div>
+        <div class="phone-tag"><b>04</b>RESULT · 结算</div>
+      </div>
+
+      <!-- 05 主题 -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="brand">秘色 · 天青</span></div>
+          <div class="pbody">
+            <div class="map-head"><h3>主题</h3><div class="st">3 / 16 已解锁</div></div>
+            <div class="skin-feature">
+              <div class="tag">使用中</div>
+              <h4>秘色 · 天青</h4>
+              <p>默认主题 · 语法轴「釉面 · 金缮」<br>六通道全套：棋盘 / 机制 / 路径 / 音效 / 动效 / 触感</p>
+              <div class="skin-swatches">
+                <i style="background:#1D3A2E"></i><i style="background:#4F7A66"></i>
+                <i style="background:#B8CFC0"></i><i style="background:#D4AF6A"></i>
+                <i style="background:#C04B33"></i>
+              </div>
+            </div>
+            <div class="skin-grid">
+              <div class="skin-card">
+                <div class="prev" style="background:radial-gradient(circle at 28% 32%, rgba(130,210,225,.55), transparent 14%),radial-gradient(circle at 68% 62%, rgba(205,130,215,.42), transparent 11%),radial-gradient(circle at 50% 85%, rgba(120,180,255,.3), transparent 12%),linear-gradient(150deg,#221A2C,#0C0812)"></div>
+                <div class="nm">玄漆 · 螺钿</div>
+                <div class="ax">漆层 · 虹彩</div>
+                <div class="un">默认主题</div>
+              </div>
+              <div class="skin-card">
+                <div class="prev" style="background:radial-gradient(circle at 24% 30%, rgba(192,110,60,.5), transparent 18%),radial-gradient(circle at 75% 70%, rgba(90,130,90,.35), transparent 14%),linear-gradient(150deg,#C99C6A,#8A5A38)"></div>
+                <div class="nm">鸣沙 · 丹青</div>
+                <div class="ax">矿彩 · 剥蚀</div>
+                <div class="un">看广告解锁</div>
+              </div>
+              <div class="skin-card">
+                <div class="prev" style="background-image:repeating-linear-gradient(0deg, rgba(212,175,106,.42) 0 1px, transparent 1px 13px),repeating-linear-gradient(90deg, rgba(212,175,106,.42) 0 1px, transparent 1px 13px),linear-gradient(150deg,#2E5D8A,#1B3A5C)"></div>
+                <div class="nm">掐丝 · 珐琅</div>
+                <div class="ax">掐丝 · 釉池</div>
+                <div class="un">看广告解锁</div>
+              </div>
+              <div class="skin-card">
+                <div class="prev" style="background:radial-gradient(circle at 62% 30%, rgba(90,140,220,.55), transparent 13%),radial-gradient(circle at 30% 70%, rgba(200,150,70,.42), transparent 10%),radial-gradient(circle at 75% 78%, rgba(110,170,240,.3), transparent 9%),linear-gradient(150deg,#1A2238,#0B1020)"></div>
+                <div class="nm">曜变 · 天目</div>
+                <div class="ax">窑变 · 曜斑</div>
+                <div class="un gold">第 200 关 解锁</div>
+              </div>
+              <div class="skin-card">
+                <div class="prev" style="background:repeating-linear-gradient(45deg, rgba(255,225,190,.14) 0 3px, transparent 3px 8px),repeating-linear-gradient(-45deg, rgba(255,200,170,.1) 0 3px, transparent 3px 8px),linear-gradient(150deg,#B0526A,#D8A06A)"></div>
+                <div class="nm">织锦 · 云霞</div>
+                <div class="ax">织造 · 纹样</div>
+                <div class="un gold">第 500 关 解锁</div>
+              </div>
+              <div class="skin-card">
+                <div class="prev sealed" style="background:linear-gradient(150deg,#241A18,#120D0C)"><span>印</span></div>
+                <div class="nm">敬 启</div>
+                <div class="ax">未公开 · 朱印封缄</div>
+                <div class="un gold">第 900 关 解锁</div>
+              </div>
+            </div>
+          </div>
+          <div class="nav" id="nav-skin"></div>
+        </div>
+        <div class="phone-tag"><b>05</b>THEMES · 主题</div>
+      </div>
+
+      <!-- 06 排行 -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="brand">秘色 · 天青</span></div>
+          <div class="pbody">
+            <div class="map-head"><h3>排行榜</h3><div class="st">本周 · 星数</div></div>
+            <div class="rank-tabs">
+              <div class="t on">好友榜</div>
+              <div class="t">全服榜</div>
+            </div>
+            <div class="podium">
+              <div class="pod second">
+                <div class="ava">青</div>
+                <div class="nm">青瓷</div><div class="sc">★ 132</div>
+                <div class="base"></div>
+              </div>
+              <div class="pod first">
+                <div class="ava">釉</div>
+                <div class="nm">釉里红</div><div class="sc">★ 154</div>
+                <div class="base"></div>
+              </div>
+              <div class="pod third">
+                <div class="ava">筠</div>
+                <div class="nm">筠心</div><div class="sc">★ 121</div>
+                <div class="base"></div>
+              </div>
+            </div>
+            <div class="rank-list">
+              <div class="rank-row">
+                <div class="no">4</div>
+                <div class="ava">霁</div>
+                <div><div class="nm">霁月</div><div class="lv">第 61 关 · 重来 38</div></div>
+                <div class="sc">★ 108</div>
+              </div>
+              <div class="rank-row">
+                <div class="no">5</div>
+                <div class="ava">瓷</div>
+                <div><div class="nm">瓷生（你）</div><div class="lv">第 47 关 · 重来 23</div></div>
+                <div class="sc">★ 96</div>
+              </div>
+              <div class="rank-row">
+                <div class="no">6</div>
+                <div class="ava">砂</div>
+                <div><div class="nm">砂器</div><div class="lv">第 44 关 · 重来 31</div></div>
+                <div class="sc">★ 87</div>
+              </div>
+            </div>
+          </div>
+          <div class="nav" id="nav-rank"></div>
+        </div>
+        <div class="phone-tag"><b>06</b>RANK · 排行</div>
+      </div>
+
+      <!-- 07 我的 -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="brand">秘色 · 天青</span></div>
+          <div class="pbody">
+            <div class="pf-head">
+              <div class="pf-ava">瓷</div>
+              <div class="pf-id">
+                <h3>瓷 生</h3>
+                <p>无尽征途 · 第 47 关　|　ID 88214</p>
+              </div>
+            </div>
+            <div class="pf-stats">
+              <div class="cell"><div class="v">46</div><div class="k">通关</div></div>
+              <div class="cell"><div class="v">96</div><div class="k">星星</div></div>
+              <div class="cell"><div class="v">23</div><div class="k">重来累计</div></div>
+            </div>
+            <div class="pf-wall-label">主 题 墙 · 3 / 16</div>
+            <div class="pf-wall">
+              <div class="sw" style="background:linear-gradient(150deg,#4F7A66,#1D3A2E)"></div>
+              <div class="sw" style="background:linear-gradient(150deg,#2A3A4E,#1B2836)"></div>
+              <div class="sw" style="background:linear-gradient(150deg,#E8D8BC,#C9B28C)"></div>
+              <div class="sw locked" style="background:linear-gradient(150deg,#B5472E,#7A2E1C)"></div>
+              <div class="sw locked" style="background:linear-gradient(150deg,#4A6E8A,#2A4258)"></div>
+              <div class="sw locked" style="background:linear-gradient(150deg,#8B7EC8,#4C4178)"></div>
+            </div>
+            <div class="pf-funcs">
+              <div class="pf-func"><span>音 效</span><div class="sw-on"></div></div>
+              <div class="pf-func"><span>振 动</span><div class="sw-on"></div></div>
+              <div class="pf-func"><span>分享挑战</span><span class="val">带关卡 + 重来数</span></div>
+              <div class="pf-func"><span>战 绩</span><span class="val on">零重来 ★★★ ×12</span></div>
+            </div>
+          </div>
+          <div class="nav" id="nav-pf"></div>
+        </div>
+        <div class="phone-tag"><b>07</b>PROFILE · 我的</div>
+      </div>
+
+    </div>
+  </section>
+
+  <div class="foot">
+    <span>秘色 · 天青 · 定稿版（功能对齐）</span>
+    <span>COVER THE BOARD · ONE GOLD TRAIL</span>
+  </div>
+</div>
+
+<script>
+/* ===== 底部导航（真实 5 Tab） ===== */
+const TAB_ICONS = {
+  home: '<svg viewBox="0 0 24 24"><path d="M4 11 L12 4 L20 11 V20 H14 V15 H10 V20 H4 Z"/></svg>',
+  map:  '<svg viewBox="0 0 24 24"><path d="M9 4 L3 6 V20 L9 18 L15 20 L21 18 V4 L15 6 Z"/><path d="M9 4 V18"/><path d="M15 6 V20"/></svg>',
+  skin: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4 A8 8 0 0 1 12 20 A5.5 5.5 0 0 0 12 4"/></svg>',
+  rank: '<svg viewBox="0 0 24 24"><path d="M6 20 V12 H10 V20"/><path d="M10 20 V7 H14 V20"/><path d="M14 20 V10 H18 V20"/><path d="M4 20 H20"/></svg>',
+  prof: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20 Q5 13, 12 13 Q19 13, 19 20"/></svg>'
+};
+const TABS = [['home','主页'],['map','地图'],['skin','主题'],['rank','排行'],['prof','我的']];
+function buildNav(id, active) {
+  const el = document.getElementById(id);
+  el.innerHTML = TABS.map(([k, nm]) =>
+    `<div class="nav-item ${k === active ? 'on' : ''}"><div class="ico">${TAB_ICONS[k]}</div>${nm}</div>`).join('');
+}
+buildNav('nav-home','home'); buildNav('nav-map','map'); buildNav('nav-game','map');
+buildNav('nav-set','map');   buildNav('nav-skin','skin'); buildNav('nav-rank','rank'); buildNav('nav-pf','prof');
+
+/* ===== 地图：无尽山径（1 → ∞ · 纸雕等高线 + 双段路线 + 节点四态） ===== */
+(function () {
+  const svg = document.getElementById('mapSvg');
+  const CUR = 47;
+  // 可视窗 40–55：蜿蜒山径（下=来路·第1关方向，上=去路·∞方向）
+  const nodes = [
+    { lv: 40, x: 52,  y: 508, label: '040' },
+    { lv: 41, x: 88,  y: 480 },
+    { lv: 42, x: 118, y: 450 },
+    { lv: 43, x: 108, y: 412 },
+    { lv: 44, x: 80,  y: 376 },
+    { lv: 45, x: 88,  y: 336, label: '045' },
+    { lv: 46, x: 128, y: 310 },
+    { lv: 47, x: 172, y: 282, label: '047' },
+    { lv: 48, x: 206, y: 246 },
+    { lv: 49, x: 198, y: 206 },
+    { lv: 50, x: 158, y: 172, label: '050' },
+    { lv: 51, x: 144, y: 132 },
+    { lv: 52, x: 180, y: 100 },
+    { lv: 53, x: 228, y: 76 },
+    { lv: 54, x: 262, y: 50 },
+    { lv: 55, x: 272, y: 22, label: '055' }
+  ];
+  // 过点平滑（中点二次贝塞尔）
+  function smooth(pts) {
+    if (pts.length < 2) return '';
+    let d = `M ${pts[0].x} ${pts[0].y}`;
+    if (pts.length === 2) return d + ` L ${pts[1].x} ${pts[1].y}`;
+    d += ` L ${(pts[0].x + pts[1].x) / 2} ${(pts[0].y + pts[1].y) / 2}`;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const mx = (pts[i].x + pts[i + 1].x) / 2, my = (pts[i].y + pts[i + 1].y) / 2;
+      d += ` Q ${pts[i].x} ${pts[i].y} ${mx} ${my}`;
+    }
+    const last = pts[pts.length - 1];
+    return d + ` L ${last.x} ${last.y}`;
+  }
+  const inTail  = { x: 38, y: 572 };  // 来路尾迹（渐隐于画面外）
+  const outTail = { x: 288, y: -20 }; // 去路尾迹（没入云雾）
+  const walked = smooth([inTail].concat(nodes.slice(0, 8)));   // 40→47 已走
+  const future = smooth(nodes.slice(7).concat([outTail]));     // 47→55→∞ 未走
+
+  let h = '';
+  h += `<defs>
+    <linearGradient id="gld" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#8A6B3C"/><stop offset="1" stop-color="#F2DCA8"/>
+    </linearGradient>
+    <linearGradient id="mistTop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0F1915" stop-opacity="0.88"/>
+      <stop offset="1" stop-color="#0F1915" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="mistBot" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#0F1915" stop-opacity="0.82"/>
+      <stop offset="1" stop-color="#0F1915" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="horizonG" cx="0.82" cy="0" r="0.72">
+      <stop offset="0" stop-color="#F2DCA8" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#F2DCA8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>`;
+
+  // 等高线（纸雕地形）
+  h += `<g stroke="rgba(110,145,128,0.16)" fill="none" stroke-width="1">
+    <path d="M-20,80 C60,50 120,100 200,70 S320,100 340,70"/>
+    <path d="M-20,160 C50,135 130,180 210,150 S310,180 340,155"/>
+    <path d="M-20,250 C70,225 120,270 220,240 S320,275 340,245"/>
+    <path d="M-20,340 C60,315 140,360 220,330 S310,365 340,335"/>
+    <path d="M-20,430 C70,405 130,450 230,420 S320,455 340,425"/>
+    <path d="M-20,520 C60,495 140,540 220,510 S310,545 340,515"/>
+  </g>
+  <g stroke="rgba(110,145,128,0.10)" fill="none" stroke-width="1">
+    <path d="M40,30 C90,70 80,150 130,190 S200,270 190,350 S160,470 200,545"/>
+    <path d="M260,10 C230,90 270,170 240,250 S270,370 230,450 S260,520 245,560"/>
+  </g>`;
+
+  // 路径三层：底光 → 金缮主线 → 高光；未走 = 虚线
+  h += `<path d="${walked}" fill="none" stroke="rgba(212,175,106,0.26)" stroke-width="9" stroke-linecap="round"/>`;
+  h += `<path d="${walked}" fill="none" stroke="url(#gld)" stroke-width="3.8" stroke-linecap="round"/>`;
+  h += `<path d="${walked}" fill="none" stroke="rgba(255,243,214,0.45)" stroke-width="1.1" stroke-linecap="round"/>`;
+  h += `<path d="${future}" fill="none" stroke="rgba(185,178,164,0.26)" stroke-width="3" stroke-linecap="round" stroke-dasharray="1 9"/>`;
+
+  // 节点四态：已过（玉青勾）/ 当前（金珠）/ 未至（虚圈）/ 里程碑（旗）
+  nodes.forEach(n => {
+    const isCur = n.lv === CUR;
+    const isPast = n.lv < CUR;
+    const isMile = n.lv % 10 === 0 && !isCur;
+    if (isCur) {
+      h += `<circle cx="${n.x}" cy="${n.y}" r="27" fill="rgba(212,175,106,0.06)"/>`;
+      h += `<circle cx="${n.x}" cy="${n.y}" r="19" fill="rgba(212,175,106,0.12)"/>`;
+      h += `<circle cx="${n.x}" cy="${n.y}" r="13" fill="#B8945A" stroke="#F2DCA8" stroke-width="1.8"/>`;
+      h += `<circle cx="${n.x}" cy="${n.y}" r="5" fill="#FFF3D6"/>`;
+    } else if (isMile) {
+      h += `<circle cx="${n.x}" cy="${n.y}" r="11.5" fill="#1D3A2E" stroke="rgba(212,175,106,0.45)" stroke-width="1.3" stroke-dasharray="3 3"/>`;
+      h += `<line x1="${n.x}" y1="${n.y - 9}" x2="${n.x}" y2="${n.y - 32}" stroke="#D4AF6A" stroke-width="1.8" stroke-linecap="round"/>`;
+      h += `<path d="M ${n.x} ${n.y - 32} L ${n.x + 17} ${n.y - 25.5} L ${n.x} ${n.y - 19} Z" fill="#C04B33"/>`;
+    } else if (isPast) {
+      h += `<circle cx="${n.x}" cy="${n.y}" r="10" fill="#2E5444" stroke="rgba(212,175,106,0.5)" stroke-width="1.4"/>`;
+      h += `<path d="M ${n.x - 4.5} ${n.y} L ${n.x - 1} ${n.y + 3.5} L ${n.x + 5} ${n.y - 3.5}" stroke="#F2DCA8" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+    } else {
+      h += `<circle cx="${n.x}" cy="${n.y}" r="9.5" fill="#1D3A2E" stroke="rgba(185,178,164,0.32)" stroke-width="1.2" stroke-dasharray="3 3"/>`;
+    }
+    if (n.label) {
+      const ly = n.y + (isCur ? 31 : 22);
+      const size = isCur ? 13 : 8.5;
+      const fill = isCur ? '#F2DCA8' : (isPast ? 'rgba(185,207,192,0.65)' : 'rgba(185,178,164,0.5)');
+      h += `<text x="${n.x}" y="${ly}" text-anchor="middle" font-family="serif" font-size="${size}" font-weight="${isCur ? 700 : 500}" letter-spacing="1.5" fill="${fill}" stroke="rgba(14,24,21,0.75)" stroke-width="${isCur ? 3 : 2.4}" paint-order="stroke">${n.label}</text>`;
+    }
+  });
+
+  // 「你在这里」金签
+  h += `<line x1="152" y1="262" x2="166" y2="275" stroke="rgba(212,175,106,0.45)" stroke-width="1.2"/>`;
+  h += `<rect x="78" y="242" width="76" height="21" rx="10" fill="#D4AF6A"/>`;
+  h += `<text x="116" y="256.5" text-anchor="middle" font-family="serif" font-size="10" font-weight="700" letter-spacing="2" fill="#2A2114">你在这里</text>`;
+
+  // 上下缘云雾渐隐（窗外 = 无尽）
+  h += `<rect x="0" y="0" width="331" height="112" fill="url(#mistTop)"/>`;
+  h += `<rect x="0" y="502" width="331" height="68" fill="url(#mistBot)"/>`;
+  h += `<ellipse cx="274" cy="16" rx="92" ry="54" fill="url(#horizonG)"/>`;
+  // 无尽标记
+  h += `<text x="302" y="32" text-anchor="middle" font-family="serif" font-size="21" fill="rgba(242,220,168,0.55)">∞</text>`;
+  h += `<text x="302" y="50" text-anchor="middle" font-family="serif" font-size="7.5" letter-spacing="3" fill="rgba(185,178,164,0.42)">无 尽</text>`;
+
+  svg.innerHTML = h;
+})();
+
+/* ===== 游戏内棋盘（真实机制：单向门/星屑/钥匙门/传送/冰面） ===== */
+(function () {
+  const g = document.getElementById('gameBoard');
+  // 8x8 示意盘：d=已铺 p=未铺 a=单向 s=星屑 k=钥匙 D=门 t=传送 i=冰面
+  const K = [
+    'd','d','d','p','p','d','s','p',
+    'p','d','a','d','d','d','d','p',
+    'p','d','d','p','k','p','d','p',
+    'i','i','d','d','d','d','d','D',
+    'p','p','d','p','t','d','p','p',
+    'p','d','d','d','d','d','d','p',
+    's','d','p','p','a','p','d','d',
+    'p','d','d','p','t','d','d','p'
+  ];
+  const glyph = (inner, stroke = 'rgba(255,240,210,.85)', w = 1.4) =>
+    `<div class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${inner}</svg></div>`;
+  g.innerHTML = K.map((k, i) => {
+    if (k === 'd') return `<div class="pc"><div class="glint"></div></div>`;
+    if (k === 'p') return `<div class="pc pale"></div>`;
+    if (k === 'a') return `<div class="pc dark"><div class="glint"></div>${glyph('<path d="M5 12 H15"/><path d="M11 7 L17 12 L11 17"/>', '#F2DCA8', 2)}</div>`;
+    if (k === 's') {
+      const n = i === 6 ? '1' : '2';
+      return `<div class="pc gold-star"><div class="glint"></div>${glyph('<path d="M12 3.5 L14.2 9.8 L21 9.8 L15.6 13.8 L17.7 20 L12 16.2 L6.3 20 L8.4 13.8 L3 9.8 L9.8 9.8Z"/>', '#4A3510', 0)}</div><div class="num">★${n}</div>`;
+    }
+    if (k === 'k') return `<div class="pc key"><div class="glint"></div>${glyph('<circle cx="9" cy="9" r="3.4"/><path d="M11.4 11.4 L18 18"/><path d="M15.5 15.5 L17.5 13.5"/>', '#2A2114', 1.8)}</div>`;
+    if (k === 'D') return `<div class="pc dark"><div class="glint"></div>${glyph('<rect x="7" y="4" width="10" height="16" rx="1.5"/><circle cx="14.2" cy="12" r="1.2" fill="rgba(255,240,210,.8)" stroke="none"/>', 'rgba(255,240,210,.75)', 1.5)}</div>`;
+    if (k === 't') return `<div class="pc violet"><div class="glint"></div>${glyph('<circle cx="10" cy="12" r="5.2"/><circle cx="15.5" cy="12" r="5.2"/>', 'rgba(240,235,255,.85)', 1.5)}</div>`;
+    return `<div class="pc frost"><div class="glint"></div>${glyph('<path d="M6 16 L10 8 L14 16"/><path d="M8.2 13 H11.8"/><path d="M15 16 L18 8"/>', 'rgba(20,50,45,.7)', 1.6)}</div>`;
+  }).join('');
+
+  // 金色光迹（三层画法）
+  const svg = document.getElementById('gamePath');
+  const P = 'M 39,39 L 125,39 L 125,82 L 211,82 L 211,125 L 125,125 L 125,168 L 254,168';
+  svg.innerHTML = `
+    <path d="${P}" fill="none" stroke="rgba(212,175,106,.35)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="${P}" fill="none" stroke="#B89045" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="${P}" fill="none" stroke="#F2DCA8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="${P}" fill="none" stroke="#fff" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" opacity=".5"/>
+    <circle cx="254" cy="168" r="4.5" fill="#F2DCA8"/>`;
+
+  // 图例（只展示盘上真实出现的机制）
+  const L = [
+    ['单向门', '#26333B', '<svg viewBox="0 0 24 24" fill="none" stroke="#F2DCA8" stroke-width="2"><path d="M5 12 H15"/><path d="M11 7 L17 12 L11 17"/></svg>'],
+    ['星屑 序', '#B89045', '<svg viewBox="0 0 24 24" fill="#2A2114"><path d="M12 4 L14 10 L20 10 L15 13.6 L17 20 L12 16.2 L7 20 L9 13.6 L4 10 L10 10Z"/></svg>'],
+    ['钥匙', '#A07E3C', '<svg viewBox="0 0 24 24" fill="none" stroke="#2A2114" stroke-width="1.8"><circle cx="9" cy="9" r="3"/><path d="M11 11 L17 17"/><path d="M14.6 14.6 L16.6 12.6"/></svg>'],
+    ['门', '#26333B', '<svg viewBox="0 0 24 24" fill="none" stroke="rgba(240,235,220,.8)" stroke-width="1.5"><rect x="7" y="5" width="10" height="14" rx="1.5"/><circle cx="14" cy="12" r="1" fill="rgba(240,235,220,.8)" stroke="none"/></svg>'],
+    ['传送门', '#5C5192', '<svg viewBox="0 0 24 24" fill="none" stroke="rgba(240,235,255,.85)" stroke-width="1.5"><circle cx="10" cy="12" r="4.6"/><circle cx="15" cy="12" r="4.6"/></svg>'],
+    ['冰面', '#7FA8A0', '<svg viewBox="0 0 24 24" fill="none" stroke="rgba(20,50,45,.75)" stroke-width="1.6"><path d="M6 16 L10 8 L14 16"/><path d="M8.2 13 H11.8"/><path d="M15 16 L18 8"/></svg>']
+  ];
+  document.getElementById('gLegend').innerHTML = L.map(([nm, bg, ico]) =>
+    `<div class="li"><div class="sw" style="background:${bg}">${ico}</div>${nm}</div>`).join('');
+})();
+
+/* ===== 结算三星 ===== */
+(function () {
+  const star = on => `<div class="st"><svg viewBox="0 0 34 34">
+    <path d="M17 3 L20.2 11.8 L29.5 11.8 L22 17.6 L24.8 26.5 L17 21.2 L9.2 26.5 L12 17.6 L4.5 11.8 L13.8 11.8 Z"
+      fill="${on ? '#F2DCA8' : 'none'}" stroke="${on ? '#B89045' : 'rgba(185,178,164,0.3)'}" stroke-width="1.6"/>
+  </svg></div>`;
+  document.getElementById('setStars').innerHTML = star(true) + star(true) + star(true);
+})();
+</script>
+</body>
+</html>

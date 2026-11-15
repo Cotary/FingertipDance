@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>主题矩阵 02–04 · 选型提案 | 秘色系列</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --ink: #121016;
+  --ink2: #1A1720;
+  --ink3: #221D2A;
+  --paper: #F3EEE6;
+  --dim: #8A8296;
+  --dim2: #5C5568;
+  --gold: #E8B84B;
+  --gold-hi: #F6D98A;
+  --serif: 'Noto Serif SC', serif;
+  --sans: 'Noto Sans SC', sans-serif;
+}
+body {
+  background: var(--ink);
+  background-image:
+    radial-gradient(1200px 500px at 50% -10%, rgba(232,184,75,.05), transparent 60%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+  color: var(--paper);
+  font-family: var(--sans);
+  font-weight: 300;
+}
+.wrap { max-width: 1180px; margin: 0 auto; padding: 56px 40px 80px; }
+
+/* ============ 报头 ============ */
+.head { text-align: center; margin-bottom: 64px; }
+.head .kicker {
+  font-family: var(--serif); font-size: 12px; letter-spacing: .55em;
+  color: var(--gold); margin-bottom: 18px; font-weight: 600;
+}
+.head h1 {
+  font-family: var(--serif); font-size: 44px; font-weight: 900;
+  letter-spacing: .18em; line-height: 1.35; color: var(--paper);
+}
+.head h1 em { font-style: normal; color: var(--gold); }
+.head .sub {
+  margin-top: 18px; font-size: 13.5px; letter-spacing: .14em;
+  color: var(--dim); line-height: 2;
+}
+.rule { width: 56px; height: 1px; background: var(--gold); margin: 28px auto 0; opacity: .7; }
+
+/* ============ 区块 ============ */
+.sec { margin-bottom: 76px; }
+.sec-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 30px; }
+.sec-head .no {
+  font-family: var(--serif); font-size: 13px; color: var(--gold);
+  letter-spacing: .3em; font-weight: 700;
+}
+.sec-head h2 {
+  font-family: var(--serif); font-size: 25px; font-weight: 700;
+  letter-spacing: .22em; color: var(--paper);
+}
+.sec-head .en {
+  font-size: 10px; letter-spacing: .34em; color: var(--dim2);
+  text-transform: uppercase;
+}
+
+/* ============ 方法论 ============ */
+.rules { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 38px; }
+.rule-card {
+  background: var(--ink2); border: 1px solid rgba(232,184,75,.10);
+  border-radius: 14px; padding: 20px 16px;
+}
+.rule-card .n {
+  font-family: var(--serif); font-size: 11px; color: var(--gold);
+  letter-spacing: .28em; margin-bottom: 10px;
+}
+.rule-card h4 {
+  font-family: var(--serif); font-size: 15px; letter-spacing: .12em;
+  font-weight: 700; margin-bottom: 8px;
+}
+.rule-card p { font-size: 11px; line-height: 1.9; color: var(--dim); letter-spacing: .05em; }
+
+.axis-map {
+  background: var(--ink2); border: 1px solid rgba(255,255,255,.06);
+  border-radius: 18px; padding: 28px 30px; margin-bottom: 38px;
+}
+.axis-map h3 {
+  font-family: var(--serif); font-size: 14px; letter-spacing: .3em;
+  color: var(--paper); margin-bottom: 18px; font-weight: 700;
+}
+.axis-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center; }
+.axis-row .lbl {
+  font-size: 10px; letter-spacing: .22em; color: var(--dim2);
+  width: 96px; flex-shrink: 0;
+}
+.chip {
+  font-size: 11px; letter-spacing: .12em; padding: 6px 13px;
+  border-radius: 999px; border: 1px solid rgba(255,255,255,.10);
+  color: var(--dim);
+}
+.chip.taken { border-style: dashed; opacity: .75; }
+.chip.live { border-color: var(--gold); color: var(--gold); background: rgba(232,184,75,.08); }
+.chip.new {
+  border-color: rgba(232,184,75,.55); color: var(--gold-hi);
+  background: rgba(232,184,75,.12); font-weight: 500;
+}
+.axis-note { font-size: 11px; color: var(--dim); line-height: 1.9; letter-spacing: .05em; margin-top: 6px; }
+
+/* 灰度测试 */
+.gray-test { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.gray-box {
+  background: var(--ink2); border: 1px solid rgba(255,255,255,.06);
+  border-radius: 18px; padding: 24px;
+}
+.gray-box h3 {
+  font-family: var(--serif); font-size: 13px; letter-spacing: .3em;
+  color: var(--paper); margin-bottom: 6px; font-weight: 700;
+}
+.gray-box .hint { font-size: 10.5px; color: var(--dim2); letter-spacing: .1em; margin-bottom: 18px; }
+.gray-box.gs .mini-board { filter: grayscale(1) contrast(1.05); }
+.mini-row { display: flex; gap: 14px; justify-content: space-between; }
+.mini-cell { flex: 1; text-align: center; }
+.mini-cell .tag {
+  font-family: var(--serif); font-size: 10px; letter-spacing: .18em;
+  color: var(--dim); margin-top: 10px;
+}
+
+/* ============ 主题大卡 ============ */
+.theme-card {
+  background: var(--ink2); border: 1px solid rgba(255,255,255,.07);
+  border-radius: 22px; overflow: hidden; margin-bottom: 34px;
+}
+.theme-top { display: grid; grid-template-columns: 1.15fr 1fr; }
+.theme-intro { padding: 42px 42px 36px; position: relative; }
+.theme-intro .idx {
+  font-family: var(--serif); font-size: 11px; letter-spacing: .5em;
+  color: var(--gold); margin-bottom: 14px; font-weight: 700;
+}
+.theme-intro h3 {
+  font-family: var(--serif); font-size: 40px; font-weight: 900;
+  letter-spacing: .14em; line-height: 1.3;
+}
+.theme-intro .en-name {
+  margin-top: 8px; font-size: 11px; letter-spacing: .42em;
+  color: var(--dim2); text-transform: uppercase;
+}
+.theme-intro .poem {
+  margin: 22px 0 20px; font-family: var(--serif); font-size: 13.5px;
+  letter-spacing: .22em; line-height: 2.1; color: var(--dim);
+}
+.axis-badge {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 9px 18px; border-radius: 999px;
+  border: 1px solid rgba(232,184,75,.4); background: rgba(232,184,75,.07);
+  font-size: 11px; letter-spacing: .18em; color: var(--gold-hi);
+}
+.axis-badge b { font-family: var(--serif); font-weight: 700; }
+.theme-intro .why {
+  margin-top: 22px; font-size: 12px; line-height: 2.05;
+  color: var(--dim); letter-spacing: .05em;
+}
+.theme-intro .why b { color: var(--paper); font-weight: 500; }
+
+.theme-stage {
+  padding: 36px 30px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 18px;
+  border-left: 1px solid rgba(255,255,255,.05);
+}
+
+/* 六通道 + 材质 */
+.theme-body { border-top: 1px solid rgba(255,255,255,.05); display: grid; grid-template-columns: 1fr 1.25fr; }
+.mat-col { padding: 32px 38px; border-right: 1px solid rgba(255,255,255,.05); }
+.chan-col { padding: 32px 38px; }
+.col-label {
+  font-family: var(--serif); font-size: 11px; letter-spacing: .38em;
+  color: var(--gold); margin-bottom: 20px; font-weight: 700;
+}
+.mat-row { display: flex; gap: 14px; margin-bottom: 18px; }
+.mat-item { flex: 1; }
+.mat-ball {
+  width: 100%; aspect-ratio: 1; border-radius: 50%; margin-bottom: 10px;
+  position: relative; overflow: hidden;
+}
+.mat-item .nm {
+  font-family: var(--serif); font-size: 11.5px; letter-spacing: .22em;
+  margin-bottom: 4px; text-align: center;
+}
+.mat-item .ds {
+  font-size: 9.5px; color: var(--dim2); letter-spacing: .06em;
+  text-align: center; line-height: 1.7;
+}
+.pal-row { display: flex; gap: 6px; margin-top: 6px; }
+.pal {
+  flex: 1; height: 52px; border-radius: 9px; position: relative;
+  border: 1px solid rgba(255,255,255,.08);
+}
+.pal span {
+  position: absolute; bottom: -17px; left: 0; right: 0;
+  font-size: 8px; letter-spacing: .08em; color: var(--dim2);
+  text-align: center; font-family: monospace;
+}
+.pal-wrap { margin-top: 30px; padding-bottom: 18px; }
+
+.chan-table { width: 100%; border-collapse: collapse; }
+.chan-table td {
+  padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,.05);
+  font-size: 11px; letter-spacing: .05em; line-height: 1.8; vertical-align: top;
+}
+.chan-table td:first-child {
+  width: 62px; font-family: var(--serif); color: var(--gold);
+  letter-spacing: .22em; font-weight: 600; font-size: 10.5px;
+}
+.chan-table td:last-child { color: var(--dim); }
+.chan-table td b { color: var(--paper); font-weight: 500; }
+.se-row {
+  margin-top: 18px; padding: 14px 18px; border-radius: 12px;
+  background: rgba(232,184,75,.05); border: 1px solid rgba(232,184,75,.12);
+  font-size: 10.5px; letter-spacing: .08em; color: var(--dim); line-height: 2;
+}
+.se-row b { color: var(--gold-hi); font-weight: 500; letter-spacing: .14em; }
+
+/* ============ 棋盘 ============ */
+.mini-board {
+  width: 100%; max-width: 320px; border-radius: 14px; padding: 14px;
+  position: relative; overflow: hidden;
+}
+.mini-board .grid {
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px;
+  position: relative; z-index: 2;
+}
+.mini-board svg.path { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 3; overflow: visible; }
+.p { aspect-ratio: 1; border-radius: 10px; position: relative; overflow: hidden; }
+
+/* —— 天青 mini（灰度测试对照） —— */
+.mb-celadon { background: linear-gradient(155deg, #26222E, #1B1824 55%, #221E2B); box-shadow: inset 0 2px 14px rgba(0,0,0,.5); }
+.mb-celadon .p { background: radial-gradient(120% 110% at 30% 22%, #7FA8A0, #55807A 48%, #3E625E); box-shadow: 0 3px 7px rgba(0,0,0,.4), inset 0 1px 2px rgba(255,255,255,.35), inset 0 -3px 6px rgba(0,0,0,.28); }
+.mb-celadon .p.deep { background: radial-gradient(120% 110% at 30% 22%, #4D7A74, #35574F 48%, #26423C); }
+.mb-celadon .p::after {
+  content: ''; position: absolute; top: 8%; left: 12%; width: 52%; height: 30%;
+  border-radius: 50%; background: linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0));
+  filter: blur(3px);
+}
+
+/* —— 玄漆·螺钿 —— */
+.mb-lacquer { background: radial-gradient(140% 120% at 28% 18%, #241C30 0%, #14101C 52%, #0D0A14 100%); box-shadow: inset 0 2px 18px rgba(0,0,0,.65), inset 0 -8px 22px rgba(80,50,120,.12); }
+.mb-lacquer .p {
+  background: linear-gradient(152deg, #2A2138 0%, #1A1426 44%, #221A30 78%, #322444 100%);
+  box-shadow: 0 4px 9px rgba(0,0,0,.55), inset 0 1px 1.5px rgba(220,190,255,.28), inset 0 -4px 8px rgba(0,0,0,.5);
+}
+.mb-lacquer .p.deep { background: linear-gradient(152deg, #191226, #0E0A18 50%, #150F22); }
+.mb-lacquer .p .nacre {
+  position: absolute; inset: 18%; border-radius: 42% 58% 55% 45% / 48% 42% 58% 52%;
+  background: conic-gradient(from 210deg, #8ED4CC, #A99BD9 25%, #E3BE93 50%, #93C9C4 72%, #B79BD6 100%);
+  opacity: .55; filter: blur(.4px) saturate(1.15);
+}
+.mb-lacquer .p.deep .nacre { opacity: .28; }
+.mb-lacquer .p .glint-l {
+  position: absolute; top: 7%; left: 10%; width: 58%; height: 26%;
+  border-radius: 50%; background: linear-gradient(180deg, rgba(255,255,255,.62), rgba(255,255,255,0));
+  filter: blur(2.5px);
+}
+
+/* —— 鸣沙·丹青 —— */
+.mb-dunhuang {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E"),
+    radial-gradient(130% 110% at 30% 20%, #EFE0C2, #DCC79E 55%, #CBB087 100%);
+  background-blend-mode: overlay, normal;
+  box-shadow: inset 0 2px 12px rgba(120,80,40,.22), inset 0 -6px 18px rgba(120,80,40,.18);
+}
+.mb-dunhuang .p {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2'/%3E%3C/filter%3E%3Crect width='80' height='80' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E"),
+    linear-gradient(148deg, #6E9580, #56786A 55%, #456055);
+  background-blend-mode: overlay, normal;
+  box-shadow: 0 3px 6px rgba(110,70,30,.30), inset 0 1px 1px rgba(255,245,220,.35), inset 0 -3px 7px rgba(60,35,10,.30);
+  clip-path: polygon(3% 0, 97% 2%, 100% 96%, 4% 100%, 0 8%);
+}
+.mb-dunhuang .p.deep {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2'/%3E%3C/filter%3E%3Crect width='80' height='80' filter='url(%23n)' opacity='0.45'/%3E%3C/svg%3E"),
+    linear-gradient(148deg, #A0552F, #8A4626 55%, #713A20);
+}
+.mb-dunhuang .p.alt {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2'/%3E%3C/filter%3E%3Crect width='80' height='80' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E"),
+    linear-gradient(148deg, #5A7796, #48627E 55%, #3A4F66);
+}
+
+/* —— 掐丝·珐琅 —— */
+.mb-enamel { background: radial-gradient(135% 115% at 32% 20%, #274247, #1B2F34 55%, #142328 100%); box-shadow: inset 0 2px 16px rgba(0,0,0,.5), inset 0 -8px 20px rgba(0,0,0,.35); }
+.mb-enamel .p {
+  border: 2.5px solid #B08D4F;
+  border-radius: 9px;
+  box-shadow: 0 3px 7px rgba(0,0,0,.45), inset 0 0 0 1.5px rgba(60,35,5,.45), inset 0 -4px 8px rgba(0,0,0,.28);
+}
+.mb-enamel .p .fill { position: absolute; inset: 0; border-radius: 7px; }
+.mb-enamel .p .fill.c1 { background: linear-gradient(160deg, #2F8078, #1F6560 55%, #2C7C74); }
+.mb-enamel .p .fill.c2 { background: linear-gradient(160deg, #35579B, #274281 55%, #2F4E92); }
+.mb-enamel .p .fill.c3 { background: linear-gradient(160deg, #C24A30, #A93A24 55%, #BD4228); }
+.mb-enamel .p .fill.c4 { background: linear-gradient(160deg, #D9A13B, #C08A2C 55%, #D29A34); }
+.mb-enamel .p .spot {
+  position: absolute; top: 10%; left: 14%; width: 40%; height: 22%;
+  border-radius: 50%; background: linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,0));
+  filter: blur(2px); z-index: 2;
+}
+
+/* 主题大棋盘 */
+.hero-board {
+  width: 100%; max-width: 430px; border-radius: 16px; padding: 20px;
+  position: relative; overflow: hidden;
+}
+.hero-board .grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 9px; position: relative; z-index: 2; }
+.hero-board svg.path { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 3; overflow: visible; }
+.hero-board .p { border-radius: 12px; }
+
+/* 机制件样本 */
+.mech-row { display: flex; gap: 12px; justify-content: center; }
+.mech {
+  width: 64px; text-align: center;
+}
+.mech .m {
+  width: 52px; height: 52px; margin: 0 auto 8px; border-radius: 11px;
+  position: relative; overflow: hidden;
+}
+.mech .nm { font-family: var(--serif); font-size: 9.5px; letter-spacing: .18em; color: var(--dim); }
+
+/* ============ 排期 ============ */
+.roadmap { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 34px; }
+.rm-card {
+  background: var(--ink2); border: 1px solid rgba(232,184,75,.14);
+  border-radius: 16px; padding: 26px 24px;
+}
+.rm-card .step {
+  font-family: var(--serif); font-size: 11px; letter-spacing: .42em;
+  color: var(--gold); margin-bottom: 12px; font-weight: 700;
+}
+.rm-card h4 {
+  font-family: var(--serif); font-size: 19px; letter-spacing: .18em;
+  font-weight: 700; margin-bottom: 12px;
+}
+.rm-card p { font-size: 11px; line-height: 2; color: var(--dim); letter-spacing: .05em; }
+.verdict {
+  background: rgba(232,184,75,.06); border: 1px solid rgba(232,184,75,.22);
+  border-radius: 16px; padding: 28px 32px;
+}
+.verdict h3 {
+  font-family: var(--serif); font-size: 14px; letter-spacing: .34em;
+  color: var(--gold); margin-bottom: 14px; font-weight: 700;
+}
+.verdict p { font-size: 12.5px; line-height: 2.15; letter-spacing: .06em; color: var(--dim); }
+.verdict p b { color: var(--paper); font-weight: 500; }
+.verdict .no-list { margin-top: 12px; padding-top: 12px; border-top: 1px dashed rgba(232,184,75,.2); }
+
+.foot {
+  margin-top: 70px; padding-top: 26px; border-top: 1px solid rgba(255,255,255,.06);
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 10px; letter-spacing: .3em; color: var(--dim2);
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- 报头 -->
+  <header class="head">
+    <div class="kicker">THEME MATRIX · SELECTION PROPOSAL</div>
+    <h1>主题矩阵 <em>02 – 04</em> 选型提案</h1>
+    <div class="sub">
+      继「秘色 · 天青」之后，系列还缺哪三套？——先定选型军规，再定主题<br>
+      一套主题只换一条语法轴 · 灰度可辨 · 一金不变 · 六通道全齐
+    </div>
+    <div class="rule"></div>
+  </header>
+
+  <!-- 01 方法论 -->
+  <section class="sec">
+    <div class="sec-head">
+      <span class="no">壹</span>
+      <h2>选型军规</h2>
+      <span class="en">Selection Doctrine</span>
+    </div>
+
+    <div class="rules">
+      <div class="rule-card">
+        <div class="n">RULE 01</div>
+        <h4>灰度可辨</h4>
+        <p>抽掉全部颜色，靠材质/形态/纹理仍能认出是哪套。认不出 = 只是换色板，淘汰。</p>
+      </div>
+      <div class="rule-card">
+        <div class="n">RULE 02</div>
+        <h4>一轴一世界</h4>
+        <p>每套只占一条语法轴（材质/笔触/结构/时间……）。占两条变特效堆，铁律不破。</p>
+      </div>
+      <div class="rule-card">
+        <div class="n">RULE 03</div>
+        <h4>原型够硬</h4>
+        <p>必须立在真实顶级工艺传统上（漆器/壁画/珐琅），不是风格标签（像素/赛博）。</p>
+      </div>
+      <div class="rule-card">
+        <div class="n">RULE 04</div>
+        <h4>明度补位</h4>
+        <p>天青是「暗展柜·冷光」。系列要有极暗场、亮暖场、高饱和彩场，四个世界四张脸。</p>
+      </div>
+      <div class="rule-card">
+        <div class="n">RULE 05</div>
+        <h4>一金不变</h4>
+        <p>路径金 + 唯一 CTA 金是全系列品牌锚点。主题只换「金的性格」，不换金的存在。</p>
+      </div>
+    </div>
+
+    <div class="axis-map">
+      <h3>语法轴地图 · 已占 / 在建 / 提名</h3>
+      <div class="axis-row">
+        <div class="lbl">已占（8 套）</div>
+        <span class="chip taken">媒介 · 水墨山河</span>
+        <span class="chip taken">材质 · 玻璃穹顶</span>
+        <span class="chip taken">几何 · 圆格罗盘</span>
+        <span class="chip taken">分辨率 · 像素街机</span>
+        <span class="chip taken">平面 · 赛博霓虹</span>
+        <span class="chip taken">光源 · 黑曜熔岩</span>
+        <span class="chip taken">秩序 · 金线装饰</span>
+        <span class="chip taken">形态 · 深海荧光</span>
+      </div>
+      <div class="axis-row">
+        <div class="lbl">高级系列</div>
+        <span class="chip live">釉光 · 秘色天青（01 已定稿）</span>
+        <span class="chip new">漆层 · 玄漆螺钿（02 提名）</span>
+        <span class="chip new">矿物 · 鸣沙丹青（03 提名）</span>
+        <span class="chip new">掐丝 · 掐丝珐琅（04 提名）</span>
+      </div>
+      <div class="axis-note">
+        为什么不是水墨 / 金缮 / 像素重做？——水墨与已上线「水墨山河」同占媒介轴（换色不换世界）；
+        金缮与天青同属瓷面材质轴，灰度下孪生；像素已被否（不高级）。三套提名互不撞轴，且与天青灰度四象分明：
+        <b style="color:var(--paper)">釉面光滑 / 漆面深光+虹彩 / 壁面颗粒剥蚀 / 丝格分区</b>。
+      </div>
+    </div>
+
+    <div class="gray-test">
+      <div class="gray-box">
+        <h3>灰度可辨测试 · 原色</h3>
+        <div class="hint">四套同构棋盘（6×4 + 一条金径），只看材质语言</div>
+        <div class="mini-row" id="minis-color"></div>
+      </div>
+      <div class="gray-box gs">
+        <h3>灰度可辨测试 · 去色</h3>
+        <div class="hint">抽掉颜色后仍互相认得出，才算过军规 01</div>
+        <div class="mini-row" id="minis-gray"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 玄漆螺钿 -->
+  <section class="sec">
+    <div class="sec-head">
+      <span class="no">贰</span>
+      <h2>提名 02</h2>
+      <span class="en">No.02 Xuan Lacquer</span>
+    </div>
+    <div class="theme-card">
+      <div class="theme-top">
+        <div class="theme-intro">
+          <div class="idx">THEME 02 · 极暗旗舰</div>
+          <h3>玄漆 · 螺钿</h3>
+          <div class="en-name">XUAN LACQUER &middot; MOTHER-OF-PEARL</div>
+          <div class="poem">
+            百层大漆，一寸螺光。<br>
+            黑到极处，虹彩自己走出来。
+          </div>
+          <div class="axis-badge">语法轴 · <b>漆层深度 + 虹彩镶嵌</b></div>
+          <div class="why">
+            原型是<b>明清漆器</b>（黑漆描金 · 点螺钿）——比瓷更古老、更深沉的中国工艺。
+            隐喻是<b>夜里的多宝格</b>：漆板上嵌着贝片，玩家连出的路径是唯一的金箔亮线。
+            它补上系列最缺的<b>极暗场</b>：和天青并排，就是「日场 / 夜场」双旗舰，
+            分享图冲击力最强（doc 32：深色背景线路发光，视觉冲击最强）。
+            灰度识别点：<b>黑面上的虹彩碎片</b>——没有任何一套是这个长相。
+          </div>
+        </div>
+        <div class="theme-stage">
+          <div class="hero-board mb-lacquer" id="hero-lac"></div>
+          <div class="mech-row" id="mech-lac"></div>
+        </div>
+      </div>
+      <div class="theme-body">
+        <div class="mat-col">
+          <div class="col-label">材质母材</div>
+          <div class="mat-row">
+            <div class="mat-item">
+              <div class="mat-ball" style="background: radial-gradient(120% 110% at 32% 24%, #3A2C50 0%, #1C1428 46%, #0D0916 100%); box-shadow: inset 0 2px 6px rgba(255,255,255,.18), inset 0 -8px 18px rgba(0,0,0,.6), 0 10px 22px rgba(0,0,0,.5);"></div>
+              <div class="nm">大漆</div>
+              <div class="ds">深、润、镜面<br>高光窄而锐</div>
+            </div>
+            <div class="mat-item">
+              <div class="mat-ball" style="background: conic-gradient(from 200deg, #8ED4CC, #A99BD9 22%, #E3BE93 46%, #93C9C4 68%, #B79BD6 88%, #8ED4CC); box-shadow: inset 0 0 18px rgba(255,255,255,.35), 0 10px 22px rgba(0,0,0,.45);"></div>
+              <div class="nm">螺钿</div>
+              <div class="ds">贝母虹彩<br>随角变色</div>
+            </div>
+            <div class="mat-item">
+              <div class="mat-ball" style="background: linear-gradient(150deg, #F6D98A, #D9A745 45%, #A87B2C 100%); box-shadow: inset 0 3px 8px rgba(255,255,255,.55), inset 0 -6px 12px rgba(90,55,10,.45), 0 10px 22px rgba(0,0,0,.45);"></div>
+              <div class="nm">金箔</div>
+              <div class="ds">薄、脆、亮<br>只给路径</div>
+            </div>
+          </div>
+          <div class="pal-wrap">
+            <div class="col-label" style="margin-bottom:12px;">色板</div>
+            <div class="pal-row">
+              <div class="pal" style="background:#0D0A14"><span>#0D0A14</span></div>
+              <div class="pal" style="background:#221A30"><span>#221A30</span></div>
+              <div class="pal" style="background:#5E1F1C"><span>#5E1F1C</span></div>
+              <div class="pal" style="background:conic-gradient(from 200deg,#8ED4CC,#A99BD9,#E3BE93,#8ED4CC)"><span>螺光</span></div>
+              <div class="pal" style="background:#EFC15E"><span>#EFC15E</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="chan-col">
+          <div class="col-label">六通道速览</div>
+          <table class="chan-table">
+            <tr><td>背景</td><td>玄黑漆幕，一道<b>窄高光带</b>斜切（35° 与全系列同源）；无星无尘，黑要「厚」不要「空」</td></tr>
+            <tr><td>底板</td><td>黑漆板，边缘<b>漆层断面</b>（三道深浅不同的褐线，暗示百层髹漆）</td></tr>
+            <tr><td>格</td><td>漆片：<b>未铺</b>=深漆微光；<b>已铺</b>=嵌一枚螺钿贝片（虹彩随构图逐格换相位）</td></tr>
+            <tr><td>机制</td><td>石障=生铁锭（哑光压漆光）｜单向=描金箭｜星屑=螺钿星片｜冰砖=犀皮漆虎纹｜传送=朱漆双环</td></tr>
+            <tr><td>路径</td><td><b>金箔</b>四层画法 + 沿径螺光碎点（每 2 格一枚微虹彩）；金比天青更亮更薄（箔感）</td></tr>
+            <tr><td>UI</td><td>漆黑卡面 + 金线框；CTA 金箔钮（下沿厚度像贴了一层金片）</td></tr>
+          </table>
+          <div class="se-row">
+            <b>音效</b>　落子 = 漆器闷叩（180Hz 面板 + 短木芯，90ms）｜连径 = 贝片碎光（6kHz 极短细闪）｜铺满 = 深磬一记（比玉磬更低更闷）｜盖印 = 金箔压实（轻脆纸感）<br>
+            <b>触感</b>　落子 12ms 闷震（低频）｜连径 18ms｜铺满 [20,40,20]｜盖印 50ms ——整体比天青<b>更沉半档</b>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 鸣沙丹青 -->
+  <section class="sec">
+    <div class="sec-head">
+      <span class="no">叁</span>
+      <h2>提名 03</h2>
+      <span class="en">No.03 Mingsha Pigments</span>
+    </div>
+    <div class="theme-card">
+      <div class="theme-top">
+        <div class="theme-intro">
+          <div class="idx">THEME 03 · 亮暖旗舰</div>
+          <h3>鸣沙 · 丹青</h3>
+          <div class="en-name">MINGSHA &middot; MINERAL FRESCO</div>
+          <div class="poem">
+            千年壁上的颜色，是从石头里磨出来的。<br>
+            时间剥走了墙皮，没剥走颜色。
+          </div>
+          <div class="axis-badge">语法轴 · <b>矿物颗粒 + 壁画剥蚀</b></div>
+          <div class="why">
+            原型是<b>敦煌壁画</b>的矿物颜料传统（石青·石绿·朱砂·土红·沥粉堆金）。
+            隐喻是<b>一面被时间打磨过的墙</b>：棋子是剥落的色块，路径是凸起的沥金线。
+            它补系列的<b>亮暖场</b>——天青冷、螺钿暗，这张是阳光下的土壁，
+            四套里唯一的暖亮色，海报/商店页里一眼能跳出来。
+            灰度识别点：<b>粗颗粒 + 剥落缺口的边缘</b>，和釉面的光滑完全是两个世界。
+          </div>
+        </div>
+        <div class="theme-stage">
+          <div class="hero-board mb-dunhuang" id="hero-dun"></div>
+          <div class="mech-row" id="mech-dun"></div>
+        </div>
+      </div>
+      <div class="theme-body">
+        <div class="mat-col">
+          <div class="col-label">材质母材</div>
+          <div class="mat-row">
+            <div class="mat-item">
+              <div class="mat-ball" style="background:
+                url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='2'/%3E%3C/filter%3E%3Crect width='80' height='80' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E&quot;),
+                radial-gradient(120% 110% at 32% 24%, #EFE0C2, #D9BF92 50%, #BFA176 100%);
+                background-blend-mode: overlay, normal;
+                box-shadow: inset 0 -8px 16px rgba(110,70,30,.35), 0 10px 22px rgba(0,0,0,.4);"></div>
+              <div class="nm">壁土</div>
+              <div class="ds">粗颗粒<br>哑光吸光</div>
+            </div>
+            <div class="mat-item">
+              <div class="mat-ball" style="background:
+                url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='2'/%3E%3C/filter%3E%3Crect width='80' height='80' filter='url(%23n)' opacity='0.45'/%3E%3C/svg%3E&quot;),
+                linear-gradient(150deg, #6E9580, #456055 60%, #33493F);
+                background-blend-mode: overlay, normal;
+                box-shadow: inset 0 2px 3px rgba(255,245,220,.3), inset 0 -6px 12px rgba(30,25,15,.4), 0 10px 22px rgba(0,0,0,.4);"></div>
+              <div class="nm">矿彩</div>
+              <div class="ds">石绿/朱砂<br>从石头里磨出</div>
+            </div>
+            <div class="mat-item">
+              <div class="mat-ball" style="background: linear-gradient(150deg, #E2B558, #B98A34 48%, #8A6220 100%); box-shadow: inset 0 4px 6px rgba(255,240,200,.5), 0 3px 6px rgba(90,55,10,.5), 0 10px 22px rgba(0,0,0,.4);"></div>
+              <div class="nm">沥金</div>
+              <div class="ds">堆起的金线<br>有厚度有影</div>
+            </div>
+          </div>
+          <div class="pal-wrap">
+            <div class="col-label" style="margin-bottom:12px;">色板</div>
+            <div class="pal-row">
+              <div class="pal" style="background:#E3D2B4"><span>#E3D2B4</span></div>
+              <div class="pal" style="background:#5E8C6E"><span>#5E8C6E</span></div>
+              <div class="pal" style="background:#B5472E"><span>#B5472E</span></div>
+              <div class="pal" style="background:#4A6E8A"><span>#4A6E8A</span></div>
+              <div class="pal" style="background:#C99B3F"><span>#C99B3F</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="chan-col">
+          <div class="col-label">六通道速览</div>
+          <table class="chan-table">
+            <tr><td>背景</td><td>暖土壁 <b>#E3D2B4</b> + 全屏矿物颗粒；淡远山轮廓（剥蚀只剩影）；左上角一小截飞天飘带剪影</td></tr>
+            <tr><td>底板</td><td>壁面画框：<b>剥落边缘</b>（每边两处缺口）+ 一圈褪色土红边线</td></tr>
+            <tr><td>格</td><td>剥落色块：<b>未铺</b>=淡土块（只留轮廓）；<b>已铺</b>=矿彩实色（石绿/朱砂/石青逐格轮换），边缘带缺口</td></tr>
+            <tr><td>机制</td><td>石障=赭石岩块｜单向=朱砂箭｜星屑=贴金箔星（金最亮）｜冰砖=石青冷块（比周围冷 8°）｜传送=石绿双环</td></tr>
+            <tr><td>路径</td><td><b>沥粉堆金</b>：金线画成「凸起的泥线」——下沿投影 + 上沿受光 + 线身颗粒，是四套里唯一有<b>厚度</b>的金</td></tr>
+            <tr><td>UI</td><td>土壁卡面 + 土红细边；CTA 沥金钮（圆润厚边）；标题用<b>魏碑感</b>衬线（比天青更重、更钝）</td></tr>
+          </table>
+          <div class="se-row">
+            <b>音效</b>　落子 = 矿物研磨（沙感短促，4kHz 带通噪声 60ms）｜连径 = 沥粉细响（金石擦过）｜铺满 = 土埙一记（低而暖）｜盖印 = 石章落壁（比纸更钝）<br>
+            <b>触感</b>　落子 8ms 轻颗粒｜连径 15ms｜铺满 [10,25,10,25,18]｜盖印 40ms ——整体<b>最轻最频</b>，呼应沙感
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 掐丝珐琅 -->
+  <section class="sec">
+    <div class="sec-head">
+      <span class="no">肆</span>
+      <h2>提名 04</h2>
+      <span class="en">No.04 Cloisonne</span>
+    </div>
+    <div class="theme-card">
+      <div class="theme-top">
+        <div class="theme-intro">
+          <div class="idx">THEME 04 · 彩场旗舰</div>
+          <h3>掐丝 · 珐琅</h3>
+          <div class="en-name">CLOISONNE &middot; ENAMEL WIRED</div>
+          <div class="poem">
+            铜丝先立骨，釉色后填魂。<br>
+            一格一世界，金线走成路。
+          </div>
+          <div class="axis-badge">语法轴 · <b>掐丝分区（金属丝勾边）</b></div>
+          <div class="why">
+            原型是<b>景泰蓝（掐丝珐琅）</b>——铜丝盘出纹样轮廓，填烧矿物釉，是宫廷工艺里最「满」的一种。
+            隐喻是<b>一件铜胎掐丝的器物</b>：每格是一枚釉池，格与格之间由铜丝隔开，
+            玩家连出的路径是<b>烧在丝格之间的金路</b>。它补系列的<b>高饱和彩场</b>——
+            前三套都克制，这一套允许颜色热闹，但热闹被<b>丝格纪律</b>框住。
+            灰度识别点：<b>每个色块都被金属丝勾边</b>——四套里唯一的「网状分区」。
+          </div>
+        </div>
+        <div class="theme-stage">
+          <div class="hero-board mb-enamel" id="hero-ena"></div>
+          <div class="mech-row" id="mech-ena"></div>
+        </div>
+      </div>
+      <div class="theme-body">
+        <div class="mat-col">
+          <div class="col-label">材质母材</div>
+          <div class="mat-row">
+            <div class="mat-item">
+              <div class="mat-ball" style="background: linear-gradient(155deg, #D9B06A, #A8813E 50%, #7A5A24 100%); box-shadow: inset 0 3px 6px rgba(255,240,200,.55), inset 0 -6px 12px rgba(60,35,5,.5), 0 10px 22px rgba(0,0,0,.45);"></div>
+              <div class="nm">铜丝</div>
+              <div class="ds">0.5mm 细丝<br>立骨勾边</div>
+            </div>
+            <div class="mat-item">
+              <div class="mat-ball" style="background: radial-gradient(120% 110% at 32% 24%, #2F8078, #1C5E58 55%, #123F3A 100%); box-shadow: inset 0 2px 5px rgba(255,255,255,.4), inset 0 -8px 16px rgba(0,0,0,.4), 0 10px 22px rgba(0,0,0,.45);"></div>
+              <div class="nm">釉池</div>
+              <div class="ds">松石绿/宝蓝<br>面凸如滴釉</div>
+            </div>
+            <div class="mat-item">
+              <div class="mat-ball" style="background: linear-gradient(150deg, #F6D98A, #D9A745 45%, #A87B2C 100%); box-shadow: inset 0 3px 8px rgba(255,255,255,.55), inset 0 -6px 12px rgba(90,55,10,.45), 0 10px 22px rgba(0,0,0,.45);"></div>
+              <div class="nm">亮金</div>
+              <div class="ds">抛光镀金<br>比铜丝亮两档</div>
+            </div>
+          </div>
+          <div class="pal-wrap">
+            <div class="col-label" style="margin-bottom:12px;">色板</div>
+            <div class="pal-row">
+              <div class="pal" style="background:#1B2F34"><span>#1B2F34</span></div>
+              <div class="pal" style="background:#2F8078"><span>#2F8078</span></div>
+              <div class="pal" style="background:#35579B"><span>#35579B</span></div>
+              <div class="pal" style="background:#C24A30"><span>#C24A30</span></div>
+              <div class="pal" style="background:#B08D4F"><span>#B08D4F</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="chan-col">
+          <div class="col-label">六通道速览</div>
+          <table class="chan-table">
+            <tr><td>背景</td><td>铜胎墨绿地，极细錾刻底纹（0.5px 暗花）；四角各一枚<b>暗八宝纹</b>剪影</td></tr>
+            <tr><td>底板</td><td>铜框起线（双丝边），框内即釉地；框角<b>焊点</b>细节</td></tr>
+            <tr><td>格</td><td>釉池：<b>未铺</b>=灰蓝釉（低饱和）；<b>已铺</b>=满釉（松石绿/宝蓝/珊瑚红轮换），丝边从暗铜提到<b>亮铜</b></td></tr>
+            <tr><td>机制</td><td>石障=錾花铜块（不填釉）｜单向=丝盘箭｜星屑=金星釉（填金不填釉）｜冰砖=月白釉（最亮釉色）｜传送=丝盘双环</td></tr>
+            <tr><td>路径</td><td><b>亮金路</b>：走在丝格之间，比铜丝亮两档 + 釉面反光点；转折处一颗<b>金珠</b>（焊接点隐喻）</td></tr>
+            <tr><td>UI</td><td>铜框卡面；CTA 亮金钮（丝边同款包边）；数字用<b>錾刻体</b>（衬线 + 内凹阴影）</td></tr>
+          </table>
+          <div class="se-row">
+            <b>音效</b>　落子 = 釉滴入池（短促中频滴 + 一丝 5kHz 釉光尾）｜连径 = 丝鸣（细金属弦 3kHz 颤）｜铺满 = 编钟一记（比磬更亮更满）｜盖印 = 铜印落胎（金石重音）<br>
+            <b>触感</b>　落子 10ms 清脆点震｜连径 15ms 微颤｜铺满 [12,30,12,30,22]｜盖印 55ms 重（铜器感）——整体<b>最清脆</b>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 05 排期 -->
+  <section class="sec">
+    <div class="sec-head">
+      <span class="no">伍</span>
+      <h2>落地排期建议</h2>
+      <span class="en">Build Order</span>
+    </div>
+    <div class="roadmap">
+      <div class="rm-card">
+        <div class="step">FIRST · 旗舰</div>
+        <h4>02 玄漆螺钿</h4>
+        <p>先做夜场旗舰。理由：①与天青构成日/夜双旗舰，商店页冲击力最大；②深色 + 发光路径是分享图的天然素材（doc 32 原话）；③螺钿虹彩用「同一渐变换相位」实现，程序成本可控。</p>
+      </div>
+      <div class="rm-card">
+        <div class="step">SECOND · 活动</div>
+        <h4>03 鸣沙丹青</h4>
+        <p>亮暖场，适合逢敦煌/国风活动节点投放。成本主要在颗粒噪点与剥落边缘 mask，渲染管线成熟后最省。可作为「看广告解锁」的首发主题——新世界的感知最强。</p>
+      </div>
+      <div class="rm-card">
+        <div class="step">THIRD · 收藏</div>
+        <h4>04 掐丝珐琅</h4>
+        <p>彩场收藏位。掐丝的丝格纪律画法最费工（每格双层边），放在管线稳定后做。它是「主题商店」的压轴：工艺感最满，适合做付费/成就向的高级奖励。</p>
+      </div>
+    </div>
+    <div class="verdict">
+      <h3>落选说明 · 为什么不是另外几个</h3>
+      <p>
+        <b>水墨飞白</b>——与已上线「水墨山河」同占<b>媒介轴</b>，灰度下都是"亮纸+墨块"，是换皮不是换世界。若将来重做水墨，须改轴（如「手卷装裱」：棋盘是一卷展开的手卷）。
+        <b>金缮瓷盘</b>——与天青同属<b>瓷面材质</b>，灰度下孪生兄弟，只配做天青的变体（盘面开片样式）而非独立主题。
+        <b>像素街机 / 赛博霓虹</b>——已被否：风格标签不是工艺传统，撑不起「高级」，也没法做真实的材质通道。
+      </p>
+      <p class="no-list">
+        <b>不变的红线</b>（四套共守，doc 32）：路径与格子色相差 ≥120° 或明度差 ≥35%｜已铺/未铺明度差 ≥8%｜机制图标 28px 灰度剪影可辨｜金色覆盖 ≤8%｜光源永远左上 35°｜触感与声音同帧 ≤50ms。
+      </p>
+    </div>
+  </section>
+
+  <div class="foot">
+    <span>秘色系列 · 主题矩阵选型提案</span>
+    <span>ONE THEME · ONE AXIS · ONE GOLD</span>
+  </div>
+</div>
+
+<script>
+/* ================= 棋盘构建 ================= */
+const PATH_D = 'M 26,26 L 234,26 L 234,130 L 78,130 L 78,182';
+function pathSVG(w, h, gold, goldHi, glow) {
+  // viewBox 0 0 260 208 (6x4 grid, cell 52)
+  return `<svg class="path" viewBox="0 0 260 208" preserveAspectRatio="none">
+    <path d="${PATH_D}" fill="none" stroke="${glow}" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" opacity="0.20"/>
+    <path d="${PATH_D}" fill="none" stroke="${gold}" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/>
+    <path d="${PATH_D}" fill="none" stroke="${goldHi}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="${PATH_D}" fill="none" stroke="#fff" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/>
+    <circle cx="234" cy="26" r="4.5" fill="${goldHi}"/>
+    <circle cx="78" cy="182" r="4.5" fill="${goldHi}"/>
+  </svg>`;
+}
+
+/* 每主题 6×4 盘面：d=deep(已铺) p=pale(未铺) */
+const LAYOUT = [
+  'd','p','d','d','p','d',
+  'p','d','d','p','d','p',
+  'd','d','p','d','d','d',
+  'p','d','p','p','d','p'
+];
+
+function buildMini(host, theme) {
+  const goldMap = {
+    celadon: ['#C9962F', '#E8B84B', 'rgba(232,184,75,.45)'],
+    lacquer: ['#C99A3A', '#F2C766', 'rgba(242,199,102,.5)'],
+    dunhuang: ['#A87B2C', '#D9A745', 'rgba(180,120,40,.45)'],
+    enamel: ['#C9A14A', '#F2C766', 'rgba(242,199,102,.5)']
+  };
+  const [g, gh, gl] = goldMap[theme];
+  let cells = '';
+  LAYOUT.forEach(k => {
+    if (theme === 'celadon') {
+      cells += `<div class="p ${k === 'd' ? 'deep' : ''}"></div>`;
+    } else if (theme === 'lacquer') {
+      cells += `<div class="p ${k === 'd' ? 'deep' : ''}"><div class="nacre"></div><div class="glint-l"></div></div>`;
+    } else if (theme === 'dunhuang') {
+      const alt = Math.random() > 0.66 ? 'alt' : '';
+      cells += `<div class="p ${k === 'd' ? 'deep' : ''} ${alt}"></div>`;
+    } else {
+      const fills = ['c1', 'c2', 'c3', 'c4'];
+      const f = k === 'd' ? fills[Math.floor(Math.random() * 4)] : 'c1';
+      cells += `<div class="p ${k === 'd' ? '' : 'deep'}"><div class="fill ${f}" style="${k === 'd' ? '' : 'filter:saturate(.35) brightness(.8)'}"></div><div class="spot"></div></div>`;
+    }
+  });
+  host.innerHTML = `<div class="grid">${cells}</div>${pathSVG(0, 0, g, gh, gl)}`;
+}
+
+function buildHero(hostId, theme) {
+  const host = document.getElementById(hostId);
+  const goldMap = {
+    lac: ['#C99A3A', '#F2C766', 'rgba(242,199,102,.5)'],
+    dun: ['#A87B2C', '#D9A745', 'rgba(180,120,40,.5)'],
+    ena: ['#C9A14A', '#F2C766', 'rgba(242,199,102,.55)']
+  };
+  const [g, gh, gl] = goldMap[hostId.split('-')[1]];
+  const glyphs = ['moon', 'plum', 'wave', 'mount', 'cloud', 'star'];
+  let cells = '';
+  LAYOUT.forEach((k, i) => {
+    const glyph = `<svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,240,210,.8)" stroke-width="1.3" style="position:absolute;inset:22%;opacity:.75">
+      ${glyphs[i % 6] === 'moon' ? '<path d="M15 4 A8 8 0 1 0 15 20 A6.5 6.5 0 1 1 15 4Z"/>' : ''}
+      ${glyphs[i % 6] === 'plum' ? '<circle cx="12" cy="8" r="2.2"/><circle cx="8" cy="13" r="2.2"/><circle cx="16" cy="13" r="2.2"/><circle cx="12" cy="17.5" r="2.2"/>' : ''}
+      ${glyphs[i % 6] === 'wave' ? '<path d="M3 14 Q7 8, 12 14 T21 14"/><path d="M3 18 Q7 12, 12 18 T21 18"/>' : ''}
+      ${glyphs[i % 6] === 'mount' ? '<path d="M2 19 L9 7 L14 15 L17 10 L22 19Z"/>' : ''}
+      ${glyphs[i % 6] === 'cloud' ? '<path d="M5 15 Q4 10, 9 11 Q10 7, 15 9 Q20 8, 19 13 Q22 14, 20 17 L6 17 Q3 17, 5 15Z"/>' : ''}
+      ${glyphs[i % 6] === 'star' ? '<path d="M12 3 L14 9.5 L20.5 9.5 L15.2 13.5 L17.2 20 L12 16 L6.8 20 L8.8 13.5 L3.5 9.5 L10 9.5Z"/>' : ''}
+    </svg>`;
+    if (theme === 'lac') {
+      cells += `<div class="p ${k === 'd' ? 'deep' : ''}"><div class="nacre"></div><div class="glint-l"></div>${k === 'd' ? glyph : ''}</div>`;
+    } else if (theme === 'dun') {
+      const alt = (i % 3 === 2) ? 'alt' : '';
+      cells += `<div class="p ${k === 'd' ? 'deep' : ''} ${alt}">${k === 'd' ? glyph : ''}</div>`;
+    } else {
+      const fills = ['c1', 'c2', 'c3', 'c4'];
+      const f = k === 'd' ? fills[i % 4] : 'c1';
+      cells += `<div class="p"><div class="fill ${f}" style="${k === 'd' ? '' : 'filter:saturate(.35) brightness(.8)'}"></div><div class="spot"></div>${k === 'd' ? glyph : ''}</div>`;
+    }
+  });
+  host.innerHTML = `<div class="grid">${cells}</div>${pathSVG(0, 0, g, gh, gl)}`;
+}
+
+function buildMech(hostId, theme) {
+  const host = document.getElementById(hostId);
+  const defs = {
+    lac: [
+      ['石障', 'background:linear-gradient(150deg,#4A4348,#2B252C 55%,#1A151C); box-shadow: inset 0 1px 1px rgba(255,255,255,.15), inset 0 -3px 6px rgba(0,0,0,.5);', ''],
+      ['单向', 'background:linear-gradient(150deg,#2A2138,#1A1426);', '<svg viewBox="0 0 24 24" style="position:absolute;inset:26%" fill="none" stroke="#EFC15E" stroke-width="2"><path d="M4 12 H17"/><path d="M12 6 L19 12 L12 18"/></svg>'],
+      ['星屑', 'background:linear-gradient(150deg,#2A2138,#1A1426);', '<svg viewBox="0 0 24 24" style="position:absolute;inset:22%" fill="#F2C766"><path d="M12 2.5 L14.4 9.5 L21.5 9.5 L15.8 13.8 L18 20.8 L12 16.3 L6 20.8 L8.2 13.8 L2.5 9.5 L9.6 9.5Z"/></svg>']
+    ],
+    dun: [
+      ['石障', 'background:linear-gradient(150deg,#B08055,#8A5E38 55%,#6B4526); box-shadow: inset 0 1px 1px rgba(255,240,210,.3), inset 0 -3px 6px rgba(60,35,10,.4);', ''],
+      ['单向', 'background:linear-gradient(150deg,#B5472E,#8F3220);', '<svg viewBox="0 0 24 24" style="position:absolute;inset:26%" fill="none" stroke="#F0DDB4" stroke-width="2"><path d="M4 12 H17"/><path d="M12 6 L19 12 L12 18"/></svg>'],
+      ['星屑', 'background:linear-gradient(150deg,#D9A745,#B98A34);', '<svg viewBox="0 0 24 24" style="position:absolute;inset:22%" fill="#F6E7B8"><path d="M12 2.5 L14.4 9.5 L21.5 9.5 L15.8 13.8 L18 20.8 L12 16.3 L6 20.8 L8.2 13.8 L2.5 9.5 L9.6 9.5Z"/></svg>']
+    ],
+    ena: [
+      ['石障', 'border:2.5px solid #8A6E3E; background:linear-gradient(150deg,#3E3630,#2A2420); box-shadow: inset 0 1px 1px rgba(255,255,255,.12), inset 0 -3px 6px rgba(0,0,0,.5);', ''],
+      ['单向', 'border:2.5px solid #B08D4F; background:linear-gradient(150deg,#2F8078,#1F6560);', '<svg viewBox="0 0 24 24" style="position:absolute;inset:26%" fill="none" stroke="#F2C766" stroke-width="2"><path d="M4 12 H17"/><path d="M12 6 L19 12 L12 18"/></svg>'],
+      ['星屑', 'border:2.5px solid #B08D4F; background:linear-gradient(150deg,#F2C766,#D9A745);', '<svg viewBox="0 0 24 24" style="position:absolute;inset:22%" fill="#7A5A24"><path d="M12 2.5 L14.4 9.5 L21.5 9.5 L15.8 13.8 L18 20.8 L12 16.3 L6 20.8 L8.2 13.8 L2.5 9.5 L9.6 9.5Z"/></svg>']
+    ]
+  };
+  host.innerHTML = defs[theme].map(([nm, style, inner]) =>
+    `<div class="mech"><div class="m" style="${style}; border-radius:11px; position:relative; overflow:hidden;">${inner}</div><div class="nm">${nm}</div></div>`
+  ).join('');
+}
+
+/* 灰度测试四小盘 */
+['celadon', 'lacquer', 'dunhuang', 'enamel'].forEach(t => {
+  const c = document.getElementById('minis-color');
+  const g = document.getElementById('minis-gray');
+  const names = { celadon: '01 秘色天青', lacquer: '02 玄漆螺钿', dunhuang: '03 鸣沙丹青', enamel: '04 掐丝珐琅' };
+  const divC = document.createElement('div'); divC.className = 'mini-cell';
+  const divG = document.createElement('div'); divG.className = 'mini-cell';
+  const boardC = document.createElement('div'); boardC.className = 'mini-board mb-' + t;
+  const boardG = document.createElement('div'); boardG.className = 'mini-board mb-' + t;
+  buildMini(boardC, t); buildMini(boardG, t);
+  divC.appendChild(boardC); divC.innerHTML += `<div class="tag">${names[t]}</div>`;
+  divG.appendChild(boardG); divG.innerHTML += `<div class="tag">${names[t]}</div>`;
+  c.appendChild(divC); g.appendChild(divG);
+});
+
+buildHero('hero-lac', 'lac');
+buildHero('hero-dun', 'dun');
+buildHero('hero-ena', 'ena');
+buildMech('mech-lac', 'lac');
+buildMech('mech-dun', 'dun');
+buildMech('mech-ena', 'ena');
+</script>
+</body>
+</html>

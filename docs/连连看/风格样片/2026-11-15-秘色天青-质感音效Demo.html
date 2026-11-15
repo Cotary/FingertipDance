@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>秘色·天青 — 质感 × 音效 Demo</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+:root {
+  --serif: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  --sans: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --celadon-050: #E4EDE6;
+  --celadon-100: #D5E3D8;
+  --celadon-200: #B8CFC0;
+  --celadon-300: #93B3A2;
+  --celadon-400: #6E9180;
+  --celadon-500: #4F7A66;
+  --celadon-600: #2E5444;
+  --celadon-700: #1D3A2E;
+  --ink-050: #F2EEE6;
+  --ink-100: #EDE8DD;
+  --ink-300: #B9B2A4;
+  --ink-500: #7A7468;
+  --ink-700: #454038;
+  --ink-900: #141210;
+  --gold-100: #FFF3D6;
+  --gold-200: #F2DCA8;
+  --gold-300: #D4AF6A;
+  --gold-400: #B8945A;
+  --gold-500: #8A6B3C;
+  --seal: #C04B33;
+  --seal-deep: #8C2F1E;
+  --violet: #8B7EC8;
+  --well: #16241E;
+  --well-deep: #0F1915;
+  --page: #0C1310;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--page);
+  color: var(--ink-100);
+  font-family: var(--sans);
+  font-weight: 300;
+  line-height: 1.75;
+  min-height: 100vh;
+}
+body::before {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  opacity: 0.05; mix-blend-mode: overlay;
+}
+body::after {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background: radial-gradient(120% 90% at 50% 0%, rgba(78,125,102,0.10), rgba(0,0,0,0) 55%),
+              radial-gradient(140% 100% at 50% 110%, rgba(0,0,0,0.55), rgba(0,0,0,0) 55%);
+}
+
+.wrap { position: relative; z-index: 1; max-width: 1060px; margin: 0 auto; padding: 0 40px 100px; }
+
+/* ===== 报头 ===== */
+.hero { padding: 88px 0 12px; }
+.hero-kicker {
+  display: flex; align-items: center; gap: 14px;
+  font-size: 11px; letter-spacing: .42em; color: var(--gold-300);
+  text-transform: uppercase;
+}
+.hero-kicker::before {
+  content: ''; width: 42px; height: 1px;
+  background: linear-gradient(90deg, var(--gold-300), transparent);
+}
+.hero-title {
+  margin-top: 22px;
+  font-family: var(--serif); font-size: clamp(40px, 6vw, 64px);
+  font-weight: 900; letter-spacing: .12em; line-height: 1.1; color: var(--ink-050);
+}
+.hero-title .dot {
+  display: inline-block; width: .2em; height: .2em; border-radius: 50%;
+  background: radial-gradient(circle at 32% 30%, var(--gold-100), var(--gold-300) 55%, var(--gold-500));
+  margin: 0 .18em .14em; vertical-align: middle;
+  box-shadow: 0 0 20px rgba(212,175,106,0.55);
+}
+.hero-sub {
+  margin-top: 16px;
+  font-family: var(--serif); font-size: 13px; letter-spacing: .34em;
+  color: var(--celadon-300); text-transform: uppercase;
+}
+.hero-note {
+  margin-top: 26px; max-width: 620px;
+  font-size: 13px; line-height: 2.05; color: var(--ink-300);
+}
+.hero-note em {
+  font-style: normal; color: var(--gold-200);
+  border-bottom: 1px solid rgba(212,175,106,0.35);
+}
+.sound-hint {
+  margin-top: 18px;
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 10px 18px; border-radius: 999px;
+  background: rgba(212,175,106,0.1);
+  border: 1px solid rgba(212,175,106,0.22);
+  font-size: 11px; letter-spacing: .18em; color: var(--gold-200);
+}
+.sound-hint .pulse {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--gold-300);
+  box-shadow: 0 0 0 0 rgba(212,175,106,0.5);
+  animation: live 2s infinite;
+}
+@keyframes live {
+  0% { box-shadow: 0 0 0 0 rgba(212,175,106,0.5); }
+  70% { box-shadow: 0 0 0 10px rgba(212,175,106,0); }
+  100% { box-shadow: 0 0 0 0 rgba(212,175,106,0); }
+}
+
+/* ===== 节 ===== */
+.sec { margin-top: 84px; }
+.sec-head {
+  display: flex; align-items: baseline; gap: 16px; margin-bottom: 28px;
+}
+.sec-no {
+  font-family: var(--serif); font-size: 12px; font-weight: 600;
+  letter-spacing: .32em; color: var(--gold-300);
+}
+.sec-title {
+  font-family: var(--serif); font-size: 24px; font-weight: 700;
+  letter-spacing: .16em; color: var(--ink-050);
+}
+.sec-en {
+  font-size: 10px; letter-spacing: .32em; color: var(--ink-500); text-transform: uppercase;
+}
+.sec-note {
+  margin-left: auto; max-width: 380px;
+  font-size: 11.5px; line-height: 1.9; color: var(--ink-500); text-align: right;
+}
+.rule {
+  height: 1px; border: 0; margin-bottom: 32px;
+  background: linear-gradient(90deg, rgba(212,175,106,0.35), rgba(212,175,106,0.06) 55%, transparent);
+}
+
+/* ===== 音效四声 ===== */
+.sounds { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.sound-card {
+  position: relative;
+  padding: 28px 18px 22px;
+  border-radius: 20px; text-align: center; cursor: pointer;
+  background: linear-gradient(165deg, rgba(78,125,102,0.12), rgba(20,18,16,0.55));
+  border: 1px solid rgba(212,175,106,0.12);
+  box-shadow: 0 14px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.05);
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+  user-select: none;
+  overflow: hidden;
+}
+.sound-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(212,175,106,0.3);
+  box-shadow: 0 20px 42px rgba(0,0,0,0.38), 0 0 28px rgba(212,175,106,0.12), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.sound-card:active { transform: translateY(0) scale(0.98); }
+.sound-card .icon {
+  width: 58px; height: 58px; margin: 0 auto 16px; border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, rgba(242,220,168,0.4), rgba(180,140,80,0.12));
+  border: 1px solid rgba(212,175,106,0.28);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2);
+  transition: box-shadow .25s ease;
+}
+.sound-card .icon svg {
+  width: 22px; height: 22px; stroke: var(--gold-200); fill: none;
+  stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+}
+.sound-card.playing .icon {
+  box-shadow: 0 8px 20px rgba(0,0,0,0.3), 0 0 30px rgba(212,175,106,0.45), inset 0 1px 0 rgba(255,255,255,0.2);
+}
+.sound-card.playing .icon::after {
+  content: ''; position: absolute; width: 58px; height: 58px; border-radius: 50%;
+  border: 1px solid rgba(212,175,106,0.5);
+  animation: rip .55s ease-out forwards;
+}
+@keyframes rip {
+  from { transform: scale(1); opacity: 1; }
+  to { transform: scale(2.1); opacity: 0; }
+}
+.sound-card h4 {
+  font-family: var(--serif); font-size: 15px; letter-spacing: .26em;
+  color: var(--ink-050); font-weight: 700;
+}
+.sound-card .en {
+  display: block; margin-top: 5px;
+  font-size: 8.5px; letter-spacing: .26em; color: var(--gold-300); text-transform: uppercase;
+}
+.sound-card p {
+  margin-top: 12px; font-size: 10.5px; line-height: 1.9; color: var(--ink-500);
+}
+.sound-card .wave {
+  margin-top: 14px; height: 26px; opacity: 0.55;
+}
+.sound-card .wave svg { width: 100%; height: 100%; }
+
+/* ===== 棋盘 ===== */
+.board-stage {
+  position: relative;
+  border-radius: 26px;
+  padding: 36px 36px 30px;
+  background:
+    radial-gradient(90% 75% at 50% 38%, rgba(94,138,116,0.18), rgba(0,0,0,0) 62%),
+    linear-gradient(175deg, var(--well) 0%, var(--well-deep) 78%);
+  border: 1px solid rgba(212,175,106,0.16);
+  box-shadow:
+    0 36px 80px rgba(0,0,0,0.55),
+    0 4px 16px rgba(0,0,0,0.35),
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    inset 0 -40px 80px rgba(0,0,0,0.35);
+  overflow: hidden;
+}
+.board-stage::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  opacity: 0.055; mix-blend-mode: overlay;
+}
+.board-stage::after {
+  content: ''; position: absolute; inset: 12px; pointer-events: none;
+  border-radius: 18px; border: 1px solid rgba(212,175,106,0.13);
+}
+.board-stage.full {
+  animation: fullGlow 1.6s ease;
+}
+@keyframes fullGlow {
+  0% { box-shadow: 0 36px 80px rgba(0,0,0,0.55), 0 0 0 rgba(212,175,106,0); }
+  35% { box-shadow: 0 36px 80px rgba(0,0,0,0.55), 0 0 90px rgba(212,175,106,0.35); }
+  100% { box-shadow: 0 36px 80px rgba(0,0,0,0.55), 0 0 0 rgba(212,175,106,0); }
+}
+
+.board-top {
+  position: relative; z-index: 2;
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 22px; padding: 0 4px;
+}
+.board-top h3 {
+  font-family: var(--serif); font-size: 17px; letter-spacing: .3em;
+  color: var(--ink-050); font-weight: 700;
+}
+.board-top .prog {
+  font-family: var(--serif); font-size: 15px; letter-spacing: .12em; color: var(--gold-200);
+}
+.board-top .prog small {
+  font-family: var(--sans); font-size: 9px; letter-spacing: .3em; color: var(--ink-500);
+  margin-left: 10px;
+}
+
+.board-holder {
+  position: relative; z-index: 2;
+  width: 532px; height: 452px; margin: 0 auto;
+}
+#boardSvg {
+  position: absolute; inset: 0; width: 532px; height: 452px;
+  overflow: visible; z-index: 3; pointer-events: none;
+}
+.board-grid {
+  position: absolute; inset: 0; z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(6, 80px);
+  grid-template-rows: repeat(5, 80px);
+  gap: 10px;
+  justify-content: center; align-items: center;
+  padding: 6px;
+}
+
+/* ---- 棋子 ---- */
+.piece {
+  position: relative;
+  width: 80px; height: 80px;
+  border-radius: 21px;
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.piece:active { transform: scale(0.94); }
+.piece.pale {
+  background:
+    radial-gradient(118% 118% at 27% 19%, rgba(255,255,255,0.62), rgba(255,255,255,0) 46%),
+    linear-gradient(147deg,
+      var(--celadon-100) 0%, var(--celadon-200) 30%, var(--celadon-300) 58%,
+      var(--celadon-400) 82%, var(--celadon-500) 100%);
+  box-shadow:
+    0 1px 2px rgba(0,0,0,0.16),
+    0 7px 15px rgba(0,0,0,0.22),
+    0 20px 38px rgba(0,0,0,0.18),
+    inset 0 1px 0 rgba(255,255,255,0.62),
+    inset 0 -3px 7px rgba(46,84,68,0.32),
+    inset 0 0 0 1px rgba(255,255,255,0.14);
+}
+.piece.deep {
+  background:
+    radial-gradient(118% 118% at 27% 19%, rgba(255,255,255,0.30), rgba(255,255,255,0) 44%),
+    linear-gradient(147deg,
+      var(--celadon-500) 0%, var(--celadon-600) 42%, var(--celadon-700) 100%);
+  box-shadow:
+    0 2px 4px rgba(0,0,0,0.32),
+    0 12px 24px rgba(0,0,0,0.32),
+    inset 0 1px 0 rgba(255,255,255,0.22),
+    inset 0 -3px 8px rgba(0,0,0,0.38),
+    0 0 0 1px rgba(212,175,106,0.22),
+    0 0 22px rgba(212,175,106,0.13);
+}
+.piece .glint {
+  position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(118deg,
+    rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.06) 18%,
+    transparent 34%, transparent 72%, rgba(0,0,0,0.10) 100%);
+}
+.piece .crackle {
+  position: absolute; inset: 0; border-radius: inherit;
+  pointer-events: none; overflow: hidden;
+}
+.piece .crackle svg { width: 100%; height: 100%; display: block; }
+.piece .glyph {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.piece .glyph svg {
+  width: 32px; height: 32px;
+  stroke: rgba(29,58,46,0.62); stroke-width: 1.7; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.piece.deep .glyph svg { stroke: rgba(212,227,216,0.72); }
+
+/* 按压涟漪 */
+.piece .tap-ring {
+  position: absolute; inset: -2px; border-radius: inherit;
+  border: 1.5px solid rgba(242,220,168,0);
+  pointer-events: none;
+}
+.piece.tapping .tap-ring {
+  animation: tapRing .5s ease-out forwards;
+}
+@keyframes tapRing {
+  from { transform: scale(0.92); border-color: rgba(242,220,168,0.7); }
+  to { transform: scale(1.18); border-color: rgba(242,220,168,0); }
+}
+.piece.pop { animation: popIn .28s cubic-bezier(.34,1.56,.64,1); }
+@keyframes popIn {
+  0% { transform: scale(0.9); }
+  60% { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+
+/* 印章 */
+.seal-layer {
+  position: absolute; inset: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.seal {
+  width: 132px; height: 132px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 35% 30%, #D9614A, var(--seal) 55%, var(--seal-deep));
+  box-shadow:
+    0 22px 50px rgba(192,75,51,0.4),
+    0 6px 16px rgba(0,0,0,0.4),
+    inset 0 2px 4px rgba(255,255,255,0.25),
+    inset 0 -8px 18px rgba(90,25,12,0.5);
+  font-family: var(--serif); font-size: 62px; font-weight: 900;
+  color: rgba(255,244,238,0.92);
+  transform: rotate(-8deg) scale(1.7); opacity: 0;
+  text-shadow: 0 2px 6px rgba(90,25,12,0.45);
+}
+.seal.show { animation: stamp .5s cubic-bezier(.22,1.2,.36,1) forwards; }
+@keyframes stamp {
+  0% { transform: rotate(-16deg) scale(1.7); opacity: 0; }
+  55% { transform: rotate(-6deg) scale(0.96); opacity: 1; }
+  100% { transform: rotate(-8deg) scale(1); opacity: 1; }
+}
+
+/* 操作按钮 */
+.ops {
+  position: relative; z-index: 2;
+  margin-top: 26px;
+  display: flex; gap: 12px; justify-content: center; align-items: center;
+}
+.btn {
+  padding: 15px 30px; border-radius: 999px; cursor: pointer;
+  font-family: var(--serif); font-size: 13.5px; font-weight: 700;
+  letter-spacing: .28em; text-indent: .28em;
+  border: none; transition: transform .15s ease, box-shadow .15s ease;
+  user-select: none;
+}
+.btn:active { transform: scale(0.96); }
+.btn-gold {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.35), rgba(255,255,255,0) 42%),
+    linear-gradient(145deg, var(--gold-200) 0%, var(--gold-300) 55%, var(--gold-400) 100%);
+  color: #2E2210;
+  box-shadow:
+    0 12px 26px rgba(212,175,106,0.28),
+    0 4px 10px rgba(0,0,0,0.3),
+    inset 0 1px 0 rgba(255,255,255,0.55),
+    inset 0 -3px 8px rgba(120,88,40,0.45);
+}
+.btn-gold:hover { box-shadow: 0 16px 34px rgba(212,175,106,0.38), 0 4px 10px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.55), inset 0 -3px 8px rgba(120,88,40,0.45); }
+.btn-jade {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0) 45%),
+    linear-gradient(145deg, var(--celadon-400), var(--celadon-600));
+  color: var(--ink-050);
+  box-shadow:
+    0 12px 26px rgba(0,0,0,0.32),
+    inset 0 1px 0 rgba(255,255,255,0.22),
+    inset 0 -3px 8px rgba(0,0,0,0.35);
+}
+.btn-ghost {
+  background: rgba(78,125,102,0.14);
+  color: var(--ink-300);
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: none;
+}
+.ops .tip {
+  margin-left: 8px; font-size: 10px; letter-spacing: .18em; color: var(--ink-500);
+}
+
+/* ===== 质感说明 ===== */
+.tex-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.tex-card {
+  padding: 24px 24px 22px;
+  border-radius: 18px;
+  background: linear-gradient(165deg, rgba(78,125,102,0.10), rgba(20,18,16,0.5));
+  border: 1px solid rgba(255,255,255,0.05);
+}
+.tex-card h4 {
+  font-family: var(--serif); font-size: 14px; letter-spacing: .22em;
+  color: var(--ink-050); margin-bottom: 10px;
+}
+.tex-card h4 .en {
+  margin-left: 10px; font-family: var(--sans);
+  font-size: 8.5px; letter-spacing: .28em; color: var(--gold-300); font-weight: 400;
+}
+.tex-card p { font-size: 11px; line-height: 1.95; color: var(--ink-500); }
+.tex-card .mono {
+  margin-top: 12px; padding: 10px 12px; border-radius: 10px;
+  background: rgba(0,0,0,0.3);
+  font-family: Consolas, monospace; font-size: 9.5px; line-height: 1.7;
+  color: var(--celadon-200); letter-spacing: .02em;
+  overflow-x: auto; white-space: pre;
+}
+
+.foot {
+  margin-top: 90px; padding-top: 32px;
+  border-top: 1px solid rgba(212,175,106,0.14);
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 9.5px; letter-spacing: .3em; color: var(--ink-500);
+}
+.foot .brand {
+  font-family: var(--serif); font-size: 12px; letter-spacing: .42em; color: var(--gold-300);
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="hero-kicker">Interactive Demo · 质感 × 音效</div>
+    <h1 class="hero-title">秘色<span class="dot"></span>天青</h1>
+    <div class="hero-sub">Mise Celadon — Sound &amp; Texture Lab</div>
+    <p class="hero-note">
+      最小可听可摸 demo。四声全部由 Web Audio <em>实时合成</em>（零音频文件），
+      频率、衰减、泛音都是参数，后面想调"更瓷一点 / 更玉一点"就是改几个数。
+      棋盘可以直接上手：<em>点棋子听瓷轻叩</em>，看釉面按压、金缮光迹、玉磬铺满、朱印落纸。
+    </p>
+    <div class="sound-hint"><span class="pulse"></span>点击任意处开启声音 · 建议戴耳机</div>
+  </header>
+
+  <!-- ===== 音效四声 ===== -->
+  <section class="sec">
+    <div class="sec-head">
+      <div class="sec-no">01</div>
+      <div class="sec-title">音效四声</div>
+      <div class="sec-en">Four Voices</div>
+      <div class="sec-note">点卡片试听。每一声都为"瓷器的世界"设计：短促不拖、高频克制、余韵留白。</div>
+    </div>
+    <hr class="rule">
+
+    <div class="sounds">
+      <div class="sound-card" data-sound="tap">
+        <div class="icon">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/></svg>
+        </div>
+        <h4>瓷轻叩</h4><span class="en">Porcelain Tap</span>
+        <p>落子声。青瓷碰青瓷，90ms 收干净。重复敲击频率微抖 ±5%，不像机器。</p>
+        <div class="wave">
+          <svg viewBox="0 0 120 26" preserveAspectRatio="none">
+            <path d="M2,13 L8,13 L11,4 L14,20 L17,9 L20,16 L24,12 L120,13" stroke="#D4AF6A" stroke-width="1.4" fill="none"/>
+          </svg>
+        </div>
+      </div>
+      <div class="sound-card" data-sound="gilt">
+        <div class="icon">
+          <svg viewBox="0 0 24 24"><path d="M4 12 L20 12 M12 4 L12 20"/><circle cx="12" cy="12" r="8"/></svg>
+        </div>
+        <h4>金石细响</h4><span class="en">Gilt Trace</span>
+        <p>光迹连接声。四层泛音叠高频微光，像描金笔划过瓷面的那一下。</p>
+        <div class="wave">
+          <svg viewBox="0 0 120 26" preserveAspectRatio="none">
+            <path d="M2,13 L10,13 L13,6 L16,18 L19,10 L22,15 L28,12 L34,13 L120,13" stroke="#D4AF6A" stroke-width="1.4" fill="none"/>
+          </svg>
+        </div>
+      </div>
+      <div class="sound-card" data-sound="chime">
+        <div class="icon">
+          <svg viewBox="0 0 24 24"><path d="M6 16 A6 6 0 0 1 18 16"/><path d="M9 16 A3 3 0 0 1 15 16"/><path d="M12 16 L12 20"/></svg>
+        </div>
+        <h4>玉磬余韵</h4><span class="en">Jade Chime</span>
+        <p>铺满全盘时。非谐泛音的磬声，1.4s 自然散掉，尾音是"留白"。</p>
+        <div class="wave">
+          <svg viewBox="0 0 120 26" preserveAspectRatio="none">
+            <path d="M2,13 L10,13 L13,3 L16,22 L22,6 L28,19 L38,8 L50,17 L66,10 L84,15 L102,12 L120,13" stroke="#D4AF6A" stroke-width="1.4" fill="none"/>
+          </svg>
+        </div>
+      </div>
+      <div class="sound-card" data-sound="stamp">
+        <div class="icon">
+          <svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3"/><path d="M9 12 L11 14 L15 10"/></svg>
+        </div>
+        <h4>印落纸</h4><span class="en">Seal Stamp</span>
+        <p>通关大印。110→55Hz 低频一击 + 纸面摩擦，像印章按在绢帛上。</p>
+        <div class="wave">
+          <svg viewBox="0 0 120 26" preserveAspectRatio="none">
+            <path d="M2,13 L28,13 L30,2 L33,24 L37,8 L42,18 L52,12 L70,13 L120,13" stroke="#D4AF6A" stroke-width="1.4" fill="none"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 交互棋盘 ===== -->
+  <section class="sec">
+    <div class="sec-head">
+      <div class="sec-no">02</div>
+      <div class="sec-title">上手一摸</div>
+      <div class="sec-en">Touch the Board</div>
+      <div class="sec-note">点棋子：铺格（瓷轻叩）；再点深釉格：收回。三个按钮分别演光迹 / 铺满 / 盖印。</div>
+    </div>
+    <hr class="rule">
+
+    <div class="board-stage" id="stage">
+      <div class="board-top">
+        <h3>釉 面 棋 盘</h3>
+        <div class="prog"><span id="progNum">0</span> / 30<small>已铺格数</small></div>
+      </div>
+      <div class="board-holder">
+        <svg id="boardSvg" viewBox="0 0 532 452"></svg>
+        <div class="board-grid" id="boardGrid"></div>
+        <div class="seal-layer"><div class="seal" id="seal">过</div></div>
+      </div>
+      <div class="ops">
+        <button class="btn btn-jade" id="btnTrail">光 迹 演 示</button>
+        <button class="btn btn-gold" id="btnFill">铺 满 全 盘</button>
+        <button class="btn btn-ghost" id="btnReset">重 置</button>
+        <button class="btn btn-gold" id="btnSeal">盖 印</button>
+        <span class="tip">建议顺序：光迹 → 铺满 → 盖印</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 质感拆解 ===== -->
+  <section class="sec">
+    <div class="sec-head">
+      <div class="sec-no">03</div>
+      <div class="sec-title">质感拆解</div>
+      <div class="sec-en">Under the Glaze</div>
+      <div class="sec-note">点上去的那一瞬间，三层在同时工作：阴影收紧、金环扩散、声音落地。</div>
+    </div>
+    <hr class="rule">
+
+    <div class="tex-grid">
+      <div class="tex-card">
+        <h4>釉面三层<span class="en">Glaze</span></h4>
+        <p>渐变 → 扫光 → 冰裂。左上 35° 一个光源，投影走右下。点按时整颗棋子 scale 0.94、阴影收紧——像真的把瓷片按进绒面。</p>
+        <div class="mono">radial-gradient(118% at 27% 19%, …)
+linear-gradient(147deg, 4 stops)
+box-shadow: 外3层 + 内高光 + 内暗根</div>
+      </div>
+      <div class="tex-card">
+        <h4>按压反馈<span class="en">Press</span></h4>
+        <p>三件事同帧发生：棋子下沉（120ms）、金色涟漪环扩散（500ms）、瓷轻叩落地（90ms）。视觉与听觉的"接触点"必须对齐，错开 50ms 就散。</p>
+        <div class="mono">scale(0.94) → tap-ring expand
+audio latency ≈ 0（实时合成）</div>
+      </div>
+      <div class="tex-card">
+        <h4>声音参数<span class="en">Synthesis</span></h4>
+        <p>瓷轻叩 = 2350/3170Hz 三角波 + 高通噪点；玉磬 = 524Hz 非谐泛音钟；印 = 110→55Hz 正弦下滑 + 低通纸声。全部可调。</p>
+        <div class="mono">tap: tri 2350+3170Hz, dec .09s
+chime: bell partials ×1/2.76/5.4
+stamp: sine 110→55Hz + LP noise</div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <div class="brand">秘色 · 天青</div>
+    <div>质感 × 音效 最小 Demo &nbsp;|&nbsp; Web Audio 实时合成 &nbsp;|&nbsp; MISE CELADON</div>
+  </footer>
+</div>
+
+<script>
+(function () {
+  /* ================= 触感 ================= */
+  function vibe(p) {
+    if (navigator.vibrate) { try { navigator.vibrate(p); } catch (e) {} }
+  }
+
+  /* ================= 音频引擎 ================= */
+  let actx = null, master = null;
+  function ac() {
+    if (!actx) {
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      master = actx.createGain();
+      master.gain.value = 0.85;
+      master.connect(actx.destination);
+    }
+    if (actx.state === 'suspended') actx.resume();
+    return actx;
+  }
+  function noiseBuf(a, dur) {
+    const len = Math.max(1, Math.floor(a.sampleRate * dur));
+    const buf = a.createBuffer(1, len, a.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    return buf;
+  }
+  function env(g, t, peak, attack, decay) {
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0002), t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
+  }
+
+  /* 瓷轻叩 · Porcelain Tap */
+  function playTap() {
+    const a = ac(), t = a.currentTime;
+    const detune = 1 + (Math.random() - 0.5) * 0.1; // ±5%
+    [[2350 * detune, 0.13], [3170 * detune, 0.06], [4260 * detune, 0.025]].forEach(([f, amp]) => {
+      const o = a.createOscillator(), g = a.createGain();
+      o.type = 'triangle'; o.frequency.value = f;
+      env(g, t, amp, 0.002, 0.09);
+      o.connect(g).connect(master);
+      o.start(t); o.stop(t + 0.16);
+    });
+    const src = a.createBufferSource(); src.buffer = noiseBuf(a, 0.035);
+    const hp = a.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 4200;
+    const g = a.createGain(); env(g, t, 0.05, 0.001, 0.03);
+    src.connect(hp).connect(g).connect(master);
+    src.start(t);
+  }
+
+  /* 金石细响 · Gilt Trace */
+  function playGilt() {
+    const a = ac(), t = a.currentTime;
+    vibe(20);
+    [[1760, 0.09], [2640, 0.055], [3960, 0.032], [5280, 0.018]].forEach(([f, amp], i) => {
+      const o = a.createOscillator(), g = a.createGain();
+      o.type = 'sine'; o.frequency.value = f * (1 + (Math.random() - 0.5) * 0.006);
+      env(g, t, amp, 0.003, 0.20 - i * 0.035);
+      o.connect(g).connect(master);
+      o.start(t); o.stop(t + 0.35);
+    });
+    const src = a.createBufferSource(); src.buffer = noiseBuf(a, 0.22);
+    const bp = a.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 5200; bp.Q.value = 1.6;
+    const g = a.createGain(); env(g, t, 0.038, 0.012, 0.17);
+    src.connect(bp).connect(g).connect(master);
+    src.start(t);
+  }
+
+  /* 玉磬余韵 · Jade Chime */
+  function playChime() {
+    const a = ac(), t = a.currentTime;
+    vibe([15, 30, 15, 30, 25]);
+    const f0 = 524;
+    [[1, 0.17, 1.45], [2.76, 0.085, 0.95], [5.40, 0.045, 0.55], [8.93, 0.022, 0.35]].forEach(([m, amp, dec]) => {
+      const o = a.createOscillator(), g = a.createGain();
+      o.type = 'sine'; o.frequency.value = f0 * m;
+      env(g, t, amp, 0.01, dec);
+      o.connect(g).connect(master);
+      o.start(t); o.stop(t + dec + 0.15);
+    });
+  }
+
+  /* 印落纸 · Seal Stamp */
+  function playStamp() {
+    const a = ac(), t = a.currentTime;
+    vibe(45);
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(110, t);
+    o.frequency.exponentialRampToValueAtTime(55, t + 0.11);
+    env(g, t, 0.36, 0.004, 0.3);
+    o.connect(g).connect(master);
+    o.start(t); o.stop(t + 0.5);
+
+    const src = a.createBufferSource(); src.buffer = noiseBuf(a, 0.13);
+    const lp = a.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520;
+    const g2 = a.createGain(); env(g2, t, 0.22, 0.002, 0.12);
+    src.connect(lp).connect(g2).connect(master);
+    src.start(t);
+
+    const src2 = a.createBufferSource(); src2.buffer = noiseBuf(a, 0.07);
+    const hp = a.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2400;
+    const g3 = a.createGain(); env(g3, t + 0.025, 0.045, 0.004, 0.055);
+    src2.connect(hp).connect(g3).connect(master);
+    src2.start(t + 0.025);
+  }
+
+  const SOUNDS = { tap: playTap, gilt: playGilt, chime: playChime, stamp: playStamp };
+
+  /* 音效卡片试听 */
+  document.querySelectorAll('.sound-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const fn = SOUNDS[card.dataset.sound];
+      if (fn) fn();
+      card.classList.remove('playing');
+      void card.offsetWidth;
+      card.classList.add('playing');
+    });
+  });
+
+  /* ================= 棋盘 ================= */
+  const GLYPHS = {
+    plum:  '<circle cx="12" cy="12" r="2"/><circle cx="12" cy="5.6" r="2"/><circle cx="17.8" cy="9.6" r="2"/><circle cx="15.6" cy="16.6" r="2"/><circle cx="8.4" cy="16.6" r="2"/><circle cx="6.2" cy="9.6" r="2"/>',
+    moon:  '<path d="M15.5 5.2 A8 8 0 1 0 15.5 18.8 A6.4 6.4 0 1 1 15.5 5.2 Z"/>',
+    wave:  '<path d="M3 10 C6 7.4, 9 12.6, 12 10 S 18 7.4, 21 10"/><path d="M3 15.6 C6 13, 9 18.2, 12 15.6 S 18 13, 21 15.6"/>',
+    leaf:  '<path d="M12 3 C18 8, 18 16, 12 21 C6 16, 6 8, 12 3 Z"/><path d="M12 6.5 L12 17.5"/>',
+    mount: '<path d="M2.5 18.5 L9 8 L13 13.6 L15.6 10 L21.5 18.5 Z"/><circle cx="17.6" cy="6.4" r="1.6"/>',
+    cloud: '<path d="M6.5 17.5 A4.2 4.2 0 1 1 7.2 9.2 A5.4 5.4 0 0 1 17.4 9.8 A3.9 3.9 0 1 1 17.8 17.5 Z"/>',
+    fish:  '<path d="M4 12 C7 7, 13 7, 17 12 C13 17, 7 17, 4 12 Z"/><path d="M17 12 L21 8.4 L21 15.6 Z"/><circle cx="8.4" cy="11.2" r="0.9" fill="currentColor" stroke="none"/>',
+    bamboo:'<path d="M9 3 L9 21"/><path d="M15 3 L15 21"/><path d="M9 8.4 L15 8.4"/><path d="M9 14 L15 14"/>'
+  };
+  function glyphSVG(name) {
+    return '<svg viewBox="0 0 24 24">' + (GLYPHS[name] || GLYPHS.moon) + '</svg>';
+  }
+  function crackleSVG(seed) {
+    let s = seed * 9301 + 49297;
+    const rnd = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+    let paths = '';
+    for (let i = 0; i < 3; i++) {
+      let x = rnd() * 100, y = rnd() * 100;
+      let d = `M${x.toFixed(1)},${y.toFixed(1)}`;
+      for (let k = 0; k < 3; k++) {
+        x += (rnd() - 0.5) * 46; y += (rnd() - 0.35) * 42;
+        d += ` L${x.toFixed(1)},${y.toFixed(1)}`;
+      }
+      paths += `<path d="${d}" stroke="rgba(46,84,68,0.30)" stroke-width="0.55" fill="none"/>`;
+      paths += `<path d="${d}" stroke="rgba(255,255,255,0.34)" stroke-width="0.38" fill="none" transform="translate(0.5,0.6)"/>`;
+    }
+    return `<svg viewBox="0 0 100 100" preserveAspectRatio="none">${paths}</svg>`;
+  }
+
+  const COLS = 6, ROWS = 5, N = COLS * ROWS;
+  const names = Object.keys(GLYPHS);
+  const grid = document.getElementById('boardGrid');
+  const cells = [];
+  let seed = 7;
+  for (let i = 0; i < N; i++) {
+    seed++;
+    const g = names[i % names.length];
+    const el = document.createElement('div');
+    el.className = 'piece pale';
+    el.dataset.idx = i;
+    el.innerHTML =
+      `<div class="crackle">${crackleSVG(seed)}</div>` +
+      `<div class="glint"></div>` +
+      `<div class="glyph">${glyphSVG(g)}</div>` +
+      `<div class="tap-ring"></div>`;
+    grid.appendChild(el);
+    cells.push(el);
+  }
+
+  const progNum = document.getElementById('progNum');
+  const stage = document.getElementById('stage');
+  function updateProg() {
+    const n = document.querySelectorAll('.piece.deep').length;
+    progNum.textContent = n;
+    return n;
+  }
+
+  /* 点按棋子 */
+  grid.addEventListener('click', e => {
+    const el = e.target.closest('.piece');
+    if (!el) return;
+    ac();
+    vibe(10);
+    if (el.classList.contains('deep')) {
+      el.classList.remove('deep');
+      el.classList.add('pale');
+      playTap();
+      el.classList.remove('tapping'); void el.offsetWidth; el.classList.add('tapping');
+    } else {
+      el.classList.remove('pale');
+      el.classList.add('deep');
+      playTap();
+      el.classList.remove('pop', 'tapping'); void el.offsetWidth;
+      el.classList.add('pop', 'tapping');
+    }
+    const n = updateProg();
+    if (n === N) {
+      playChime();
+      stage.classList.remove('full'); void stage.offsetWidth; stage.classList.add('full');
+    }
+  });
+
+  /* 光迹演示 */
+  const svg = document.getElementById('boardSvg');
+  const cellPx = 80, gap = 10, padX = (532 - (COLS * cellPx + (COLS - 1) * gap)) / 2;
+  const padY = (452 - (ROWS * cellPx + (ROWS - 1) * gap)) / 2;
+  const cx = c => padX + c * (cellPx + gap) + cellPx / 2;
+  const cy = r => padY + r * (cellPx + gap) + cellPx / 2;
+
+  const route = [[0,2],[1,2],[2,2],[2,1],[3,1],[4,1],[4,2],[4,3],[5,3],[5,4]];
+  let d = `M${cx(route[0][0])},${cy(route[0][1])}`;
+  for (let i = 1; i < route.length; i++) d += ` L${cx(route[i][0])},${cy(route[i][1])}`;
+
+  let trailTimer = [];
+  function clearTrail() {
+    trailTimer.forEach(clearTimeout); trailTimer = [];
+    svg.innerHTML = '';
+  }
+  function drawTrail(animate, soundEach) {
+    clearTrail();
+    svg.innerHTML = `
+      <defs>
+        <linearGradient id="goldGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#FFF3D6"/>
+          <stop offset="0.35" stop-color="#F2DCA8"/>
+          <stop offset="0.7" stop-color="#D4AF6A"/>
+          <stop offset="1" stop-color="#B8945A"/>
+        </linearGradient>
+        <filter id="glowF" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur stdDeviation="5"/>
+        </filter>
+      </defs>
+      <path class="tglow" d="${d}" stroke="rgba(212,175,106,0.38)" stroke-width="16" fill="none"
+            stroke-linecap="round" stroke-linejoin="round" filter="url(#glowF)"/>
+      <path class="tshade" d="${d}" stroke="rgba(90,66,30,0.5)" stroke-width="10" fill="none"
+            stroke-linecap="round" stroke-linejoin="round" transform="translate(0,1.5)"/>
+      <path class="tmain" d="${d}" stroke="url(#goldGrad)" stroke-width="6" fill="none"
+            stroke-linecap="round" stroke-linejoin="round"/>
+      <path class="thi" d="${d}" stroke="rgba(255,243,214,0.55)" stroke-width="1.6" fill="none"
+            stroke-linecap="round" stroke-linejoin="round" transform="translate(-0.8,-1.2)"/>
+      ${route.map(([c, r]) =>
+        `<circle cx="${cx(c)}" cy="${cy(r)}" r="4.2" fill="url(#goldGrad)"/>
+         <circle cx="${cx(c)}" cy="${cy(r)}" r="4.2" fill="none" stroke="rgba(255,243,214,0.5)" stroke-width="1"/>`
+      ).join('')}
+    `;
+    if (!animate) return;
+    const paths = svg.querySelectorAll('path');
+    const main = svg.querySelector('.tmain');
+    const len = main.getTotalLength();
+    paths.forEach(p => {
+      const l = p.getTotalLength();
+      p.style.strokeDasharray = l;
+      p.style.strokeDashoffset = l;
+      p.getBoundingClientRect();
+      p.style.transition = 'stroke-dashoffset 1.15s cubic-bezier(.4,0,.2,1)';
+      p.style.strokeDashoffset = '0';
+    });
+    if (soundEach) {
+      // 沿途 3 处金石细响
+      [0, 4, 8].forEach((k, i) => {
+        trailTimer.push(setTimeout(playGilt, 90 + i * 380));
+      });
+    }
+  }
+
+  document.getElementById('btnTrail').addEventListener('click', () => {
+    ac();
+    drawTrail(true, true);
+  });
+
+  /* 铺满全盘 */
+  let filling = false;
+  document.getElementById('btnFill').addEventListener('click', () => {
+    ac();
+    if (filling) return;
+    const pale = [...document.querySelectorAll('.piece.pale')];
+    if (!pale.length) return;
+    filling = true;
+    pale.forEach((el, i) => {
+      trailTimer.push(setTimeout(() => {
+        el.classList.remove('pale');
+        el.classList.add('deep', 'pop');
+        setTimeout(() => el.classList.remove('pop'), 300);
+        playTap();
+        vibe(6);
+        const n = updateProg();
+        if (n === N) {
+          filling = false;
+          setTimeout(() => {
+            playChime();
+            stage.classList.remove('full'); void stage.offsetWidth; stage.classList.add('full');
+          }, 120);
+        }
+      }, i * 48));
+    });
+  });
+
+  /* 重置 */
+  document.getElementById('btnReset').addEventListener('click', () => {
+    ac();
+    filling = false;
+    clearTrail();
+    cells.forEach(el => {
+      el.classList.remove('deep', 'pop', 'tapping');
+      el.classList.add('pale');
+    });
+    document.getElementById('seal').classList.remove('show');
+    updateProg();
+  });
+
+  /* 盖印 */
+  document.getElementById('btnSeal').addEventListener('click', () => {
+    ac();
+    const seal = document.getElementById('seal');
+    seal.classList.remove('show'); void seal.offsetWidth;
+    seal.classList.add('show');
+    playStamp();
+    // 落印瞬间轻微震盘
+    stage.animate(
+      [{ transform: 'translateY(0)' }, { transform: 'translateY(3px)' }, { transform: 'translateY(0)' }],
+      { duration: 180, easing: 'ease-out' }
+    );
+  });
+
+  updateProg();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>秘色·天青 — 全页面配套 Demo</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+:root {
+  --serif: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  --sans: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --c050: #E4EDE6; --c100: #D5E3D8; --c200: #B8CFC0; --c300: #93B3A2;
+  --c400: #6E9180; --c500: #4F7A66; --c600: #2E5444; --c700: #1D3A2E;
+  --i050: #F2EEE6; --i100: #EDE8DD; --i300: #B9B2A4; --i500: #7A7468;
+  --i700: #454038; --i900: #141210;
+  --g100: #FFF3D6; --g200: #F2DCA8; --g300: #D4AF6A; --g400: #B8945A; --g500: #8A6B3C;
+  --seal: #C04B33; --seal-deep: #8C2F1E;
+  --violet: #8B7EC8;
+  --well: #16241E; --well-deep: #0F1915;
+  --page: #0C1310; --phone-bg: #0E1815;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--page); color: var(--i100);
+  font-family: var(--sans); font-weight: 300; line-height: 1.75;
+}
+body::before {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  opacity: 0.05; mix-blend-mode: overlay;
+}
+body::after {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background: radial-gradient(120% 90% at 50% 0%, rgba(78,125,102,0.10), rgba(0,0,0,0) 55%),
+              radial-gradient(140% 100% at 50% 110%, rgba(0,0,0,0.55), rgba(0,0,0,0) 55%);
+}
+.wrap { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding: 0 48px 110px; }
+
+/* ===== 报头 ===== */
+.hero { padding: 96px 0 12px; }
+.hero-kicker {
+  display: flex; align-items: center; gap: 14px;
+  font-size: 11px; letter-spacing: .42em; color: var(--g300); text-transform: uppercase;
+}
+.hero-kicker::before {
+  content: ''; width: 42px; height: 1px;
+  background: linear-gradient(90deg, var(--g300), transparent);
+}
+.hero-title {
+  margin-top: 22px;
+  font-family: var(--serif); font-size: clamp(42px, 6vw, 68px);
+  font-weight: 900; letter-spacing: .12em; line-height: 1.08; color: var(--i050);
+}
+.hero-title .dot {
+  display: inline-block; width: .2em; height: .2em; border-radius: 50%;
+  background: radial-gradient(circle at 32% 30%, var(--g100), var(--g300) 55%, var(--g500));
+  margin: 0 .18em .14em; vertical-align: middle;
+  box-shadow: 0 0 20px rgba(212,175,106,0.55);
+}
+.hero-sub {
+  margin-top: 14px; font-family: var(--serif); font-size: 13px;
+  letter-spacing: .34em; color: var(--c300); text-transform: uppercase;
+}
+.hero-note {
+  margin-top: 24px; max-width: 660px;
+  font-size: 13px; line-height: 2.05; color: var(--i300);
+}
+.hero-note em {
+  font-style: normal; color: var(--g200);
+  border-bottom: 1px solid rgba(212,175,106,0.35);
+}
+
+/* ===== 节 ===== */
+.sec { margin-top: 88px; }
+.sec-head {
+  display: flex; align-items: baseline; gap: 16px; margin-bottom: 28px;
+}
+.sec-no { font-family: var(--serif); font-size: 12px; font-weight: 600; letter-spacing: .32em; color: var(--g300); }
+.sec-title { font-family: var(--serif); font-size: 24px; font-weight: 700; letter-spacing: .16em; color: var(--i050); }
+.sec-en { font-size: 10px; letter-spacing: .32em; color: var(--i500); text-transform: uppercase; }
+.sec-note { margin-left: auto; max-width: 400px; font-size: 11.5px; line-height: 1.9; color: var(--i500); text-align: right; }
+.rule {
+  height: 1px; border: 0; margin-bottom: 32px;
+  background: linear-gradient(90deg, rgba(212,175,106,0.35), rgba(212,175,106,0.06) 55%, transparent);
+}
+
+/* ===== 触感 ===== */
+.hap-layout { display: grid; grid-template-columns: 1.2fr 1fr; gap: 18px; }
+.hap-card {
+  padding: 30px 32px;
+  border-radius: 22px;
+  background: linear-gradient(165deg, rgba(78,125,102,0.10), rgba(20,18,16,0.5));
+  border: 1px solid rgba(255,255,255,0.05);
+}
+.hap-card h4 {
+  font-family: var(--serif); font-size: 15px; letter-spacing: .26em;
+  color: var(--i050); margin-bottom: 16px;
+}
+.hap-card h4 .en {
+  margin-left: 12px; font-family: var(--sans);
+  font-size: 9px; letter-spacing: .3em; color: var(--g300); font-weight: 400;
+}
+.tok {
+  display: flex; justify-content: space-between; gap: 16px;
+  padding: 11px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 11.5px;
+}
+.tok:last-child { border-bottom: 0; }
+.tok .k { color: var(--i300); letter-spacing: .12em; }
+.tok .v { color: var(--c200); font-family: var(--serif); letter-spacing: .06em; text-align: right; }
+
+.hap-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+.hap-btn {
+  position: relative; overflow: hidden;
+  padding: 14px 22px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(212,175,106,0.25);
+  background: rgba(212,175,106,0.10);
+  color: var(--g200);
+  font-family: var(--serif); font-size: 12.5px; letter-spacing: .18em;
+  transition: transform .12s ease, background .18s ease;
+  user-select: none;
+}
+.hap-btn:hover { background: rgba(212,175,106,0.18); }
+.hap-btn:active { transform: scale(0.95); }
+.hap-btn b { color: var(--i050); font-weight: 600; }
+.hap-btn small {
+  display: block; margin-top: 2px;
+  font-family: var(--sans); font-size: 9px; letter-spacing: .14em; color: var(--i500);
+}
+.hap-note {
+  margin-top: 16px; font-size: 11px; line-height: 1.95; color: var(--i500);
+}
+
+/* ===== 手机 ===== */
+.phones {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px 26px;
+}
+.phone-wrap { display: flex; flex-direction: column; align-items: center; }
+.phone {
+  width: 350px; height: 780px;
+  border-radius: 38px; overflow: hidden;
+  background: var(--phone-bg);
+  border: 1px solid rgba(212,175,106,0.16);
+  box-shadow:
+    0 34px 80px rgba(0,0,0,0.55),
+    0 6px 18px rgba(0,0,0,0.35),
+    inset 0 1px 0 rgba(255,255,255,0.06);
+  display: flex; flex-direction: column;
+  position: relative;
+}
+.phone-tag {
+  margin-top: 16px;
+  font-size: 10px; letter-spacing: .34em; color: var(--i500);
+  text-transform: uppercase;
+}
+.phone-tag b {
+  color: var(--g300); font-family: var(--serif); font-weight: 600;
+  letter-spacing: .28em; margin-right: 10px;
+}
+
+/* 状态栏 */
+.status {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 26px 4px;
+  font-size: 10px; letter-spacing: .12em; color: var(--i300); font-weight: 500;
+  flex-shrink: 0;
+}
+.status .brand { color: var(--g300); letter-spacing: .24em; font-family: var(--serif); }
+
+.pbody { flex: 1; padding: 10px 22px 0; overflow: hidden; position: relative; }
+.pbody.col { display: flex; flex-direction: column; }
+.pbody.col .goal-strip { margin-top: auto; margin-bottom: 16px; }
+
+/* 底部导航 */
+.nav {
+  flex-shrink: 0;
+  display: flex; justify-content: space-around; align-items: center;
+  padding: 14px 12px 22px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+  background: rgba(10,16,13,0.6);
+}
+.nav-item {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  font-size: 10px; letter-spacing: .22em; color: var(--i500);
+}
+.nav-item .ico {
+  width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+}
+.nav-item .ico svg {
+  width: 18px; height: 18px; stroke: var(--i500); fill: none;
+  stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+}
+.nav-item.on { color: var(--g200); }
+.nav-item.on .ico svg { stroke: var(--g200); }
+.nav-item.on::before {
+  content: ''; width: 4px; height: 4px; border-radius: 50%;
+  background: var(--g300); margin-bottom: -2px;
+  box-shadow: 0 0 8px rgba(212,175,106,0.6);
+}
+
+/* ===== 通用组件 ===== */
+.card {
+  border-radius: 18px;
+  background: linear-gradient(165deg, rgba(78,125,102,0.12), rgba(20,18,16,0.5));
+  border: 1px solid rgba(212,175,106,0.12);
+  box-shadow: 0 12px 28px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+.label-mini {
+  font-size: 9px; letter-spacing: .32em; color: var(--g300); text-transform: uppercase;
+}
+.serif-num { font-family: var(--serif); font-weight: 900; color: var(--i050); line-height: 1; }
+
+.btn-gold {
+  display: block; width: 100%;
+  padding: 17px 0; border-radius: 999px; border: none; cursor: pointer;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.35), rgba(255,255,255,0) 42%),
+    linear-gradient(145deg, var(--g200) 0%, var(--g300) 55%, var(--g400) 100%);
+  box-shadow:
+    0 12px 26px rgba(212,175,106,0.28),
+    0 4px 10px rgba(0,0,0,0.3),
+    inset 0 1px 0 rgba(255,255,255,0.55),
+    inset 0 -3px 8px rgba(120,88,40,0.45);
+  font-family: var(--serif); font-size: 15px; font-weight: 700;
+  letter-spacing: .42em; text-indent: .42em; color: #2E2210;
+}
+.btn-ghost {
+  display: block; width: 100%; margin-top: 12px;
+  padding: 14px 0; border-radius: 999px; cursor: pointer;
+  background: rgba(78,125,102,0.12);
+  border: 1px solid rgba(255,255,255,0.07);
+  color: var(--i300);
+  font-family: var(--serif); font-size: 12px;
+  letter-spacing: .32em; text-indent: .32em;
+}
+
+/* mini board */
+.mini-board {
+  border-radius: 14px; padding: 10px;
+  background: linear-gradient(175deg, var(--well), var(--well-deep));
+  border: 1px solid rgba(212,175,106,0.12);
+  box-shadow: inset 0 2px 16px rgba(0,0,0,0.4);
+  position: relative;
+}
+.mini-grid { display: grid; gap: 5px; }
+.mp { aspect-ratio: 1; border-radius: 7px; }
+.mp-pale {
+  background: linear-gradient(145deg, var(--c100), var(--c300) 70%, var(--c400));
+  box-shadow: 0 2px 4px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.5);
+}
+.mp-deep {
+  background: linear-gradient(145deg, var(--c500), var(--c700));
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.18), 0 0 8px rgba(212,175,106,0.12);
+}
+.mp-gold {
+  background: linear-gradient(145deg, var(--g200), var(--g400));
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3), 0 0 10px rgba(212,175,106,0.28);
+}
+.mp-stone {
+  background: linear-gradient(145deg, #3A403B, #171B17);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+.mp-white {
+  background: linear-gradient(145deg, #F2EEE6, #C9C2B2);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.6);
+}
+.mp-ink {
+  background: linear-gradient(145deg, #5A564E, #221F1A);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.12);
+}
+.mp-navy {
+  background: linear-gradient(145deg, #2A3550, #141B2C);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.12);
+}
+.mp-amber {
+  background: linear-gradient(145deg, #F0B45C, #B87A2E);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.35), 0 0 8px rgba(240,180,92,0.25);
+}
+.mp-teal {
+  background: linear-gradient(145deg, #4E8E8A, #1E4A48);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.mp-ocean {
+  background: linear-gradient(145deg, #2E5A7A, #122838);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.12);
+}
+
+/* toggle */
+.toggle {
+  width: 42px; height: 24px; border-radius: 999px;
+  background: rgba(212,175,106,0.28);
+  border: 1px solid rgba(212,175,106,0.35);
+  position: relative;
+}
+.toggle::after {
+  content: ''; position: absolute; top: 2px; right: 2px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: linear-gradient(145deg, var(--g200), var(--g300));
+  box-shadow: 0 2px 5px rgba(0,0,0,0.35);
+}
+.toggle.off { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.1); }
+.toggle.off::after { right: auto; left: 2px; background: linear-gradient(145deg, var(--i500), var(--i700)); }
+
+/* ===== 屏内具体 ===== */
+/* 首页 */
+.home-top {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 18px;
+}
+.gear {
+  width: 36px; height: 36px; border-radius: 12px;
+  background: rgba(78,125,102,0.16);
+  border: 1px solid rgba(255,255,255,0.06);
+  display: flex; align-items: center; justify-content: center;
+}
+.gear svg { width: 16px; height: 16px; stroke: var(--i300); fill: none; stroke-width: 1.7; }
+.hello {
+  font-family: var(--serif); font-size: 23px; font-weight: 700;
+  letter-spacing: .26em; color: var(--i050);
+}
+.hello-sub {
+  margin-top: 6px; font-size: 10px; letter-spacing: .28em; color: var(--i500);
+}
+.world-card {
+  margin-top: 18px; padding: 16px 18px;
+  display: flex; align-items: center; gap: 15px;
+}
+.emblem {
+  width: 52px; height: 52px; border-radius: 50%;
+  flex-shrink: 0;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255,255,255,0.3), rgba(255,255,255,0) 45%),
+    linear-gradient(145deg, var(--c500), var(--c700));
+  box-shadow:
+    0 8px 18px rgba(0,0,0,0.35),
+    inset 0 1px 0 rgba(255,255,255,0.25),
+    0 0 0 1px rgba(212,175,106,0.25);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 20px; font-weight: 700; color: var(--g200);
+}
+.world-info { flex: 1; }
+.world-info h4 {
+  font-family: var(--serif); font-size: 15px; letter-spacing: .22em;
+  color: var(--i050); font-weight: 700;
+}
+.world-bar {
+  margin-top: 9px; height: 4px; border-radius: 999px;
+  background: rgba(255,255,255,0.08); overflow: hidden;
+}
+.world-bar i {
+  display: block; height: 100%; width: 16%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--g300), var(--g200));
+  box-shadow: 0 0 8px rgba(212,175,106,0.5);
+}
+.world-info .cnt {
+  margin-top: 7px; font-family: var(--serif); font-size: 11px;
+  letter-spacing: .16em; color: var(--c200);
+}
+
+.ticket {
+  margin-top: 14px; padding: 22px 22px 20px;
+  display: flex; gap: 18px; align-items: stretch;
+  background:
+    linear-gradient(165deg, rgba(78,125,102,0.18), rgba(20,18,16,0.55));
+}
+.ticket-main { flex: 1; }
+.ticket-main .lv-label {
+  font-size: 9px; letter-spacing: .34em; color: var(--g300);
+}
+.ticket-main .lv {
+  margin-top: 6px;
+  font-family: var(--serif); font-size: 62px; font-weight: 900;
+  color: var(--i050); line-height: 1; letter-spacing: .02em;
+}
+.ticket-main .lv small {
+  font-family: var(--sans); font-size: 11px; letter-spacing: .34em;
+  color: var(--i500); font-weight: 300; margin-left: 8px;
+}
+.ticket-main .lv-desc {
+  margin-top: 10px; font-size: 10px; letter-spacing: .22em; color: var(--i500);
+}
+.ticket-stub {
+  width: 78px; flex-shrink: 0;
+  border-left: 1px dashed rgba(212,175,106,0.28);
+  padding-left: 16px;
+  display: flex; flex-direction: column; justify-content: center; gap: 12px;
+}
+.stub-item { text-align: center; }
+.stub-item b {
+  display: block; font-family: var(--serif); font-size: 19px;
+  font-weight: 700; color: var(--g200); line-height: 1;
+}
+.stub-item span {
+  display: block; margin-top: 4px;
+  font-size: 8.5px; letter-spacing: .24em; color: var(--i500);
+}
+.home-cta { margin-top: 16px; }
+.home-preview-label {
+  margin: 20px 2px 10px;
+  font-family: var(--serif); font-size: 11px; letter-spacing: .34em; color: var(--i500);
+}
+
+/* 地图 */
+.map-top {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+}
+.back-btn {
+  width: 34px; height: 34px; border-radius: 11px;
+  background: rgba(78,125,102,0.16);
+  border: 1px solid rgba(255,255,255,0.06);
+  display: flex; align-items: center; justify-content: center;
+}
+.back-btn svg { width: 14px; height: 14px; stroke: var(--i300); stroke-width: 2; fill: none; }
+.map-title {
+  font-family: var(--serif); font-size: 17px; letter-spacing: .22em;
+  color: var(--i050); font-weight: 700;
+}
+.map-cnt {
+  margin-left: auto; font-family: var(--serif); font-size: 13px; color: var(--g200);
+}
+.map-scene {
+  position: relative; height: 470px;
+  border-radius: 20px; overflow: hidden;
+  background:
+    radial-gradient(90% 80% at 50% 30%, rgba(94,138,116,0.16), rgba(0,0,0,0) 65%),
+    linear-gradient(175deg, var(--well), var(--well-deep));
+  border: 1px solid rgba(212,175,106,0.14);
+  box-shadow: inset 0 2px 24px rgba(0,0,0,0.4);
+}
+.map-scene svg.map-draw { position: absolute; inset: 0; width: 100%; height: 100%; }
+.here-chip {
+  position: absolute; padding: 7px 13px; border-radius: 999px;
+  background: linear-gradient(145deg, var(--g200), var(--g300));
+  color: #2E2210;
+  font-family: var(--serif); font-size: 10px; font-weight: 700; letter-spacing: .22em;
+  box-shadow: 0 8px 18px rgba(212,175,106,0.3);
+}
+.map-foot {
+  margin-top: 14px; padding: 15px 18px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.map-foot .t {
+  font-family: var(--serif); font-size: 13px; letter-spacing: .16em; color: var(--i100);
+}
+.map-foot .t em { font-style: normal; color: var(--g200); }
+.map-foot .n {
+  font-family: var(--serif); font-size: 20px; font-weight: 700; color: var(--g200);
+}
+
+/* 游戏内 */
+.g-hud {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 14px;
+}
+.g-lv {
+  font-family: var(--serif); font-size: 30px; font-weight: 900;
+  color: var(--i050); line-height: 1; text-align: center;
+}
+.g-lv small {
+  display: block; font-family: var(--sans); font-size: 8.5px;
+  letter-spacing: .32em; color: var(--g300); font-weight: 400; margin-top: 5px;
+}
+.g-moves { text-align: right; }
+.g-moves b {
+  font-family: var(--serif); font-size: 21px; font-weight: 700; color: var(--c200);
+}
+.g-moves span {
+  display: block; font-size: 8.5px; letter-spacing: .28em; color: var(--i500); margin-top: 2px;
+}
+.legend-row {
+  margin-top: 14px;
+  display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;
+}
+.lg {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 8.5px; letter-spacing: .18em; color: var(--i500);
+}
+.lg i {
+  width: 11px; height: 11px; border-radius: 4px; display: block;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+}
+.tools {
+  margin-top: 16px; display: flex; gap: 9px;
+}
+.tool {
+  flex: 1; text-align: center; padding: 13px 4px 11px;
+  border-radius: 14px;
+  background: rgba(78,125,102,0.12);
+  border: 1px solid rgba(255,255,255,0.05);
+}
+.tool.goldish {
+  background: linear-gradient(165deg, rgba(212,175,106,0.22), rgba(212,175,106,0.08));
+  border-color: rgba(212,175,106,0.25);
+}
+.tool b {
+  display: block; font-family: var(--serif); font-size: 12px;
+  letter-spacing: .18em; color: var(--i050); font-weight: 600;
+}
+.tool span {
+  display: block; margin-top: 3px;
+  font-size: 8.5px; letter-spacing: .16em; color: var(--i500);
+}
+.goal-strip {
+  margin-top: 14px; padding: 11px;
+  border-radius: 12px; text-align: center;
+  background: rgba(78,125,102,0.10);
+  border: 1px solid rgba(255,255,255,0.05);
+  font-family: var(--serif); font-size: 10px; letter-spacing: .34em;
+  color: var(--i500);
+}
+.goal-strip em { font-style: normal; color: var(--g200); }
+
+/* 结算 */
+.done {
+  height: 100%; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center;
+  padding-bottom: 30px;
+}
+.seal {
+  width: 128px; height: 128px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 35% 30%, #D9614A, var(--seal) 55%, var(--seal-deep));
+  box-shadow:
+    0 22px 50px rgba(192,75,51,0.38),
+    0 6px 16px rgba(0,0,0,0.4),
+    inset 0 2px 4px rgba(255,255,255,0.25),
+    inset 0 -8px 18px rgba(90,25,12,0.5);
+  font-family: var(--serif); font-size: 58px; font-weight: 900;
+  color: rgba(255,244,238,0.92);
+  transform: rotate(-8deg);
+  text-shadow: 0 2px 6px rgba(90,25,12,0.45);
+}
+.done-title {
+  margin-top: 32px;
+  font-family: var(--serif); font-size: 22px; font-weight: 700;
+  letter-spacing: .38em; text-indent: .38em; color: var(--i050);
+}
+.done-sub {
+  margin-top: 10px; font-size: 10px; letter-spacing: .3em; color: var(--g300);
+}
+.stars { margin-top: 20px; display: flex; gap: 12px; }
+.star {
+  width: 30px; height: 30px;
+}
+.star svg { width: 100%; height: 100%; }
+.done-stats {
+  margin-top: 28px; width: 100%;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px;
+}
+.done-stat {
+  padding: 16px 6px 13px;
+  border-radius: 14px;
+  background: rgba(78,125,102,0.12);
+  border: 1px solid rgba(255,255,255,0.05);
+}
+.done-stat b {
+  display: block; font-family: var(--serif); font-size: 21px;
+  font-weight: 900; color: var(--i050); line-height: 1;
+}
+.done-stat span {
+  display: block; margin-top: 6px;
+  font-size: 8.5px; letter-spacing: .28em; color: var(--i500);
+}
+.done .btn-gold { margin-top: 32px; }
+.done .btn-ghost { margin-top: 12px; }
+
+/* 主题商店 */
+.shop-title {
+  font-family: var(--serif); font-size: 20px; letter-spacing: .32em;
+  color: var(--i050); font-weight: 700;
+}
+.shop-sub {
+  margin-top: 4px; font-size: 9px; letter-spacing: .32em; color: var(--g300);
+  text-transform: uppercase;
+}
+.feature {
+  margin-top: 16px; padding: 16px;
+  display: flex; gap: 15px; align-items: center;
+}
+.feature .mini-board { width: 132px; flex-shrink: 0; }
+.feature-info { flex: 1; }
+.feature-info h4 {
+  font-family: var(--serif); font-size: 15px; letter-spacing: .16em;
+  color: var(--i050); font-weight: 700; white-space: nowrap;
+}
+.feature-info .en {
+  margin-top: 3px; font-size: 8.5px; letter-spacing: .3em; color: var(--g300);
+  text-transform: uppercase;
+}
+.feature-info p {
+  margin-top: 9px; font-size: 9.5px; line-height: 1.85; color: var(--i500);
+}
+.own-tag {
+  display: inline-block; margin-top: 10px;
+  padding: 6px 14px; border-radius: 999px;
+  background: linear-gradient(145deg, var(--g200), var(--g300));
+  color: #2E2210;
+  font-family: var(--serif); font-size: 9.5px; font-weight: 700; letter-spacing: .26em;
+}
+.shop-grid {
+  margin-top: 13px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 11px;
+}
+.shop-item { padding: 12px; border-radius: 15px; }
+.shop-item .mini-board { margin-bottom: 10px; }
+.shop-item h5 {
+  font-family: var(--serif); font-size: 12px; letter-spacing: .18em;
+  color: var(--i050); font-weight: 600;
+}
+.shop-item .st {
+  margin-top: 5px; font-size: 8.5px; letter-spacing: .16em; color: var(--i500);
+}
+.shop-item .st.gold { color: var(--g200); }
+
+/* 排行 */
+.rank-title {
+  font-family: var(--serif); font-size: 20px; letter-spacing: .32em;
+  color: var(--i050); font-weight: 700; text-align: center;
+}
+.rank-sub {
+  margin-top: 4px; font-size: 9px; letter-spacing: .32em; color: var(--g300);
+  text-transform: uppercase; text-align: center;
+}
+.podium {
+  margin-top: 26px;
+  display: flex; justify-content: center; align-items: flex-end; gap: 14px;
+}
+.pod {
+  width: 92px; text-align: center;
+}
+.pod .av {
+  width: 52px; height: 52px; border-radius: 50%; margin: 0 auto 10px;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255,255,255,0.3), rgba(255,255,255,0) 45%),
+    linear-gradient(145deg, var(--c500), var(--c700));
+  box-shadow: 0 8px 18px rgba(0,0,0,0.35), 0 0 0 1px rgba(212,175,106,0.3);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 18px; color: var(--g200); font-weight: 700;
+}
+.pod.first .av {
+  width: 62px; height: 62px;
+  box-shadow: 0 10px 22px rgba(0,0,0,0.4), 0 0 0 1px rgba(212,175,106,0.5), 0 0 22px rgba(212,175,106,0.25);
+}
+.pod .nm {
+  font-family: var(--serif); font-size: 12px; letter-spacing: .12em; color: var(--i050);
+}
+.pod .sc {
+  margin-top: 3px; font-family: var(--serif); font-size: 15px; font-weight: 700; color: var(--g200);
+}
+.pod .base {
+  margin-top: 10px; border-radius: 12px 12px 4px 4px;
+  background: linear-gradient(180deg, rgba(78,125,102,0.25), rgba(78,125,102,0.08));
+  border: 1px solid rgba(212,175,106,0.14); border-bottom: none;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 8px;
+  font-family: var(--serif); font-size: 14px; font-weight: 700; color: var(--g300);
+}
+.pod.first .base { height: 52px; }
+.pod.silver .base { height: 36px; }
+.pod.bronze .base { height: 26px; }
+.rank-list { margin-top: 22px; }
+.rank-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 4px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.rank-row .no {
+  width: 26px; text-align: center;
+  font-family: var(--serif); font-size: 15px; font-weight: 700; color: var(--i500);
+}
+.rank-row .av2 {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: linear-gradient(145deg, var(--c500), var(--c700));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 12px; color: var(--c100);
+}
+.rank-row .nm2 { flex: 1; font-size: 12px; letter-spacing: .12em; color: var(--i100); }
+.rank-row .nm2 small {
+  display: block; font-size: 8.5px; letter-spacing: .16em; color: var(--i500); margin-top: 2px;
+}
+.rank-row .sc2 {
+  font-family: var(--serif); font-size: 15px; font-weight: 700; color: var(--c200);
+}
+
+/* 我的 */
+.me-head {
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 2px 20px;
+}
+.me-av {
+  width: 68px; height: 68px; border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255,255,255,0.32), rgba(255,255,255,0) 45%),
+    linear-gradient(145deg, var(--c500), var(--c700));
+  box-shadow:
+    0 12px 26px rgba(0,0,0,0.4),
+    0 0 0 1px rgba(212,175,106,0.3),
+    0 0 24px rgba(212,175,106,0.15),
+    inset 0 1px 0 rgba(255,255,255,0.25);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 26px; color: var(--g200); font-weight: 700;
+}
+.me-name {
+  font-family: var(--serif); font-size: 21px; letter-spacing: .26em;
+  color: var(--i050); font-weight: 700;
+}
+.me-id {
+  margin-top: 5px; font-size: 9px; letter-spacing: .28em; color: var(--i500);
+}
+.me-title-tag {
+  display: inline-block; margin-top: 9px;
+  padding: 5px 12px; border-radius: 999px;
+  background: rgba(212,175,106,0.12);
+  border: 1px solid rgba(212,175,106,0.22);
+  font-size: 8.5px; letter-spacing: .26em; color: var(--g200);
+}
+.me-stats {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px;
+}
+.me-stat {
+  padding: 15px 6px 12px;
+  border-radius: 14px;
+  background: rgba(78,125,102,0.12);
+  border: 1px solid rgba(255,255,255,0.05);
+  text-align: center;
+}
+.me-stat b {
+  display: block; font-family: var(--serif); font-size: 21px;
+  font-weight: 900; color: var(--i050); line-height: 1;
+}
+.me-stat span {
+  display: block; margin-top: 6px;
+  font-size: 8.5px; letter-spacing: .26em; color: var(--i500);
+}
+.wall-label {
+  margin: 22px 2px 11px;
+  font-family: var(--serif); font-size: 11px; letter-spacing: .36em; color: var(--i500);
+}
+.wall { display: flex; gap: 10px; }
+.wall .mini-board { flex: 1; }
+.funcs { margin-top: 22px; border-top: 1px solid rgba(255,255,255,0.05); }
+.func-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 15px 2px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 12px; letter-spacing: .12em; color: var(--i100);
+}
+.func-row .ico2 {
+  width: 32px; height: 32px; border-radius: 10px;
+  background: rgba(78,125,102,0.14);
+  display: flex; align-items: center; justify-content: center;
+}
+.func-row .ico2 svg {
+  width: 15px; height: 15px; stroke: var(--c200); fill: none; stroke-width: 1.7;
+}
+.func-row .arrow {
+  margin-left: auto;
+  font-size: 14px; color: var(--i500);
+}
+
+/* 规范小结 */
+.spec-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 26px; }
+.spec-card {
+  padding: 22px 20px;
+  border-radius: 18px;
+  background: linear-gradient(165deg, rgba(78,125,102,0.10), rgba(20,18,16,0.5));
+  border: 1px solid rgba(255,255,255,0.05);
+}
+.spec-card h5 {
+  font-family: var(--serif); font-size: 13px; letter-spacing: .22em;
+  color: var(--i050); margin-bottom: 9px;
+}
+.spec-card p { font-size: 10.5px; line-height: 1.9; color: var(--i500); }
+
+.foot {
+  margin-top: 100px; padding-top: 36px;
+  border-top: 1px solid rgba(212,175,106,0.14);
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 9.5px; letter-spacing: .3em; color: var(--i500);
+}
+.foot .brand {
+  font-family: var(--serif); font-size: 12px; letter-spacing: .42em; color: var(--g300);
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="hero-kicker">Full UI Set · 秘色系列 01</div>
+    <h1 class="hero-title">秘色<span class="dot"></span>天青</h1>
+    <div class="hero-sub">Mise Celadon — Complete Screen Set</div>
+    <p class="hero-note">
+      七屏全套配套稿 + <em>触感语言</em>。同一束光、同一套釉、同一枚金——
+      从首页票券到通关朱印，质感标准不降档。震动已接入：
+      落子轻叩、光迹细响、铺满三连、盖印重震，<em>与声音同帧落地</em>。
+    </p>
+  </header>
+
+  <!-- ===== 触感语言 ===== -->
+  <section class="sec">
+    <div class="sec-head">
+      <div class="sec-no">01</div>
+      <div class="sec-title">触感语言</div>
+      <div class="sec-en">Haptics</div>
+      <div class="sec-note">震动是第三种材质。它必须和声音一样克制：短、轻、有分寸，绝不持续嗡鸣。</div>
+    </div>
+    <hr class="rule">
+
+    <div class="hap-layout">
+      <div class="hap-card">
+        <h4>触感试玩<span class="en">Live Test</span></h4>
+        <div class="hap-row">
+          <button class="hap-btn" data-vibe="10"><b>落子</b><small>10ms · 单击</small></button>
+          <button class="hap-btn" data-vibe="20"><b>连径</b><small>20ms · 细响</small></button>
+          <button class="hap-btn" data-vibe="15,30,15,30,25"><b>铺满</b><small>三连 · 玉磬</small></button>
+          <button class="hap-btn" data-vibe="45"><b>盖印</b><small>45ms · 重震</small></button>
+          <button class="hap-btn" data-vibe="8"><b>按钮</b><small>8ms · 微触</small></button>
+        </div>
+        <p class="hap-note">
+          点上面任意按钮即可试。安卓浏览器 / 微信内直接生效（微信小游戏对应
+          wx.vibrateShort / wx.vibrateLong）；iOS Safari 不支持震动，为静默降级。
+          本页所有界面里的金色按钮也都已接入触感。
+        </p>
+      </div>
+      <div class="hap-card">
+        <h4>触感配给<span class="en">Allocation</span></h4>
+        <div class="tok"><span class="k">落子 · 瓷轻叩同帧</span><span class="v">10ms 单击</span></div>
+        <div class="tok"><span class="k">光迹 · 金石同帧</span><span class="v">20ms</span></div>
+        <div class="tok"><span class="k">铺满 · 玉磬同帧</span><span class="v">[15,30,15,30,25] 三连</span></div>
+        <div class="tok"><span class="k">盖印 · 落纸同帧</span><span class="v">45ms 重击</span></div>
+        <div class="tok"><span class="k">按钮按压</span><span class="v">8ms 微触</span></div>
+        <div class="tok"><span class="k">禁止</span><span class="v">持续振动 / 连打机枪式震</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 七屏 ===== -->
+  <section class="sec">
+    <div class="sec-head">
+      <div class="sec-no">02</div>
+      <div class="sec-title">七屏配套</div>
+      <div class="sec-en">Seven Screens</div>
+      <div class="sec-note">首页 / 地图 / 游戏内 / 结算 / 主题 / 排行 / 我的——每屏只有一个金色焦点。</div>
+    </div>
+    <hr class="rule">
+
+    <div class="phones">
+
+      <!-- ============ 1 首页 ============ -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="brand">秘色 · 天青</span></div>
+          <div class="pbody">
+            <div class="home-top">
+              <div class="label-mini">MISE CELADON · 旅程</div>
+              <div class="gear">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2 L12 5 M12 19 L12 22 M2 12 L5 12 M19 12 L22 12 M4.9 4.9 L7 7 M17 17 L19.1 19.1 M19.1 4.9 L17 7 M7 17 L4.9 19.1"/></svg>
+              </div>
+            </div>
+            <div class="hello">雨过天青</div>
+            <div class="hello-sub">今日宜铺陈 · 连胜 3 目</div>
+
+            <div class="world-card card">
+              <div class="emblem">苔</div>
+              <div class="world-info">
+                <h4>苔原之章</h4>
+                <div class="world-bar"><i></i></div>
+                <div class="cnt">5 / 32 目</div>
+              </div>
+            </div>
+
+            <div class="ticket card">
+              <div class="ticket-main">
+                <div class="lv-label">CONTINUE · 继续</div>
+                <div class="lv">047<small>目</small></div>
+                <div class="lv-desc">苔原之章 · 铺满全盘</div>
+              </div>
+              <div class="ticket-stub">
+                <div class="stub-item"><b>3</b><span>连胜</span></div>
+                <div class="stub-item"><b>12</b><span>星屑</span></div>
+              </div>
+            </div>
+
+            <div class="home-cta">
+              <button class="btn-gold" data-vibe="8">继 续 铺 陈</button>
+            </div>
+
+            <div class="home-preview-label">盘 面 预 览</div>
+            <div class="mini-board">
+              <div class="mini-grid" data-mini="7,3"></div>
+            </div>
+          </div>
+          <div class="nav" data-nav="0"></div>
+        </div>
+        <div class="phone-tag"><b>01</b>HOME · 首页</div>
+      </div>
+
+      <!-- ============ 2 地图 ============ -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="brand">秘色 · 天青</span></div>
+          <div class="pbody">
+            <div class="map-top">
+              <div class="back-btn"><svg viewBox="0 0 24 24"><path d="M15 5 L8 12 L15 19"/></svg></div>
+              <div class="map-title">苔原之章</div>
+              <div class="map-cnt">5 / 32</div>
+            </div>
+            <div class="map-scene">
+              <svg class="map-draw" viewBox="0 0 306 470" preserveAspectRatio="none">
+                <!-- 等高线 -->
+                <g stroke="rgba(110,145,128,0.16)" fill="none" stroke-width="1">
+                  <path d="M-20,90 C60,60 120,110 200,80 S320,110 340,80"/>
+                  <path d="M-20,150 C50,125 130,170 210,140 S310,170 340,145"/>
+                  <path d="M-20,220 C70,195 120,240 220,210 S320,245 340,215"/>
+                  <path d="M-20,300 C60,275 140,320 220,290 S310,325 340,295"/>
+                  <path d="M-20,380 C70,355 130,400 230,370 S320,405 340,375"/>
+                </g>
+                <g stroke="rgba(110,145,128,0.10)" fill="none" stroke-width="1">
+                  <path d="M40,40 C90,70 80,140 130,170 S200,230 190,300"/>
+                  <path d="M260,20 C230,90 270,150 240,220 S270,320 230,390"/>
+                </g>
+                <!-- 路线：已走（金）+ 未走（暗） -->
+                <path d="M46,412 C52,360 92,340 100,296 C108,252 74,222 92,180 C110,138 168,142 182,104"
+                      stroke="rgba(212,175,106,0.32)" stroke-width="8" fill="none" stroke-linecap="round" filter="none" opacity="0.9"/>
+                <path d="M46,412 C52,360 92,340 100,296" stroke="url(#gg)" stroke-width="3.6" fill="none" stroke-linecap="round"/>
+                <path d="M100,296 C108,252 74,222 92,180 C110,138 168,142 182,104 C200,80 232,72 258,52"
+                      stroke="rgba(185,178,164,0.22)" stroke-width="3" fill="none" stroke-linecap="round" stroke-dasharray="1 9"/>
+                <defs>
+                  <linearGradient id="gg" x1="0" y1="1" x2="1" y2="0">
+                    <stop offset="0" stop-color="#B8945A"/><stop offset="1" stop-color="#F2DCA8"/>
+                  </linearGradient>
+                </defs>
+                <!-- 节点 -->
+                <!-- 已过 3 -->
+                <g>
+                  <circle cx="46" cy="412" r="11" fill="#2E5444" stroke="rgba(212,175,106,0.5)" stroke-width="1.4"/>
+                  <path d="M41.5,412 L45,415.5 L51,408.5" stroke="#F2DCA8" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+                  <circle cx="100" cy="296" r="11" fill="#2E5444" stroke="rgba(212,175,106,0.5)" stroke-width="1.4"/>
+                  <path d="M95.5,296 L99,299.5 L105,292.5" stroke="#F2DCA8" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+                  <circle cx="82" cy="222" r="11" fill="#2E5444" stroke="rgba(212,175,106,0.5)" stroke-width="1.4"/>
+                  <path d="M77.5,222 L81,225.5 L87,218.5" stroke="#F2DCA8" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+                </g>
+                <!-- 当前节点 -->
+                <circle cx="92" cy="180" r="19" fill="rgba(212,175,106,0.12)"/>
+                <circle cx="92" cy="180" r="13" fill="#B8945A" stroke="#F2DCA8" stroke-width="1.8"/>
+                <circle cx="92" cy="180" r="5" fill="#FFF3D6"/>
+                <!-- 未来节点 -->
+                <circle cx="182" cy="104" r="10" fill="#1D3A2E" stroke="rgba(185,178,164,0.3)" stroke-width="1.2" stroke-dasharray="3 3"/>
+                <circle cx="232" cy="72" r="10" fill="#1D3A2E" stroke="rgba(185,178,164,0.3)" stroke-width="1.2" stroke-dasharray="3 3"/>
+                <!-- 里程碑旗 -->
+                <g>
+                  <circle cx="258" cy="52" r="14" fill="#1D3A2E" stroke="rgba(212,175,106,0.4)" stroke-width="1.3" stroke-dasharray="3 3"/>
+                  <path d="M258,42 L258,62" stroke="#D4AF6A" stroke-width="1.6"/>
+                  <path d="M258,42 L272,46 L258,50 Z" fill="#C04B33"/>
+                </g>
+              </svg>
+              <div class="here-chip" style="left:126px; top:150px;">你在这里</div>
+            </div>
+            <div class="map-foot card">
+              <div class="t">距「<em>苔原之心</em>」</div>
+              <div class="n">还差 2 目</div>
+            </div>
+          </div>
+          <div class="nav" data-nav="0"></div>
+        </div>
+        <div class="phone-tag"><b>02</b>MAP · 地图</div>
+      </div>
+
+      <!-- ============ 3 游戏内 ============ -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="brand">秘色 · 天青</span></div>
+          <div class="pbody col">
+            <div class="g-hud">
+              <div class="back-btn"><svg viewBox="0 0 24 24"><path d="M15 5 L8 12 L15 19"/></svg></div>
+              <div class="g-lv">047<small>苔原之章</small></div>
+              <div class="g-moves"><b>23</b><span>剩余步数</span></div>
+            </div>
+            <div class="mini-board" style="padding:12px">
+              <div class="mini-grid" data-mini="6,5"></div>
+              <svg style="position:absolute;inset:12px;width:calc(100% - 24px);height:calc(100% - 24px);pointer-events:none" viewBox="0 0 300 260">
+                <defs>
+                  <linearGradient id="tg" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#FFF3D6"/><stop offset="1" stop-color="#B8945A"/>
+                  </linearGradient>
+                  <filter id="tgl"><feGaussianBlur stdDeviation="3"/></filter>
+                </defs>
+                <path d="M25,215 L25,160 L95,160 L95,105 L165,105 L165,52 L235,52"
+                      stroke="rgba(212,175,106,0.35)" stroke-width="11" fill="none" stroke-linecap="round" filter="url(#tgl)"/>
+                <path d="M25,215 L25,160 L95,160 L95,105 L165,105 L165,52 L235,52"
+                      stroke="url(#tg)" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div class="legend-row">
+              <div class="lg"><i style="background:linear-gradient(145deg,#3A403B,#171B17)"></i>石障</div>
+              <div class="lg"><i style="background:linear-gradient(145deg,#F2DCA8,#B8945A)"></i>单向</div>
+              <div class="lg"><i style="background:linear-gradient(145deg,#4F7A66,#2E5444);box-shadow:0 0 6px rgba(212,175,106,.5)"></i>星屑</div>
+              <div class="lg"><i style="background:linear-gradient(145deg,rgba(214,236,242,.7),rgba(120,170,190,.5))"></i>冰砖</div>
+              <div class="lg"><i style="background:radial-gradient(circle,#8B7EC8,#2A2440)"></i>传送</div>
+            </div>
+            <div class="tools">
+              <div class="tool goldish" data-vibe="8"><b>换位</b><span>×2</span></div>
+              <div class="tool" data-vibe="8"><b>洗盘</b><span>×1</span></div>
+              <div class="tool" data-vibe="8"><b>提示</b><span>×5</span></div>
+            </div>
+            <div class="goal-strip">本目目标 · 铺<em>满</em>全盘</div>
+          </div>
+          <div class="nav" data-nav="0"></div>
+        </div>
+        <div class="phone-tag"><b>03</b>IN-GAME · 游戏内</div>
+      </div>
+
+      <!-- ============ 4 结算 ============ -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="brand">秘色 · 天青</span></div>
+          <div class="pbody">
+            <div class="done">
+              <div class="seal">过</div>
+              <div class="done-title">铺 满 全 盘</div>
+              <div class="done-sub">苔原之章 · 第 047 目</div>
+              <div class="stars">
+                <div class="star"><svg viewBox="0 0 24 24"><path d="M12 2.6 L14.6 9.2 L21.6 9.6 L16.2 14 L17.9 20.8 L12 17 L6.1 20.8 L7.8 14 L2.4 9.6 L9.4 9.2 Z" fill="#F2DCA8" stroke="#D4AF6A" stroke-width="1"/></svg></div>
+                <div class="star"><svg viewBox="0 0 24 24"><path d="M12 2.6 L14.6 9.2 L21.6 9.6 L16.2 14 L17.9 20.8 L12 17 L6.1 20.8 L7.8 14 L2.4 9.6 L9.4 9.2 Z" fill="#F2DCA8" stroke="#D4AF6A" stroke-width="1"/></svg></div>
+                <div class="star"><svg viewBox="0 0 24 24"><path d="M12 2.6 L14.6 9.2 L21.6 9.6 L16.2 14 L17.9 20.8 L12 17 L6.1 20.8 L7.8 14 L2.4 9.6 L9.4 9.2 Z" fill="#F2DCA8" stroke="#D4AF6A" stroke-width="1"/></svg></div>
+              </div>
+              <div class="done-stats">
+                <div class="done-stat"><b>12</b><span>步数</span></div>
+                <div class="done-stat"><b>04:31</b><span>用时</span></div>
+                <div class="done-stat"><b>3</b><span>星屑</span></div>
+              </div>
+              <button class="btn-gold" data-vibe="8">下 一 目</button>
+              <button class="btn-ghost" data-vibe="8">重玩本目</button>
+            </div>
+          </div>
+        </div>
+        <div class="phone-tag"><b>04</b>RESULT · 结算</div>
+      </div>
+
+      <!-- ============ 5 主题商店 ============ -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="brand">秘色 · 天青</span></div>
+          <div class="pbody">
+            <div class="shop-title">主 题</div>
+            <div class="shop-sub">Theme Collection</div>
+
+            <div class="feature card">
+              <div class="mini-board"><div class="mini-grid" data-mini="4,3"></div></div>
+              <div class="feature-info">
+                <h4>秘色 · 天青</h4>
+                <div class="en">Mise Celadon</div>
+                <p>青瓷釉面 · 墨石展柜 · 金缮光迹 · 瓷叩音效</p>
+                <div class="own-tag">使 用 中</div>
+              </div>
+            </div>
+
+            <div class="shop-grid">
+              <div class="shop-item card">
+                <div class="mini-board"><div class="mini-grid" data-mini="3,2" data-theme="k"></div></div>
+                <h5>金缮瓷盘</h5>
+                <div class="st gold">已拥有 · 碎瓷描金</div>
+              </div>
+              <div class="shop-item card">
+                <div class="mini-board"><div class="mini-grid" data-mini="3,2" data-theme="p"></div></div>
+                <h5>像素街机</h5>
+                <div class="st gold">已拥有 · 8-bit</div>
+              </div>
+              <div class="shop-item card">
+                <div class="mini-board"><div class="mini-grid" data-mini="3,2" data-theme="i"></div></div>
+                <h5>水墨长卷</h5>
+                <div class="st">看广告解锁</div>
+              </div>
+              <div class="shop-item card">
+                <div class="mini-board"><div class="mini-grid" data-mini="3,2" data-theme="d"></div></div>
+                <h5>深海秘境</h5>
+                <div class="st">第 200 目解锁</div>
+              </div>
+            </div>
+          </div>
+          <div class="nav" data-nav="1"></div>
+        </div>
+        <div class="phone-tag"><b>05</b>THEMES · 主题</div>
+      </div>
+
+      <!-- ============ 6 排行榜 ============ -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="brand">秘色 · 天青</span></div>
+          <div class="pbody">
+            <div class="rank-title">排 行</div>
+            <div class="rank-sub">Weekly · 本周</div>
+
+            <div class="podium">
+              <div class="pod silver">
+                <div class="av">青</div>
+                <div class="nm">青瓷不语</div>
+                <div class="sc">186 目</div>
+                <div class="base">2</div>
+              </div>
+              <div class="pod first">
+                <div class="av">天</div>
+                <div class="nm">天青等雨</div>
+                <div class="sc">203 目</div>
+                <div class="base">1</div>
+              </div>
+              <div class="pod bronze">
+                <div class="av">瓷</div>
+                <div class="nm">瓷生有幸</div>
+                <div class="sc">171 目</div>
+                <div class="base">3</div>
+              </div>
+            </div>
+
+            <div class="rank-list">
+              <div class="rank-row">
+                <div class="no">4</div><div class="av2">雨</div>
+                <div class="nm2">雨过天青<small>苔原之章 8/32</small></div>
+                <div class="sc2">158</div>
+              </div>
+              <div class="rank-row">
+                <div class="no">5</div><div class="av2">缮</div>
+                <div class="nm2">金缮手记<small>苔原之章 6/32</small></div>
+                <div class="sc2">149</div>
+              </div>
+              <div class="rank-row">
+                <div class="no">6</div><div class="av2">月</div>
+                <div class="nm2">月印寒潭<small>苔原之章 5/32</small></div>
+                <div class="sc2">142</div>
+              </div>
+              <div class="rank-row">
+                <div class="no">7</div><div class="av2">素</div>
+                <div class="nm2">素器无名<small>苔原之章 5/32</small></div>
+                <div class="sc2">137</div>
+              </div>
+            </div>
+          </div>
+          <div class="nav" data-nav="2"></div>
+        </div>
+        <div class="phone-tag"><b>06</b>RANK · 排行</div>
+      </div>
+
+      <!-- ============ 7 我的 ============ -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="brand">秘色 · 天青</span></div>
+          <div class="pbody">
+            <div class="me-head">
+              <div class="me-av">瓷</div>
+              <div>
+                <div class="me-name">瓷 生</div>
+                <div class="me-id">ID · MISE-0047</div>
+                <div class="me-title-tag">苔原行者</div>
+              </div>
+            </div>
+            <div class="me-stats">
+              <div class="me-stat"><b>128</b><span>总目</span></div>
+              <div class="me-stat"><b>3</b><span>连胜</span></div>
+              <div class="me-stat"><b>2</b><span>主题</span></div>
+            </div>
+
+            <div class="wall-label">主 题 墙</div>
+            <div class="wall">
+              <div class="mini-board"><div class="mini-grid" data-mini="3,2"></div></div>
+              <div class="mini-board"><div class="mini-grid" data-mini="3,2" data-theme="k"></div></div>
+              <div class="mini-board"><div class="mini-grid" data-mini="3,2" data-theme="p"></div></div>
+            </div>
+
+            <div class="funcs">
+              <div class="func-row" data-vibe="8">
+                <div class="ico2"><svg viewBox="0 0 24 24"><path d="M4 9 L8 9 L13 5 L13 19 L8 15 L4 15 Z"/><path d="M17 9 C18.5 10.5 18.5 13.5 17 15"/></svg></div>
+                音效
+                <div class="arrow"><div class="toggle"></div></div>
+              </div>
+              <div class="func-row" data-vibe="8">
+                <div class="ico2"><svg viewBox="0 0 24 24"><rect x="8" y="3" width="8" height="18" rx="2"/><path d="M11 18 L13 18"/></svg></div>
+                振动
+                <div class="arrow"><div class="toggle"></div></div>
+              </div>
+              <div class="func-row" data-vibe="8">
+                <div class="ico2"><svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="M8 11 L16 7 M8 13 L16 17"/></svg></div>
+                分享给好友
+                <div class="arrow">›</div>
+              </div>
+            </div>
+          </div>
+          <div class="nav" data-nav="3"></div>
+        </div>
+        <div class="phone-tag"><b>07</b>PROFILE · 我的</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===== 配套纪律 ===== -->
+  <section class="sec">
+    <div class="sec-head">
+      <div class="sec-no">03</div>
+      <div class="sec-title">配套纪律</div>
+      <div class="sec-en">Discipline</div>
+      <div class="sec-note">七屏同框时最容易失守的四条，这里写死。</div>
+    </div>
+    <hr class="rule">
+    <div class="spec-grid">
+      <div class="spec-card">
+        <h5>一屏一金</h5>
+        <p>每屏金色只服务一个焦点：首页是 CTA、地图是"你在这里"、游戏内是光迹、结算是朱印+按钮。金色多了就不是金缮，是塑料。</p>
+      </div>
+      <div class="spec-card">
+        <h5>光源不动</h5>
+        <p>七屏全部沿用左上 35° 光。票券的阴影、棋子的釉光、按钮的明暗、印章的投影——都是同一束光打出来的。</p>
+      </div>
+      <div class="spec-card">
+        <h5>数字衬线</h5>
+        <p>关卡号、步数、关数、排名，一律 Noto Serif SC 900。数字是这游戏的编辑感来源，不用无衬线体。</p>
+      </div>
+      <div class="spec-card">
+        <h5>触感同帧</h5>
+        <p>震动与声音、视觉按压在同一帧落地（≤50ms）。震动负责"接触"，声音负责"材质"，画面负责"深度"。</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <div class="brand">秘色 · 天青</div>
+    <div>全页面配套 Demo &nbsp;|&nbsp; 含触感语言 &nbsp;|&nbsp; MISE CELADON</div>
+  </footer>
+</div>
+
+<script>
+(function () {
+  /* ===== 震动 ===== */
+  function vibe(p) {
+    if (navigator.vibrate) { try { navigator.vibrate(p); } catch (e) {} }
+  }
+  function parseVibe(str) {
+    const parts = String(str).split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+    return parts.length === 1 ? parts[0] : parts;
+  }
+  document.addEventListener('click', e => {
+    const t = e.target.closest('[data-vibe]');
+    if (t) vibe(parseVibe(t.dataset.vibe));
+    const hb = e.target.closest('.hap-btn');
+    if (hb) { hb.style.transform = 'scale(0.95)'; setTimeout(() => hb.style.transform = '', 120); }
+  });
+
+  /* ===== mini board 生成 ===== */
+  const PALE = { m: 'mp-pale', k: 'mp-white', p: 'mp-navy', i: 'mp-white', d: 'mp-ocean' };
+  const DEEP = { m: 'mp-deep', k: 'mp-white', p: 'mp-amber', i: 'mp-ink', d: 'mp-teal' };
+  const GOLD = { m: 'mp-gold', k: 'mp-gold', p: 'mp-amber', i: 'mp-ink', d: 'mp-teal' };
+  const STONE = { m: 'mp-stone', k: 'mp-ink', p: 'mp-navy', i: 'mp-ink', d: 'mp-ocean' };
+
+  document.querySelectorAll('[data-mini]').forEach(el => {
+    const [colsS, rowsS] = el.dataset.mini.split(',');
+    const cols = parseInt(colsS, 10), rows = parseInt(rowsS, 10);
+    const th = el.dataset.theme || 'm';
+    el.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    const total = cols * rows;
+    let html = '';
+    for (let i = 0; i < total; i++) {
+      const r = i % 7;
+      let cls;
+      if (r === 0 || r === 5) cls = STONE[th];
+      else if (r === 3) cls = GOLD[th];
+      else if (r === 2 || r === 6) cls = DEEP[th];
+      else cls = PALE[th];
+      html += `<div class="mp ${cls}"></div>`;
+    }
+    el.innerHTML = html;
+  });
+
+  /* ===== 底部导航 ===== */
+  const TABS = [
+    { name: '旅程', icon: '<svg viewBox="0 0 24 24"><path d="M4 20 C8 12 12 14 14 8 C15.5 4 18 4 20 4 C20 10 16 16 8 20 Z"/></svg>' },
+    { name: '主题', icon: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg>' },
+    { name: '排行', icon: '<svg viewBox="0 0 24 24"><path d="M5 20 L5 12 M12 20 L12 5 M19 20 L19 9"/></svg>' },
+    { name: '我的', icon: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20 C5 15.5 8 13.5 12 13.5 C16 13.5 19 15.5 19 20"/></svg>' }
+  ];
+  document.querySelectorAll('.nav[data-nav]').forEach(nav => {
+    const active = parseInt(nav.dataset.nav, 10);
+    nav.innerHTML = TABS.map((t, i) =>
+      `<div class="nav-item${i === active ? ' on' : ''}"><div class="ico">${t.icon}</div>${t.name}</div>`
+    ).join('');
+  });
+})();
+</script>
+</body>
+</html>

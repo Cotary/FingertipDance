@@ -1,0 +1,1850 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>连连看 · UI 整体概念稿 v2 — 光迹 Trail</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;600;700;900&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   光迹 Trail — 设计 DNA
+   一张暖纸（paper）· 一方玉青（jade）· 一条琥珀光迹（amber）
+   ============================================================ */
+:root {
+  --paper:       #F3EDE3;
+  --paper-deep:  #E7DECC;
+  --card:        #FFFCF7;
+  --ink:         #26221C;
+  --ink-2:       #8A8175;
+  --ink-3:       #B9AE9C;
+  --hair:        rgba(38,34,28,.10);
+  --hair-strong: rgba(38,34,28,.16);
+
+  --jade:        #2D6A4F;
+  --jade-lit:    #3E8A66;
+  --jade-soft:   #E1EDE5;
+  --amber:       #D96A2B;
+  --amber-lit:   #E8843F;
+  --amber-deep:  #B4531C;
+  --amber-soft:  #F8E6D5;
+  --gold:        #D9A441;
+  --gold-soft:   #F5EAD2;
+  --vermilion:   #C14A2E;
+
+  --stage:       #221E1A;
+  --stage-2:     #2C2722;
+  --stage-text:  #F3EDE3;
+  --stage-dim:   #9A8F80;
+
+  --serif: 'Noto Serif SC', 'Songti SC', 'SimSun', Georgia, serif;
+  --sans:  'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+  --r-sm: 8px; --r-md: 12px; --r-lg: 18px; --r-xl: 26px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--stage);
+  color: var(--stage-text);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+
+.stage-inner { max-width: 1320px; margin: 0 auto; padding: 72px 40px 100px; }
+
+.masthead { margin-bottom: 64px; }
+.masthead .kicker {
+  font-size: 12px; letter-spacing: .32em; color: var(--stage-dim);
+  text-transform: uppercase; margin-bottom: 18px;
+}
+.masthead h1 {
+  font-family: var(--serif); font-weight: 900;
+  font-size: clamp(38px, 5vw, 62px); line-height: 1.12;
+  letter-spacing: .01em;
+}
+.masthead h1 em { font-style: normal; color: var(--amber-lit); }
+.masthead .sub {
+  margin-top: 22px; max-width: 580px;
+  font-size: 15px; line-height: 1.9; color: var(--stage-dim);
+}
+
+.section-label {
+  display: flex; align-items: center; gap: 16px;
+  margin: 72px 0 28px;
+}
+.section-label h2 {
+  font-family: var(--serif); font-size: 22px; font-weight: 700;
+  letter-spacing: .06em; white-space: nowrap;
+}
+.section-label::after {
+  content: ''; flex: 1; height: 1px; background: rgba(243,237,227,.14);
+}
+
+.dna-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+}
+.dna-card {
+  background: var(--stage-2); border: 1px solid rgba(243,237,227,.08);
+  border-radius: var(--r-lg); padding: 26px 24px 28px;
+}
+.dna-card .no {
+  font-family: var(--serif); font-size: 13px; font-weight: 700;
+  color: var(--amber-lit); letter-spacing: .18em; margin-bottom: 14px;
+}
+.dna-card h3 { font-size: 16px; font-weight: 600; margin-bottom: 10px; letter-spacing: .02em; }
+.dna-card p { font-size: 13px; line-height: 1.85; color: var(--stage-dim); }
+
+.palette {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 12px;
+}
+.swatch { border-radius: var(--r-md); overflow: hidden; border: 1px solid rgba(243,237,227,.08); }
+.swatch .chip { height: 84px; }
+.swatch .meta { padding: 12px 14px 14px; background: var(--stage-2); }
+.swatch .meta .name { font-size: 12px; font-weight: 600; letter-spacing: .04em; }
+.swatch .meta .use  { font-size: 11px; color: var(--stage-dim); margin-top: 3px; }
+.swatch .meta .hex  { font-size: 10px; color: var(--stage-dim); opacity: .7; margin-top: 5px; letter-spacing: .06em; }
+
+.type-row {
+  background: var(--stage-2); border: 1px solid rgba(243,237,227,.08);
+  border-radius: var(--r-lg); padding: 36px 32px;
+  display: flex; align-items: baseline; gap: 48px; flex-wrap: wrap;
+}
+.type-sample .giant {
+  font-family: var(--serif); font-weight: 900; font-size: 92px;
+  line-height: 1; color: var(--paper); letter-spacing: -.01em;
+}
+.type-sample .giant small {
+  font-size: 15px; font-weight: 600; color: var(--stage-dim);
+  letter-spacing: .3em; display: block; margin-top: 10px;
+}
+.type-scale-item { font-size: 13px; color: var(--stage-dim); }
+.type-scale-item b { display: block; color: var(--paper); font-weight: 600; margin-bottom: 2px; }
+
+/* ============ 主题包对比 ============ */
+.theme-thesis {
+  max-width: 780px; font-size: 14px; line-height: 2.05;
+  color: var(--stage-dim); margin: -10px 0 30px;
+}
+.theme-thesis b { color: var(--paper); font-weight: 600; }
+.theme-compare {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 18px;
+}
+.theme-card {
+  background: var(--stage-2); border: 1px solid rgba(243,237,227,.08);
+  border-radius: 20px; padding: 18px;
+}
+.theme-frame { border-radius: 14px; overflow: hidden; }
+.theme-frame canvas { display: block; width: 100%; height: auto; }
+.theme-meta { padding: 16px 4px 4px; }
+.theme-name {
+  font-family: var(--serif); font-size: 18px; font-weight: 700;
+  letter-spacing: .06em; color: var(--paper);
+}
+.theme-name .tag {
+  font-family: var(--sans); font-size: 10px; font-weight: 600;
+  letter-spacing: .14em; color: var(--amber-lit);
+  border: 1px solid rgba(232,132,63,.4); border-radius: 20px;
+  padding: 2px 10px; margin-left: 8px; vertical-align: 2px;
+}
+.theme-axis { margin-top: 9px; font-size: 12px; color: var(--stage-dim); letter-spacing: .04em; line-height: 1.8; }
+.theme-sfx {
+  margin-top: 11px; font-size: 11px; color: var(--amber-lit);
+  letter-spacing: .06em; opacity: .92;
+}
+
+/* ============ 手机屏 ============ */
+.screen-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(375px, 1fr));
+  gap: 56px 36px;
+  justify-items: center;
+}
+.screen-item { width: 375px; }
+.phone {
+  width: 375px; height: 812px;
+  background: var(--paper);
+  border-radius: 42px;
+  border: 1px solid rgba(243,237,227,.14);
+  box-shadow: 0 32px 80px rgba(0,0,0,.45);
+  overflow: hidden;
+  position: relative;
+  color: var(--ink);
+  font-family: var(--sans);
+}
+.caption { margin-top: 20px; text-align: center; }
+.caption .t {
+  font-family: var(--serif); font-size: 16px; font-weight: 700;
+  letter-spacing: .08em; color: var(--paper);
+}
+.caption .d { font-size: 12px; color: var(--stage-dim); margin-top: 5px; letter-spacing: .02em; }
+
+.scr { height: 100%; display: flex; flex-direction: column; position: relative; }
+.statusbar {
+  height: 44px; padding: 14px 26px 0; display: flex;
+  justify-content: space-between; align-items: center;
+  font-size: 13px; font-weight: 600; color: var(--ink); flex-shrink: 0;
+}
+.statusbar .sb-icons { display: flex; gap: 5px; align-items: center; }
+.statusbar .sb-icons i { display: block; background: var(--ink); border-radius: 1px; }
+.sb-bar1 { width: 3px; height: 5px; } .sb-bar2 { width: 3px; height: 7px; }
+.sb-bar3 { width: 3px; height: 9px; } .sb-bar4 { width: 3px; height: 11px; }
+.sb-batt {
+  width: 22px; height: 11px; border: 1.4px solid var(--ink);
+  border-radius: 3px; position: relative; margin-left: 4px;
+}
+.sb-batt::after {
+  content: ''; position: absolute; left: 1.5px; top: 1.5px; bottom: 1.5px;
+  width: 12px; background: var(--ink); border-radius: 1px;
+}
+
+.scr-body { flex: 1; padding: 0 20px; display: flex; flex-direction: column; min-height: 0; }
+
+.scr-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 20px 14px; flex-shrink: 0;
+}
+.scr-header .back {
+  width: 34px; height: 34px; border-radius: 10px;
+  border: 1px solid var(--hair-strong); background: var(--card);
+  display: flex; align-items: center; justify-content: center;
+}
+.scr-header .title {
+  font-family: var(--serif); font-size: 19px; font-weight: 700; letter-spacing: .06em;
+}
+.scr-header .right { display: flex; gap: 8px; align-items: center; }
+
+.tabbar {
+  flex-shrink: 0; height: 68px;
+  border-top: 1px solid var(--hair);
+  background: var(--card);
+  display: flex; padding: 8px 6px 12px;
+}
+.tab {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 3px; color: var(--ink-3);
+}
+.tab.on { color: var(--ink); }
+.tab svg { width: 21px; height: 21px; }
+.tab span { font-size: 10px; font-weight: 500; letter-spacing: .06em; }
+.tab.on span { font-weight: 600; }
+
+.btn {
+  height: 50px; border-radius: var(--r-lg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 600; letter-spacing: .12em;
+}
+.btn-primary {
+  background: var(--amber); color: #FFF8F1;
+  box-shadow: 0 4px 0 var(--amber-deep);
+}
+.btn-primary.small { height: 44px; font-size: 14px; }
+.btn-ghost {
+  background: transparent; color: var(--ink);
+  border: 1.4px solid var(--hair-strong);
+}
+.btn-row { display: flex; gap: 12px; }
+
+.prog-track {
+  height: 6px; border-radius: 3px;
+  background: var(--paper-deep); overflow: hidden;
+}
+.prog-fill {
+  height: 100%; border-radius: 3px; background: var(--jade);
+  position: relative;
+}
+.prog-fill::after {
+  content: ''; position: absolute; right: -2px; top: -2px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--jade-lit); border: 2px solid var(--card);
+}
+
+.card {
+  background: var(--card); border-radius: var(--r-xl);
+  border: 1px solid var(--hair);
+  box-shadow: 0 2px 0 rgba(38,34,28,.04);
+}
+
+.chip-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 26px; padding: 0 12px; border-radius: 13px;
+  font-size: 11px; font-weight: 600; letter-spacing: .08em;
+}
+.chip-jade  { background: var(--jade-soft); color: var(--jade); }
+.chip-amber { background: var(--amber-soft); color: var(--amber-deep); }
+.chip-gold  { background: var(--gold-soft); color: #9A7420; }
+.chip-ink   { background: rgba(38,34,28,.06); color: var(--ink-2); }
+
+/* ============ 主页 ============ */
+.playerbar {
+  display: flex; align-items: center; gap: 11px; padding: 4px 2px 16px;
+}
+.avatar {
+  width: 42px; height: 42px; border-radius: 50%;
+  background: linear-gradient(145deg, var(--jade-lit), var(--jade));
+  display: flex; align-items: center; justify-content: center;
+  color: #F2FAF5; font-family: var(--serif); font-size: 18px; font-weight: 700;
+  flex-shrink: 0;
+}
+.avatar.lg { width: 58px; height: 58px; font-size: 24px; }
+.playerbar .who .n { font-size: 15px; font-weight: 600; letter-spacing: .02em; }
+.playerbar .who .lv {
+  margin-top: 3px; display: inline-flex; height: 18px; padding: 0 8px;
+  align-items: center; border-radius: 9px;
+  background: var(--gold-soft); color: #9A7420;
+  font-size: 10px; font-weight: 700; letter-spacing: .1em;
+}
+.playerbar .skins { margin-left: auto; text-align: right; }
+.playerbar .skins .v {
+  font-family: var(--serif); font-size: 17px; font-weight: 700;
+}
+.playerbar .skins .k {
+  font-size: 10px; color: var(--ink-2); letter-spacing: .14em; margin-top: 1px;
+}
+
+.ticket { padding: 22px 22px 26px; position: relative; overflow: hidden; }
+.ticket .row1 { display: flex; justify-content: space-between; align-items: center; }
+.ticket .board-wrap { display: flex; justify-content: center; padding: 18px 0 4px; }
+.ticket .level-no { text-align: center; margin-top: 2px; }
+.ticket .level-no .num {
+  font-family: var(--serif); font-weight: 900; font-size: 76px;
+  line-height: .95; letter-spacing: -.02em; color: var(--ink);
+}
+.ticket .level-no .lbl {
+  margin-top: 8px; font-size: 12px; color: var(--ink-2); letter-spacing: .28em;
+}
+.ticket .prog { margin-top: 22px; display: flex; align-items: center; gap: 12px; }
+.ticket .prog .prog-track { flex: 1; }
+.ticket .prog .frac {
+  font-family: var(--serif); font-size: 13px; font-weight: 700;
+  color: var(--ink-2); letter-spacing: .04em; white-space: nowrap;
+}
+.home-cta { margin-top: 22px; }
+.home-note {
+  text-align: center; margin-top: 14px; font-size: 11px;
+  color: var(--ink-3); letter-spacing: .18em;
+}
+
+/* ============ 地图 ============ */
+.world-card {
+  display: flex; align-items: center; gap: 13px;
+  padding: 12px 15px; margin: 2px 0 10px; flex-shrink: 0;
+}
+.world-emblem {
+  width: 48px; height: 48px; border-radius: 15px;
+  background: var(--jade-soft); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.world-info { flex: 1; min-width: 0; }
+.world-name {
+  font-family: var(--serif); font-size: 17px; font-weight: 700; letter-spacing: .12em;
+}
+.world-name small {
+  font-family: var(--sans); font-size: 10px; color: var(--ink-2);
+  letter-spacing: .16em; margin-left: 8px; font-weight: 600;
+}
+.world-prog { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.world-prog .prog-track { flex: 1; height: 5px; }
+.world-prog .frac {
+  font-family: var(--serif); font-size: 11px; font-weight: 700;
+  color: var(--ink-2); letter-spacing: .04em; white-space: nowrap;
+}
+
+.map-area { flex: 1; position: relative; margin: 0 -20px; overflow: hidden; }
+.map-area .layer { position: absolute; inset: 0; width: 100%; height: 100%; }
+.node {
+  position: absolute; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+}
+.node .dot {
+  width: 42px; height: 42px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 15px; font-weight: 700;
+  background: var(--card); border: 1.6px solid var(--hair-strong);
+  color: var(--ink-2); position: relative;
+}
+.node.done .dot {
+  background: var(--jade); border-color: var(--jade); color: #F0F8F3;
+}
+.node.cur .dot {
+  width: 54px; height: 54px; font-size: 19px;
+  background: var(--card); border: 2.6px solid var(--amber); color: var(--amber-deep);
+  box-shadow: 0 0 0 7px var(--amber-soft), 0 4px 14px rgba(217,106,43,.28);
+}
+.node .st { display: flex; gap: 2.5px; margin-top: -1px; }
+.node .st svg { width: 9px; height: 9px; }
+.node .lock {
+  position: absolute; right: -4px; bottom: -3px;
+  width: 15px; height: 15px; border-radius: 50%;
+  background: var(--paper-deep); border: 1.5px solid var(--card);
+  display: flex; align-items: center; justify-content: center;
+}
+.node .flag { position: absolute; top: -17px; left: 50%; transform: translateX(-50%); }
+.here-chip {
+  position: absolute; transform: translateX(-50%);
+  background: var(--amber); color: #FFF4EA;
+  font-size: 10px; font-weight: 600; letter-spacing: .18em;
+  padding: 4px 11px; border-radius: 20px;
+  box-shadow: 0 2px 0 var(--amber-deep); white-space: nowrap;
+}
+
+.map-foot { flex-shrink: 0; padding: 12px 0 18px; }
+.map-foot .info {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 14px; padding: 0 2px;
+}
+.map-foot .info .w {
+  font-family: var(--serif); font-size: 13px; font-weight: 700; letter-spacing: .1em;
+}
+.map-foot .info .s { font-size: 10px; color: var(--amber-deep); letter-spacing: .12em; font-weight: 600; }
+
+/* ============ 游戏内 ============ */
+.hud-top {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 2px 2px 4px;
+}
+.hud-top .lv-no {
+  font-family: var(--serif); font-size: 34px; font-weight: 900; line-height: 1;
+}
+.hud-top .lv-no small {
+  font-family: var(--sans); font-size: 11px; font-weight: 600;
+  color: var(--ink-2); letter-spacing: .22em; margin-left: 6px;
+}
+.hud-sub {
+  display: flex; justify-content: space-between;
+  padding: 8px 2px 14px; font-size: 11px; color: var(--ink-2); letter-spacing: .12em;
+}
+.hud-sub b { color: var(--amber-deep); font-weight: 700; }
+
+.board-card { padding: 15px 14px; }
+.board-card svg { display: block; width: 100%; height: auto; }
+
+.mech-legend {
+  display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 2px 0;
+}
+.mech-legend .ml {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 21px; padding: 0 9px; border-radius: 11px;
+  background: rgba(38,34,28,.05);
+  font-size: 9px; font-weight: 600; letter-spacing: .1em; color: var(--ink-2);
+}
+.mech-legend .ml i { width: 8px; height: 8px; border-radius: 2.5px; display: block; }
+
+.hud-bottom { margin-top: auto; padding-bottom: 18px; }
+.hud-progress { display: flex; align-items: center; gap: 10px; margin-top: 15px; }
+.hud-progress .prog-track { flex: 1; }
+.hud-progress .frac {
+  font-family: var(--serif); font-size: 12px; font-weight: 700;
+  color: var(--ink-2); letter-spacing: .04em;
+}
+
+/* ============ 结算 ============ */
+.result-scr { align-items: center; justify-content: center; }
+.result-card { width: 100%; padding: 34px 28px 30px; position: relative; }
+.result-card .seal {
+  position: absolute; top: 22px; right: 24px;
+  width: 52px; height: 52px; border-radius: 12px;
+  background: var(--vermilion); color: #FDF1EC;
+  font-family: var(--serif); font-size: 26px; font-weight: 900;
+  display: flex; align-items: center; justify-content: center;
+  transform: rotate(-7deg);
+  box-shadow: 0 3px 0 rgba(120,40,20,.35);
+}
+.result-card .meta {
+  font-size: 11px; color: var(--ink-2); letter-spacing: .26em; text-align: center;
+}
+.result-card h2 {
+  font-family: var(--serif); font-size: 34px; font-weight: 900;
+  letter-spacing: .18em; text-align: center; margin-top: 12px;
+}
+.result-card .big-stars { display: flex; justify-content: center; gap: 14px; margin: 22px 0 26px; }
+.result-card .big-stars svg { width: 38px; height: 38px; }
+.stat-rows { border-top: 1px solid var(--hair); }
+.stat-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 13px 2px; border-bottom: 1px solid var(--hair);
+}
+.stat-row .k { font-size: 12px; color: var(--ink-2); letter-spacing: .16em; }
+.stat-row .v {
+  font-family: var(--serif); font-size: 18px; font-weight: 700; letter-spacing: .02em;
+}
+.result-actions { margin-top: 24px; }
+.result-links {
+  display: flex; justify-content: center; gap: 28px; margin-top: 18px;
+  font-size: 12px; color: var(--ink-2); letter-spacing: .14em;
+}
+.result-links span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ============ 主题商店 ============ */
+.theme-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+.theme-shop-card {
+  background: var(--card); border-radius: var(--r-lg);
+  border: 1px solid var(--hair); padding: 11px 11px 13px;
+}
+.theme-shop-card.equipped { border: 1.8px solid var(--amber); }
+.theme-prev {
+  height: 100px; border-radius: var(--r-md); margin-bottom: 10px;
+  overflow: hidden; position: relative;
+}
+.theme-prev canvas { display: block; width: 100%; height: 100%; }
+.theme-shop-card .n {
+  font-family: var(--serif); font-size: 13.5px; font-weight: 700;
+  letter-spacing: .1em; text-align: center;
+}
+.theme-shop-card .ax {
+  margin-top: 3px; text-align: center;
+  font-size: 9px; color: var(--ink-3); letter-spacing: .12em;
+}
+.theme-shop-card .st { margin-top: 7px; text-align: center; }
+.theme-shop-card .st .chip-pill { height: 21px; font-size: 10px; padding: 0 9px; }
+.theme-shop-card .lock-line {
+  margin-top: 7px; text-align: center; font-size: 10px;
+  color: var(--ink-3); letter-spacing: .08em;
+}
+
+/* ============ 排行 ============ */
+.rank-tabs {
+  display: flex; background: rgba(38,34,28,.06);
+  border-radius: 14px; padding: 4px; margin: 2px 0 18px;
+}
+.rank-tabs .rt {
+  flex: 1; height: 34px; display: flex; align-items: center; justify-content: center;
+  border-radius: 11px; font-size: 13px; font-weight: 600;
+  letter-spacing: .16em; color: var(--ink-2);
+}
+.rank-tabs .rt.on {
+  background: var(--card); color: var(--ink);
+  box-shadow: 0 1px 0 rgba(38,34,28,.05);
+}
+.rank-list { display: flex; flex-direction: column; gap: 8px; }
+.rank-row {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--card); border: 1px solid var(--hair);
+  border-radius: 16px; padding: 11px 16px;
+}
+.rank-row.top1 { border-color: var(--gold); background: var(--gold-soft); }
+.rank-row.top2, .rank-row.top3 { border-color: var(--hair-strong); background: #F7F3EC; }
+.rank-row .rk {
+  font-family: var(--serif); font-size: 19px; font-weight: 900;
+  width: 30px; text-align: center; color: var(--ink-2);
+}
+.rank-row.top1 .rk { color: var(--gold); }
+.rank-row .av {
+  width: 34px; height: 34px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 14px; font-weight: 700; color: #fff;
+  flex-shrink: 0;
+}
+.rank-row .nm { font-size: 13px; font-weight: 600; letter-spacing: .04em; }
+.rank-row .sub { font-size: 10px; color: var(--ink-3); margin-top: 1px; letter-spacing: .08em; }
+.rank-row .lv {
+  margin-left: auto; font-family: var(--serif);
+  font-size: 15px; font-weight: 700; letter-spacing: .02em;
+}
+.rank-row .lv small {
+  font-family: var(--sans); font-size: 9px; font-weight: 600;
+  color: var(--ink-3); letter-spacing: .12em; margin-left: 3px;
+}
+.my-rank {
+  margin-top: 14px; padding: 13px 16px;
+  background: var(--jade); color: #EFF7F2;
+  border-radius: 16px; display: flex; align-items: center; gap: 12px;
+}
+.my-rank .rk { font-family: var(--serif); font-size: 19px; font-weight: 900; width: 30px; text-align: center; }
+.my-rank .nm { font-size: 13px; font-weight: 600; }
+.my-rank .lv { margin-left: auto; font-family: var(--serif); font-size: 15px; font-weight: 700; }
+
+/* ============ 我的 ============ */
+.profile-head {
+  padding: 15px 18px 16px; display: flex; align-items: center; gap: 13px;
+}
+.profile-head .who .n {
+  font-family: var(--serif); font-size: 21px; font-weight: 700; letter-spacing: .06em;
+}
+.profile-head .who .meta { display: flex; gap: 8px; margin-top: 8px; }
+.stat-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px;
+}
+.stat-cell {
+  background: var(--card); border: 1px solid var(--hair);
+  border-radius: 16px; padding: 12px 15px;
+}
+.stat-cell .v {
+  font-family: var(--serif); font-size: 21px; font-weight: 900; line-height: 1;
+}
+.stat-cell .v small {
+  font-family: var(--sans); font-size: 11px; font-weight: 600;
+  color: var(--ink-2); letter-spacing: .12em; margin-left: 3px;
+}
+.stat-cell .k {
+  font-size: 10px; color: var(--ink-2); letter-spacing: .22em; margin-top: 7px;
+}
+.wall-label {
+  margin: 15px 2px 8px; font-family: var(--serif);
+  font-size: 13px; font-weight: 700; letter-spacing: .18em;
+}
+.skin-wall { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.skin-wall .w {
+  aspect-ratio: 1; border-radius: 12px; border: 1px solid var(--hair);
+  overflow: hidden; position: relative;
+}
+.skin-wall .w.empty {
+  background: rgba(38,34,28,.035);
+  display: flex; align-items: center; justify-content: center;
+}
+.skin-wall .w.empty::after {
+  content: ''; width: 22%; height: 22%;
+  border: 1.6px solid var(--ink-3); border-radius: 4px;
+}
+.func-rows { margin-top: 13px; border-top: 1px solid var(--hair); }
+.func-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 2px; border-bottom: 1px solid var(--hair);
+  font-size: 13px; font-weight: 500; letter-spacing: .06em;
+}
+.func-row .tail {
+  margin-left: auto; display: flex; align-items: center; gap: 8px;
+  color: var(--ink-2); font-size: 11px; letter-spacing: .1em;
+}
+.toggle {
+  width: 38px; height: 22px; border-radius: 11px; background: var(--jade);
+  position: relative;
+}
+.toggle::after {
+  content: ''; position: absolute; top: 2px; right: 2px;
+  width: 18px; height: 18px; border-radius: 50%; background: #fff;
+}
+.toggle.off { background: var(--paper-deep); }
+.toggle.off::after { right: auto; left: 2px; }
+
+.stage-foot {
+  margin-top: 90px; padding-top: 28px;
+  border-top: 1px solid rgba(243,237,227,.1);
+  font-size: 12px; color: var(--stage-dim); letter-spacing: .06em;
+  display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+}
+</style>
+</head>
+<body>
+<div class="stage-inner">
+
+  <header class="masthead">
+    <div class="kicker">连连看 · 铺满全盘 — UI 概念稿 v2</div>
+    <h1>光迹 <em>Trail</em></h1>
+    <p class="sub">
+      一张暖纸、一方玉青、一条琥珀光迹。<br>
+      v2 重做了<b>关卡地图</b>与<b>游戏内</b>两屏（世界名片 / 纸雕场景 / 五种机制同框），
+      并把「皮肤」升级为<b>主题包</b> —— 换的是整个世界，不是格子的颜色。
+    </p>
+  </header>
+
+  <!-- ================= 设计逻辑 ================= -->
+  <div class="section-label"><h2>设计逻辑</h2></div>
+  <div class="dna-grid">
+    <div class="dna-card">
+      <div class="no">01</div>
+      <h3>明度层级</h3>
+      <p>纸 → 墨 → 玉青 → 琥珀，四级明度。每屏只允许一个高饱和焦点，眼睛永远知道先看哪里。</p>
+    </div>
+    <div class="dna-card">
+      <div class="no">02</div>
+      <h3>路径是主角</h3>
+      <p>琥珀光迹是全游戏唯一的「发光体」——路径走到哪、哪就是故事。其余元素一律退后，不跟它抢。</p>
+    </div>
+    <div class="dna-card">
+      <div class="no">03</div>
+      <h3>材质纪律</h3>
+      <p>只有按钮有厚度（下沿实影），只有路径有热度。卡片、格子、图标全平，避免「什么都是立体的」。</p>
+    </div>
+    <div class="dna-card">
+      <div class="no">04</div>
+      <h3>字体分工</h3>
+      <p>衬线（Noto Serif SC）管数字与标题——关卡号是情绪；无衬线管正文与标签——信息是工具。</p>
+    </div>
+  </div>
+
+  <!-- ================= 色彩系统 ================= -->
+  <div class="section-label"><h2>色彩系统</h2></div>
+  <div class="palette">
+    <div class="swatch"><div class="chip" style="background:#F3EDE3"></div><div class="meta"><div class="name">暖纸 Paper</div><div class="use">页面底</div><div class="hex">#F3EDE3</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#FFFCF7"></div><div class="meta"><div class="name">纸白 Card</div><div class="use">卡片 / 按钮底</div><div class="hex">#FFFCF7</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#26221C"></div><div class="meta"><div class="name">墨 Ink</div><div class="use">主文字 / 图标</div><div class="hex">#26221C</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#2D6A4F"></div><div class="meta"><div class="name">玉青 Jade</div><div class="use">已铺格 / 完成态</div><div class="hex">#2D6A4F</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#D96A2B"></div><div class="meta"><div class="name">琥珀 Amber</div><div class="use">路径 / 唯一 CTA</div><div class="hex">#D96A2B</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#D9A441"></div><div class="meta"><div class="name">金 Gold</div><div class="use">星级 / 里程碑</div><div class="hex">#D9A441</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#C14A2E"></div><div class="meta"><div class="name">朱印 Vermilion</div><div class="use">通关印章（仅结算）</div><div class="hex">#C14A2E</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#8A8175"></div><div class="meta"><div class="name">淡墨 Ink-2</div><div class="use">次级文字</div><div class="hex">#8A8175</div></div></div>
+  </div>
+
+  <!-- ================= 字体系统 ================= -->
+  <div class="section-label"><h2>字体系统</h2></div>
+  <div class="type-row">
+    <div class="type-sample">
+      <div class="giant">38<small>NOTO SERIF SC · 900</small></div>
+    </div>
+    <div class="type-scale-item"><b>Display 76 / 900</b>关卡号 · 结算标题</div>
+    <div class="type-scale-item"><b>Title 21 / 700</b>页面标题 · 卡片名</div>
+    <div class="type-scale-item"><b>Body 13 / 500</b>正文 · 列表行</div>
+    <div class="type-scale-item"><b>Label 10 / 600</b>标签 · 字距 0.2em</div>
+    <div class="type-scale-item" style="opacity:.75"><b>正文字体</b>Noto Sans SC 400/500/600/700</div>
+  </div>
+
+  <!-- ================= 主题包 ================= -->
+  <div class="section-label"><h2>主题包 · 换的是世界，不是格子</h2></div>
+  <p class="theme-thesis">
+    皮肤只作用于「格子面」一层，占画面不到 40% —— 玩家的感受是「格子变色了」。<br>
+    一套主题 = <b>六条通道一起换</b>：背景 · 底板 · 格材质 · 机制图标 · 路径语言 · 音效。
+    同一个棋盘的同一帧，下面是三套主题的样子 —— 抽掉颜色看形状，也能一眼认出是哪套：
+  </p>
+  <div class="theme-compare">
+    <div class="theme-card">
+      <div class="theme-frame"><canvas class="board-canvas" data-theme="trail" data-cols="7" data-rows="7" width="660" height="660"></canvas></div>
+      <div class="theme-meta">
+        <div class="theme-name">光迹 Trail <span class="tag">默认</span></div>
+        <div class="theme-axis">语法轴 · 媒介 —— 暖纸底、玉青釉面砖、琥珀光迹<br>机制图标：石纹 / 金星 / 窑变箭头</div>
+        <div class="theme-sfx">落子 · 纸页轻响 &nbsp;·&nbsp; 通关 · 檐下风铃</div>
+      </div>
+    </div>
+    <div class="theme-card">
+      <div class="theme-frame"><canvas class="board-canvas" data-theme="kintsugi" data-cols="7" data-rows="7" width="660" height="660"></canvas></div>
+      <div class="theme-meta">
+        <div class="theme-name">金缮瓷盘 <span class="tag">典藏</span></div>
+        <div class="theme-axis">语法轴 · 材质 —— 每格是一片瓷，走过的路是修补的金线<br>机制图标：碎瓷 / 金漆 / 窑裂</div>
+        <div class="theme-sfx">落子 · 瓷片轻叩 &nbsp;·&nbsp; 通关 · 金铃</div>
+      </div>
+    </div>
+    <div class="theme-card">
+      <div class="theme-frame"><canvas class="board-canvas" data-theme="pixel" data-cols="7" data-rows="7" width="660" height="660"></canvas></div>
+      <div class="theme-meta">
+        <div class="theme-name">像素街机 <span class="tag">典藏</span></div>
+        <div class="theme-axis">语法轴 · 分辨率 —— 不许渐变、不许圆角，1985 年的硬边<br>机制图标：像素星 / 砖障 / 方向砖</div>
+        <div class="theme-sfx">落子 · 8-bit 嗒 &nbsp;·&nbsp; 通关 · 升调琶音</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 七屏 ================= -->
+  <div class="section-label"><h2>七屏概念稿</h2></div>
+  <div class="screen-grid">
+
+    <!-- ========== 1 主页 ========== -->
+    <div class="screen-item">
+      <div class="phone">
+        <div class="scr">
+          <div class="statusbar">
+            <span>9:41</span>
+            <div class="sb-icons">
+              <i class="sb-bar1"></i><i class="sb-bar2"></i><i class="sb-bar3"></i><i class="sb-bar4"></i>
+              <div class="sb-batt"></div>
+            </div>
+          </div>
+          <div class="scr-body">
+            <div class="playerbar">
+              <div class="avatar">满</div>
+              <div class="who">
+                <div class="n">小满</div>
+                <div class="lv">LV 37</div>
+              </div>
+              <div class="skins">
+                <div class="v">2<span style="font-size:11px;color:var(--ink-3)">/12</span></div>
+                <div class="k">主题</div>
+              </div>
+            </div>
+
+            <div class="card ticket">
+              <div class="row1">
+                <div class="chip-pill chip-jade">世界 II · 苔原</div>
+                <div class="chip-pill chip-ink">33 — 64</div>
+              </div>
+              <div class="board-wrap">
+                <svg width="172" height="172" viewBox="0 0 172 172" fill="none">
+                  <defs>
+                    <linearGradient id="tj" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0" stop-color="#3A7A5C"/><stop offset="1" stop-color="#2D6A4F"/>
+                    </linearGradient>
+                  </defs>
+                  <g fill="#FFFCF7" stroke="rgba(38,34,28,.13)" stroke-width="1">
+                    <rect x="110.5" y="0.5" width="18" height="18" rx="4"/><rect x="132.5" y="0.5" width="18" height="18" rx="4"/><rect x="154.5" y="0.5" width="18" height="18" rx="4"/>
+                    <rect x="154.5" y="22.5" width="18" height="18" rx="4"/>
+                    <rect x="132.5" y="44.5" width="18" height="18" rx="4"/><rect x="154.5" y="44.5" width="18" height="18" rx="4"/>
+                    <rect x="154.5" y="66.5" width="18" height="18" rx="4"/>
+                    <rect x="88.5" y="88.5" width="18" height="18" rx="4"/><rect x="110.5" y="88.5" width="18" height="18" rx="4"/><rect x="132.5" y="88.5" width="18" height="18" rx="4"/><rect x="154.5" y="88.5" width="18" height="18" rx="4"/>
+                    <rect x="66.5" y="110.5" width="18" height="18" rx="4"/><rect x="88.5" y="110.5" width="18" height="18" rx="4"/><rect x="110.5" y="110.5" width="18" height="18" rx="4"/><rect x="132.5" y="110.5" width="18" height="18" rx="4"/><rect x="154.5" y="110.5" width="18" height="18" rx="4"/>
+                    <rect x="0.5" y="132.5" width="18" height="18" rx="4"/><rect x="22.5" y="132.5" width="18" height="18" rx="4"/><rect x="44.5" y="132.5" width="18" height="18" rx="4"/><rect x="66.5" y="132.5" width="18" height="18" rx="4"/><rect x="88.5" y="132.5" width="18" height="18" rx="4"/><rect x="110.5" y="132.5" width="18" height="18" rx="4"/><rect x="132.5" y="132.5" width="18" height="18" rx="4"/><rect x="154.5" y="132.5" width="18" height="18" rx="4"/>
+                    <rect x="0.5" y="154.5" width="18" height="18" rx="4"/><rect x="22.5" y="154.5" width="18" height="18" rx="4"/><rect x="44.5" y="154.5" width="18" height="18" rx="4"/><rect x="66.5" y="154.5" width="18" height="18" rx="4"/><rect x="88.5" y="154.5" width="18" height="18" rx="4"/><rect x="110.5" y="154.5" width="18" height="18" rx="4"/><rect x="132.5" y="154.5" width="18" height="18" rx="4"/><rect x="154.5" y="154.5" width="18" height="18" rx="4"/>
+                  </g>
+                  <g fill="url(#tj)" stroke="rgba(255,255,255,.12)" stroke-width="1">
+                    <rect x="0" y="0" width="19" height="19" rx="4.5"/><rect x="22" y="0" width="19" height="19" rx="4.5"/><rect x="44" y="0" width="19" height="19" rx="4.5"/><rect x="66" y="0" width="19" height="19" rx="4.5"/><rect x="88" y="0" width="19" height="19" rx="4.5"/>
+                    <rect x="0" y="22" width="19" height="19" rx="4.5"/><rect x="22" y="22" width="19" height="19" rx="4.5"/><rect x="44" y="22" width="19" height="19" rx="4.5"/><rect x="66" y="22" width="19" height="19" rx="4.5"/><rect x="88" y="22" width="19" height="19" rx="4.5"/><rect x="110" y="22" width="19" height="19" rx="4.5"/><rect x="132" y="22" width="19" height="19" rx="4.5"/>
+                    <rect x="0" y="44" width="19" height="19" rx="4.5"/><rect x="22" y="44" width="19" height="19" rx="4.5"/><rect x="44" y="44" width="19" height="19" rx="4.5"/><rect x="66" y="44" width="19" height="19" rx="4.5"/><rect x="88" y="44" width="19" height="19" rx="4.5"/><rect x="110" y="44" width="19" height="19" rx="4.5"/>
+                    <rect x="0" y="66" width="19" height="19" rx="4.5"/><rect x="22" y="66" width="19" height="19" rx="4.5"/><rect x="44" y="66" width="19" height="19" rx="4.5"/><rect x="66" y="66" width="19" height="19" rx="4.5"/><rect x="88" y="66" width="19" height="19" rx="4.5"/><rect x="110" y="66" width="19" height="19" rx="4.5"/><rect x="132" y="66" width="19" height="19" rx="4.5"/>
+                    <rect x="0" y="88" width="19" height="19" rx="4.5"/><rect x="22" y="88" width="19" height="19" rx="4.5"/><rect x="44" y="88" width="19" height="19" rx="4.5"/><rect x="66" y="88" width="19" height="19" rx="4.5"/>
+                    <rect x="0" y="110" width="19" height="19" rx="4.5"/><rect x="22" y="110" width="19" height="19" rx="4.5"/><rect x="44" y="110" width="19" height="19" rx="4.5"/>
+                  </g>
+                  <rect x="66" y="88" width="19" height="19" rx="4.5" fill="#3A342B"/>
+                  <path d="M71 93 L80 102 M80 93 L71 102" stroke="#F3EDE3" stroke-width="1.7" stroke-linecap="round"/>
+                  <path d="M9.5 9.5 H 97.5 V 53.5 H 9.5 V 97.5 H 75.5" stroke="#D96A2B" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity=".2"/>
+                  <path d="M9.5 9.5 H 97.5 V 53.5 H 9.5 V 97.5 H 75.5" stroke="#D96A2B" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                  <path d="M9.5 9.5 H 97.5 V 53.5 H 9.5 V 97.5 H 75.5" stroke="#F0A56B" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity=".55"/>
+                  <circle cx="9.5" cy="9.5" r="5" fill="#2D6A4F" stroke="#FFFCF7" stroke-width="1.8"/>
+                  <circle cx="75.5" cy="97.5" r="6" fill="#D96A2B" stroke="#FFFCF7" stroke-width="2.2"/>
+                </svg>
+              </div>
+              <div class="level-no">
+                <div class="num">38</div>
+                <div class="lbl">第 38 关 · 苔原</div>
+              </div>
+              <div class="prog">
+                <div class="frac">38</div>
+                <div class="prog-track"><div class="prog-fill" style="width:4%"></div></div>
+                <div class="frac">1000</div>
+              </div>
+            </div>
+
+            <div class="home-cta">
+              <div class="btn btn-primary">继续第 38 关</div>
+            </div>
+            <div class="home-note">每次只走一格 · 走完即通关</div>
+          </div>
+
+          <div class="tabbar">
+            <div class="tab on">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 L12 3.5 L21 10.5 V20 a1 1 0 0 1-1 1 H4 a1 1 0 0 1-1-1 Z"/><path d="M9 21 V14 H15 V21"/></svg>
+              <span>主页</span>
+            </div>
+            <div class="tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18 C8 12, 10 8, 12 6 S 17 4, 20 6"/><circle cx="4" cy="18" r="1.8"/><circle cx="12" cy="6" r="1.8"/><circle cx="20" cy="6" r="1.8"/></svg>
+              <span>地图</span>
+            </div>
+            <div class="tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>
+              <span>主题</span>
+            </div>
+            <div class="tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20 V10"/><path d="M12 20 V4"/><path d="M19 20 V13"/></svg>
+              <span>排行</span>
+            </div>
+            <div class="tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M5 20 C5 15.6 8 13.5 12 13.5 S 19 15.6 19 20"/></svg>
+              <span>我的</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="caption">
+        <div class="t">主页</div>
+        <div class="d">关卡票券 = 缩略棋盘 + 衬线大关号 + 单一 CTA</div>
+      </div>
+    </div>
+
+    <!-- ========== 2 地图 ========== -->
+    <div class="screen-item">
+      <div class="phone">
+        <div class="scr">
+          <div class="statusbar">
+            <span>9:41</span>
+            <div class="sb-icons">
+              <i class="sb-bar1"></i><i class="sb-bar2"></i><i class="sb-bar3"></i><i class="sb-bar4"></i>
+              <div class="sb-batt"></div>
+            </div>
+          </div>
+          <div class="scr-header">
+            <div class="back">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#26221C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5 L8 12 L15 19"/></svg>
+            </div>
+            <div class="title">关卡地图</div>
+            <div class="right">
+              <div class="chip-pill chip-ink">世界 II / VII</div>
+            </div>
+          </div>
+
+          <!-- 世界名片 -->
+          <div class="card world-card">
+            <div class="world-emblem">
+              <svg width="34" height="34" viewBox="0 0 34 34" fill="none">
+                <path d="M2 24 C 8 16, 13 19, 17 14 S 26 8, 32 13 L 32 28 L 2 28 Z" fill="#2D6A4F" opacity=".8"/>
+                <path d="M2 28 C 9 23, 15 26, 20 22 S 28 18, 32 21 L 32 30 L 2 30 Z" fill="#2D6A4F" opacity=".45"/>
+                <circle cx="9" cy="12" r="1.6" fill="#2D6A4F"/><circle cx="14" cy="9" r="1.1" fill="#2D6A4F" opacity=".7"/><circle cx="24" cy="7" r="1.3" fill="#2D6A4F" opacity=".55"/>
+              </svg>
+            </div>
+            <div class="world-info">
+              <div class="world-name">苔原<small>33 — 64 关</small></div>
+              <div class="world-prog">
+                <div class="prog-track"><div class="prog-fill" style="width:16%"></div></div>
+                <div class="frac">5 / 32</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="map-area">
+            <!-- 等高线 -->
+            <svg class="layer" viewBox="0 0 375 520" fill="none" preserveAspectRatio="xMidYMid slice">
+              <path d="M-20 60 C 80 20, 180 90, 260 40 S 420 10, 420 10" stroke="#C9BFA8" stroke-width="1" opacity=".42"/>
+              <path d="M-20 140 C 90 90, 200 170, 290 120 S 420 90, 420 90" stroke="#C9BFA8" stroke-width="1" opacity=".34"/>
+              <path d="M-20 230 C 70 190, 190 260, 280 210 S 420 180, 420 180" stroke="#C9BFA8" stroke-width="1" opacity=".28"/>
+              <path d="M-20 330 C 100 290, 190 360, 300 310 S 420 280, 420 280" stroke="#C9BFA8" stroke-width="1" opacity=".22"/>
+            </svg>
+            <!-- 纸雕场景：苔丘 + 岩石 -->
+            <svg class="layer" viewBox="0 0 375 520" fill="none" preserveAspectRatio="xMidYMid slice">
+              <path d="M-10 432 C 60 396, 130 424, 205 404 S 322 386, 390 414 L 390 530 L -10 530 Z" fill="#2D6A4F" opacity=".07"/>
+              <path d="M-10 476 C 80 452, 165 478, 255 458 S 345 448, 390 468 L 390 530 L -10 530 Z" fill="#26221C" opacity=".05"/>
+              <path d="M300 296 L317 279 L339 288 L343 306 L318 313 Z" fill="#26221C" opacity=".11"/>
+              <path d="M42 200 L52 190 L64 196 L62 208 L48 211 Z" fill="#26221C" opacity=".08"/>
+              <circle cx="88" cy="452" r="3" fill="#2D6A4F" opacity=".16"/>
+              <circle cx="104" cy="460" r="2" fill="#2D6A4F" opacity=".13"/>
+              <circle cx="318" cy="470" r="3" fill="#2D6A4F" opacity=".14"/>
+              <circle cx="296" cy="478" r="2" fill="#2D6A4F" opacity=".11"/>
+            </svg>
+            <!-- 路线：底槽 + 玉青完成段 -->
+            <svg class="layer" viewBox="0 0 375 520" fill="none">
+              <path d="M78 74 L170 52 L266 78 L312 168 L228 218 L132 252 L72 332 L140 402 L234 440 L312 498"
+                    stroke="#E0D4BC" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M78 74 L170 52 L266 78 L312 168 L228 218 L132 252"
+                    stroke="#2D6A4F" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M78 74 L170 52 L266 78 L312 168 L228 218 L132 252"
+                    stroke="#4A9B74" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity=".45"/>
+            </svg>
+
+            <!-- 节点 -->
+            <div class="node done" style="left:78px;top:74px">
+              <div class="dot">33</div>
+              <div class="st">
+                <svg viewBox="0 0 24 24" fill="#D9A441"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/></svg>
+                <svg viewBox="0 0 24 24" fill="#D9A441"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/></svg>
+                <svg viewBox="0 0 24 24" fill="#D9A441"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/></svg>
+              </div>
+            </div>
+            <div class="node done" style="left:170px;top:52px">
+              <div class="dot">34</div>
+              <div class="st">
+                <svg viewBox="0 0 24 24" fill="#D9A441"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/></svg>
+                <svg viewBox="0 0 24 24" fill="#D9A441"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/></svg>
+                <svg viewBox="0 0 24 24" fill="#D9A441"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/></svg>
+              </div>
+            </div>
+            <div class="node done" style="left:266px;top:78px">
+              <div class="dot">35</div>
+              <div class="st">
+                <svg viewBox="0 0 24 24" fill="#D9A441"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/></svg>
+                <svg viewBox="0 0 24 24" fill="#D9A441"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/></svg>
+                <svg viewBox="0 0 24 24" fill="rgba(38,34,28,.12)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/></svg>
+              </div>
+            </div>
+            <div class="node done" style="left:312px;top:168px">
+              <div class="dot">36</div>
+              <div class="st">
+                <svg viewBox="0 0 24 24" fill="#D9A441"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/></svg>
+                <svg viewBox="0 0 24 24" fill="#D9A441"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/></svg>
+                <svg viewBox="0 0 24 24" fill="rgba(38,34,28,.12)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/></svg>
+              </div>
+            </div>
+            <div class="node done" style="left:228px;top:218px">
+              <div class="dot">37</div>
+              <div class="st">
+                <svg viewBox="0 0 24 24" fill="#D9A441"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/></svg>
+                <svg viewBox="0 0 24 24" fill="#D9A441"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/></svg>
+                <svg viewBox="0 0 24 24" fill="rgba(38,34,28,.12)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/></svg>
+              </div>
+            </div>
+            <div class="node cur" style="left:132px;top:252px">
+              <div class="dot">38</div>
+            </div>
+            <div class="here-chip" style="left:132px;top:296px">你在这里</div>
+
+            <div class="node" style="left:72px;top:332px">
+              <div class="dot">39
+                <div class="lock">
+                  <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#8A8175" stroke-width="3" stroke-linecap="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5 V7 a4 4 0 0 1 8 0 v3.5"/></svg>
+                </div>
+              </div>
+            </div>
+            <!-- 40 里程碑 -->
+            <div class="node" style="left:140px;top:402px">
+              <div class="dot">40
+                <div class="lock">
+                  <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#8A8175" stroke-width="3" stroke-linecap="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5 V7 a4 4 0 0 1 8 0 v3.5"/></svg>
+                </div>
+                <div class="flag">
+                  <svg width="17" height="21" viewBox="0 0 17 21" fill="none">
+                    <path d="M4.5 21 V2" stroke="#26221C" stroke-width="1.8" stroke-linecap="round"/>
+                    <path d="M4.5 3 L16 7 L4.5 11 Z" fill="#D96A2B"/>
+                  </svg>
+                </div>
+              </div>
+            </div>
+            <div class="node" style="left:234px;top:440px">
+              <div class="dot">41
+                <div class="lock">
+                  <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#8A8175" stroke-width="3" stroke-linecap="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5 V7 a4 4 0 0 1 8 0 v3.5"/></svg>
+                </div>
+              </div>
+            </div>
+            <div class="node" style="left:312px;top:498px">
+              <div class="dot">42
+                <div class="lock">
+                  <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#8A8175" stroke-width="3" stroke-linecap="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5 V7 a4 4 0 0 1 8 0 v3.5"/></svg>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="map-foot">
+            <div class="info">
+              <div class="w">里程碑 · 40 关「苔原之心」</div>
+              <div class="s">还差 2 关</div>
+            </div>
+            <div class="btn btn-primary">继续第 38 关</div>
+          </div>
+        </div>
+      </div>
+      <div class="caption">
+        <div class="t">关卡地图</div>
+        <div class="d">世界名片 + 纸雕苔原 + 玉青/琥珀双段路线；里程碑插旗、「你在这里」是唯一落点</div>
+      </div>
+    </div>
+
+    <!-- ========== 3 游戏内 ========== -->
+    <div class="screen-item">
+      <div class="phone">
+        <div class="scr">
+          <div class="statusbar">
+            <span>9:41</span>
+            <div class="sb-icons">
+              <i class="sb-bar1"></i><i class="sb-bar2"></i><i class="sb-bar3"></i><i class="sb-bar4"></i>
+              <div class="sb-batt"></div>
+            </div>
+          </div>
+          <div class="scr-header">
+            <div class="back">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#26221C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5 L8 12 L15 19"/></svg>
+            </div>
+            <div class="title">铺满全盘</div>
+            <div class="right">
+              <div class="chip-pill chip-ink">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3 a6 6 0 0 1 4 10.5 V16 H8 v-2.5 A6 6 0 0 1 12 3 Z"/><path d="M9.5 19 h5"/><path d="M10.5 21.5 h3"/></svg>
+                提示
+              </div>
+            </div>
+          </div>
+
+          <div class="scr-body">
+            <div class="hud-top">
+              <div class="lv-no">38<small>关</small></div>
+              <div class="chip-pill chip-jade">苔原 · 世界 II</div>
+            </div>
+            <div class="hud-sub">
+              <div>重来 <b>0</b></div>
+              <div><b>12</b> 格未铺</div>
+            </div>
+
+            <!-- 棋盘：五种机制同框 -->
+            <div class="card board-card">
+              <svg viewBox="0 0 310 310" fill="none">
+                <defs>
+                  <linearGradient id="jadeG" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#3A7A5C"/><stop offset="1" stop-color="#2D6A4F"/>
+                  </linearGradient>
+                  <linearGradient id="iceG" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#D6E9F5"/><stop offset="1" stop-color="#B8D4E8"/>
+                  </linearGradient>
+                </defs>
+
+                <!-- 未铺格 -->
+                <g fill="#FFFCF7" stroke="rgba(38,34,28,.13)" stroke-width="1">
+                  <rect x="12.5" y="132.5" width="34" height="34" rx="8"/>
+                  <rect x="12.5" y="172.5" width="34" height="34" rx="8"/><rect x="52.5" y="172.5" width="34" height="34" rx="8"/><rect x="252.5" y="172.5" width="34" height="34" rx="8"/>
+                  <rect x="12.5" y="212.5" width="34" height="34" rx="8"/><rect x="252.5" y="212.5" width="34" height="34" rx="8"/>
+                  <rect x="52.5" y="252.5" width="34" height="34" rx="8"/><rect x="92.5" y="252.5" width="34" height="34" rx="8"/><rect x="132.5" y="252.5" width="34" height="34" rx="8"/><rect x="212.5" y="252.5" width="34" height="34" rx="8"/><rect x="252.5" y="252.5" width="34" height="34" rx="8"/>
+                </g>
+
+                <!-- 已铺格（釉面砖） -->
+                <g fill="url(#jadeG)" stroke="rgba(255,255,255,.12)" stroke-width="1">
+                  <rect x="12" y="12" width="34" height="34" rx="8"/><rect x="52" y="12" width="34" height="34" rx="8"/><rect x="92" y="12" width="34" height="34" rx="8"/><rect x="132" y="12" width="34" height="34" rx="8"/><rect x="172" y="12" width="34" height="34" rx="8"/><rect x="212" y="12" width="34" height="34" rx="8"/><rect x="252" y="12" width="34" height="34" rx="8"/>
+                  <rect x="12" y="52" width="34" height="34" rx="8"/><rect x="52" y="52" width="34" height="34" rx="8"/><rect x="92" y="52" width="34" height="34" rx="8"/><rect x="132" y="52" width="34" height="34" rx="8"/><rect x="172" y="52" width="34" height="34" rx="8"/><rect x="212" y="52" width="34" height="34" rx="8"/><rect x="252" y="52" width="34" height="34" rx="8"/>
+                  <rect x="12" y="92" width="34" height="34" rx="8"/><rect x="52" y="92" width="34" height="34" rx="8"/><rect x="92" y="92" width="34" height="34" rx="8"/><rect x="132" y="92" width="34" height="34" rx="8"/><rect x="172" y="92" width="34" height="34" rx="8"/><rect x="212" y="92" width="34" height="34" rx="8"/><rect x="252" y="92" width="34" height="34" rx="8"/>
+                  <rect x="92" y="132" width="34" height="34" rx="8"/><rect x="132" y="132" width="34" height="34" rx="8"/><rect x="172" y="132" width="34" height="34" rx="8"/><rect x="212" y="132" width="34" height="34" rx="8"/><rect x="252" y="132" width="34" height="34" rx="8"/>
+                  <rect x="92" y="172" width="34" height="34" rx="8"/><rect x="132" y="172" width="34" height="34" rx="8"/><rect x="172" y="172" width="34" height="34" rx="8"/><rect x="212" y="172" width="34" height="34" rx="8"/>
+                  <rect x="52" y="212" width="34" height="34" rx="8"/><rect x="92" y="212" width="34" height="34" rx="8"/><rect x="132" y="212" width="34" height="34" rx="8"/><rect x="172" y="212" width="34" height="34" rx="8"/><rect x="212" y="212" width="34" height="34" rx="8"/>
+                </g>
+
+                <!-- 石障 ×2 -->
+                <g>
+                  <rect x="12" y="132" width="34" height="34" rx="8" fill="#3A342B"/>
+                  <path d="M18 138 L32 135 L42 146 L28 152 Z" fill="rgba(255,255,255,.08)"/>
+                  <path d="M21 141 L37 157 M37 141 L21 157" stroke="#F3EDE3" stroke-width="3" stroke-linecap="round"/>
+                  <rect x="252" y="212" width="34" height="34" rx="8" fill="#3A342B"/>
+                  <path d="M258 218 L272 215 L282 226 L268 232 Z" fill="rgba(255,255,255,.08)"/>
+                  <path d="M261 221 L277 237 M277 221 L261 237" stroke="#F3EDE3" stroke-width="3" stroke-linecap="round"/>
+                </g>
+
+                <!-- 冰砖 -->
+                <g>
+                  <rect x="252" y="172" width="34" height="34" rx="8" fill="url(#iceG)" stroke="rgba(127,170,208,.55)" stroke-width="1.2"/>
+                  <rect x="257" y="177" width="24" height="24" rx="6" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.1" stroke-dasharray="3 4"/>
+                  <path d="M258 196 L266 186 L272 192 L280 182" stroke="rgba(255,255,255,.75)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </g>
+
+                <!-- 单向块 -->
+                <g>
+                  <rect x="132" y="172" width="34" height="34" rx="8" fill="#F8E6D5" stroke="rgba(217,106,43,.45)" stroke-width="1.4"/>
+                  <path d="M137 189 h18 M151 183 l7 6 l-7 6" stroke="#D96A2B" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M133 184 l4 5 l-4 5" stroke="#D96A2B" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity=".55"/>
+                </g>
+
+                <!-- 传送门 ×2 -->
+                <g>
+                  <circle cx="29" cy="269" r="13" fill="#FFFCF7" stroke="#7C63B8" stroke-width="2.3"/>
+                  <circle cx="29" cy="269" r="5.5" fill="none" stroke="#7C63B8" stroke-width="2"/>
+                  <path d="M23 263 C 30 265, 28 273, 35 275" stroke="#7C63B8" stroke-width="1.6" stroke-linecap="round" fill="none"/>
+                  <circle cx="189" cy="269" r="13" fill="#FFFCF7" stroke="#7C63B8" stroke-width="2.3"/>
+                  <circle cx="189" cy="269" r="5.5" fill="none" stroke="#7C63B8" stroke-width="2"/>
+                  <path d="M183 263 C 190 265, 188 273, 195 275" stroke="#7C63B8" stroke-width="1.6" stroke-linecap="round" fill="none"/>
+                </g>
+
+                <!-- 星屑 1→2→3 -->
+                <g transform="translate(149,29)">
+                  <path d="M0 2 L0 14 L9 12 Z" fill="rgba(0,0,0,.18)" transform="translate(-1,2) scale(1)" opacity="0"/>
+                  <path d="M0 -13 L3.4 -4.4 L12.5 -3.8 L5.6 2.2 L7.6 11 L0 6.2 L-7.6 11 L-5.6 2.2 L-12.5 -3.8 L-3.4 -4.4 Z" fill="#B98A24" transform="translate(0,2.2)"/>
+                  <path d="M0 -13 L3.4 -4.4 L12.5 -3.8 L5.6 2.2 L7.6 11 L0 6.2 L-7.6 11 L-5.6 2.2 L-12.5 -3.8 L-3.4 -4.4 Z" fill="#D9A441"/>
+                  <text y="3.5" text-anchor="middle" font-family="Noto Serif SC,serif" font-size="11" font-weight="700" fill="#6B4E12">1</text>
+                </g>
+                <g transform="translate(109,109)">
+                  <path d="M0 -13 L3.4 -4.4 L12.5 -3.8 L5.6 2.2 L7.6 11 L0 6.2 L-7.6 11 L-5.6 2.2 L-12.5 -3.8 L-3.4 -4.4 Z" fill="#B98A24" transform="translate(0,2.2)"/>
+                  <path d="M0 -13 L3.4 -4.4 L12.5 -3.8 L5.6 2.2 L7.6 11 L0 6.2 L-7.6 11 L-5.6 2.2 L-12.5 -3.8 L-3.4 -4.4 Z" fill="#D9A441"/>
+                  <text y="3.5" text-anchor="middle" font-family="Noto Serif SC,serif" font-size="11" font-weight="700" fill="#6B4E12">2</text>
+                </g>
+                <g transform="translate(149,229)">
+                  <path d="M0 -13 L3.4 -4.4 L12.5 -3.8 L5.6 2.2 L7.6 11 L0 6.2 L-7.6 11 L-5.6 2.2 L-12.5 -3.8 L-3.4 -4.4 Z" fill="#B98A24" transform="translate(0,2.2)"/>
+                  <path d="M0 -13 L3.4 -4.4 L12.5 -3.8 L5.6 2.2 L7.6 11 L0 6.2 L-7.6 11 L-5.6 2.2 L-12.5 -3.8 L-3.4 -4.4 Z" fill="#D9A441"/>
+                  <text y="3.5" text-anchor="middle" font-family="Noto Serif SC,serif" font-size="11" font-weight="700" fill="#6B4E12">3</text>
+                </g>
+
+                <!-- 琥珀光迹：压痕 + 主线 + 高光 -->
+                <path d="M29 29 H269 V69 H29 V109 H269 V149 H109 V189 H229 V229 H69"
+                      stroke="rgba(38,34,28,.13)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(0,2.5)"/>
+                <path d="M29 29 H269 V69 H29 V109 H269 V149 H109 V189 H229 V229 H69"
+                      stroke="#D96A2B" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                <path d="M29 29 H269 V69 H29 V109 H269 V149 H109 V189 H229 V229 H69"
+                      stroke="#F0A56B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity=".55" transform="translate(0,-1.5)"/>
+                <!-- 转折糖珠 -->
+                <g fill="#FFF8F1" opacity=".92">
+                  <circle cx="269" cy="69" r="3.1"/><circle cx="29" cy="69" r="3.1"/>
+                  <circle cx="29" cy="109" r="3.1"/><circle cx="269" cy="109" r="3.1"/>
+                  <circle cx="269" cy="149" r="3.1"/><circle cx="109" cy="149" r="3.1"/>
+                  <circle cx="109" cy="189" r="3.1"/><circle cx="229" cy="189" r="3.1"/>
+                  <circle cx="229" cy="229" r="3.1"/>
+                </g>
+                <!-- 起点 -->
+                <circle cx="29" cy="29" r="7.5" fill="#2D6A4F" stroke="#FFFCF7" stroke-width="2.5"/>
+                <!-- 线头 -->
+                <circle cx="69" cy="229" r="15" stroke="rgba(217,106,43,.26)" stroke-width="2.6" fill="none"/>
+                <circle cx="69" cy="229" r="9.5" fill="#D96A2B" stroke="#FFFCF7" stroke-width="3"/>
+              </svg>
+            </div>
+
+            <!-- 机制图例 -->
+            <div class="mech-legend">
+              <div class="ml"><i style="background:#3A342B"></i>石障</div>
+              <div class="ml"><i style="background:#D96A2B"></i>单向</div>
+              <div class="ml"><i style="background:#D9A441; border-radius:50%"></i>星屑 1→2→3</div>
+              <div class="ml"><i style="background:#B8D4E8"></i>冰砖</div>
+              <div class="ml"><i style="background:#7C63B8; border-radius:50%"></i>传送门</div>
+            </div>
+
+            <div class="hud-bottom">
+              <div class="btn-row">
+                <div class="btn btn-ghost" style="flex:1">撤销一步</div>
+                <div class="btn btn-primary" style="flex:1.4">提示 · 看视频</div>
+              </div>
+              <div class="hud-progress">
+                <div class="frac">37</div>
+                <div class="prog-track"><div class="prog-fill" style="width:75%"></div></div>
+                <div class="frac">49</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="caption">
+        <div class="t">游戏内</div>
+        <div class="d">五种机制同框：石障 / 单向 / 星屑 / 冰砖 / 传送门；路径三层画法（压痕 + 主线 + 高光 + 糖珠）</div>
+      </div>
+    </div>
+
+    <!-- ========== 4 结算 ========== -->
+    <div class="screen-item">
+      <div class="phone">
+        <div class="scr result-scr">
+          <div class="statusbar">
+            <span>9:41</span>
+            <div class="sb-icons">
+              <i class="sb-bar1"></i><i class="sb-bar2"></i><i class="sb-bar3"></i><i class="sb-bar4"></i>
+              <div class="sb-batt"></div>
+            </div>
+          </div>
+          <div class="scr-body" style="justify-content:center">
+            <div class="card result-card">
+              <div class="seal">过</div>
+              <div class="meta">第 38 关 · 苔原</div>
+              <h2>一气呵成</h2>
+              <div class="big-stars">
+                <svg viewBox="0 0 24 24" fill="#D9A441"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/></svg>
+                <svg viewBox="0 0 24 24" fill="#D9A441" style="transform:scale(1.16)"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/></svg>
+                <svg viewBox="0 0 24 24" fill="#D9A441"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z"/></svg>
+              </div>
+              <div class="stat-rows">
+                <div class="stat-row">
+                  <div class="k">重来</div>
+                  <div class="v">0 <span style="font-size:11px;color:var(--ink-2)">次</span></div>
+                </div>
+                <div class="stat-row">
+                  <div class="k">用时</div>
+                  <div class="v">41.5 <span style="font-size:11px;color:var(--ink-2)">秒</span></div>
+                </div>
+                <div class="stat-row">
+                  <div class="k">本关格数</div>
+                  <div class="v">45 <span style="font-size:11px;color:var(--ink-2)">格</span></div>
+                </div>
+              </div>
+              <div class="result-actions">
+                <div class="btn btn-primary">下一关</div>
+              </div>
+              <div class="result-links">
+                <span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>
+                  回地图
+                </span>
+                <span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="2.4"/><circle cx="17.5" cy="6.5" r="2.4"/><circle cx="17.5" cy="17.5" r="2.4"/><path d="M8.2 11 L15.3 7.5 M8.2 13 L15.3 16.5"/></svg>
+                  分享给好友
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="caption">
+        <div class="t">通关结算</div>
+        <div class="d">一张纸卡 + 朱印「过」；数据用点线分隔，只有一个主按钮</div>
+      </div>
+    </div>
+
+    <!-- ========== 5 主题商店 ========== -->
+    <div class="screen-item">
+      <div class="phone">
+        <div class="scr">
+          <div class="statusbar">
+            <span>9:41</span>
+            <div class="sb-icons">
+              <i class="sb-bar1"></i><i class="sb-bar2"></i><i class="sb-bar3"></i><i class="sb-bar4"></i>
+              <div class="sb-batt"></div>
+            </div>
+          </div>
+          <div class="scr-header">
+            <div class="back">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#26221C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5 L8 12 L15 19"/></svg>
+            </div>
+            <div class="title">主题</div>
+            <div class="right">
+              <div class="chip-pill chip-ink">2 / 12</div>
+            </div>
+          </div>
+          <div class="scr-body">
+            <div class="theme-grid">
+              <!-- 光迹 Trail -->
+              <div class="theme-shop-card equipped">
+                <div class="theme-prev"><canvas class="board-canvas" data-theme="trail" data-cols="6" data-rows="4" width="640" height="400"></canvas></div>
+                <div class="n">光迹 Trail</div>
+                <div class="ax">默认 · 媒介</div>
+                <div class="st"><span class="chip-pill chip-amber">已装备</span></div>
+              </div>
+              <!-- 像素街机 -->
+              <div class="theme-shop-card">
+                <div class="theme-prev"><canvas class="board-canvas" data-theme="pixel" data-cols="6" data-rows="4" width="640" height="400"></canvas></div>
+                <div class="n">像素街机</div>
+                <div class="ax">典藏 · 分辨率</div>
+                <div class="st"><span class="chip-pill chip-jade">已解锁</span></div>
+              </div>
+              <!-- 金缮瓷盘 -->
+              <div class="theme-shop-card">
+                <div class="theme-prev"><canvas class="board-canvas" data-theme="kintsugi" data-cols="6" data-rows="4" width="640" height="400"></canvas></div>
+                <div class="n">金缮瓷盘</div>
+                <div class="ax">典藏 · 材质</div>
+                <div class="lock-line">通关 300 关解锁</div>
+              </div>
+              <!-- 水墨山河 -->
+              <div class="theme-shop-card">
+                <div class="theme-prev"><canvas class="board-canvas" data-theme="ink" data-cols="6" data-rows="4" width="640" height="400"></canvas></div>
+                <div class="n">水墨山河</div>
+                <div class="ax">典藏 · 媒介</div>
+                <div class="lock-line">通关 80 关解锁</div>
+              </div>
+              <!-- 赛博霓虹 -->
+              <div class="theme-shop-card">
+                <div class="theme-prev"><canvas class="board-canvas" data-theme="neon" data-cols="6" data-rows="4" width="640" height="400"></canvas></div>
+                <div class="n">赛博霓虹</div>
+                <div class="ax">典藏 · 平面</div>
+                <div class="lock-line">通关 150 关解锁</div>
+              </div>
+              <!-- 深海荧光 -->
+              <div class="theme-shop-card">
+                <div class="theme-prev"><canvas class="board-canvas" data-theme="abyss" data-cols="6" data-rows="4" width="640" height="400"></canvas></div>
+                <div class="n">深海荧光</div>
+                <div class="ax">典藏 · 形态</div>
+                <div class="lock-line">通关 500 关解锁</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="tabbar">
+            <div class="tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 L12 3.5 L21 10.5 V20 a1 1 0 0 1-1 1 H4 a1 1 0 0 1-1-1 Z"/><path d="M9 21 V14 H15 V21"/></svg>
+              <span>主页</span>
+            </div>
+            <div class="tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18 C8 12, 10 8, 12 6 S 17 4, 20 6"/><circle cx="4" cy="18" r="1.8"/><circle cx="12" cy="6" r="1.8"/><circle cx="20" cy="6" r="1.8"/></svg>
+              <span>地图</span>
+            </div>
+            <div class="tab on">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>
+              <span>主题</span>
+            </div>
+            <div class="tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20 V10"/><path d="M12 20 V4"/><path d="M19 20 V13"/></svg>
+              <span>排行</span>
+            </div>
+            <div class="tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M5 20 C5 15.6 8 13.5 12 13.5 S 19 15.6 19 20"/></svg>
+              <span>我的</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="caption">
+        <div class="t">主题商店</div>
+        <div class="d">每个主题 = 一整个世界（背景/格材质/图标/路径/音效）；「语法轴」标签说明它换掉了什么</div>
+      </div>
+    </div>
+
+    <!-- ========== 6 排行 ========== -->
+    <div class="screen-item">
+      <div class="phone">
+        <div class="scr">
+          <div class="statusbar">
+            <span>9:41</span>
+            <div class="sb-icons">
+              <i class="sb-bar1"></i><i class="sb-bar2"></i><i class="sb-bar3"></i><i class="sb-bar4"></i>
+              <div class="sb-batt"></div>
+            </div>
+          </div>
+          <div class="scr-header">
+            <div class="back">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#26221C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5 L8 12 L15 19"/></svg>
+            </div>
+            <div class="title">排行榜</div>
+            <div class="right"><div class="chip-pill chip-ink">每周一刷新</div></div>
+          </div>
+          <div class="scr-body">
+            <div class="rank-tabs">
+              <div class="rt on">总榜</div>
+              <div class="rt">好友</div>
+            </div>
+
+            <div class="rank-list">
+              <div class="rank-row top1">
+                <div class="rk">1</div>
+                <div class="av" style="background:#D9A441">青</div>
+                <div>
+                  <div class="nm">青禾</div>
+                  <div class="sub">3 小时前</div>
+                </div>
+                <div class="lv">812<small>关</small></div>
+              </div>
+              <div class="rank-row top2">
+                <div class="rk">2</div>
+                <div class="av" style="background:#2D6A4F">野</div>
+                <div>
+                  <div class="nm">野生菌</div>
+                  <div class="sub">1 小时前</div>
+                </div>
+                <div class="lv">796<small>关</small></div>
+              </div>
+              <div class="rank-row top3">
+                <div class="rk">3</div>
+                <div class="av" style="background:#C14A2E">眠</div>
+                <div>
+                  <div class="nm">眠风</div>
+                  <div class="sub">昨天</div>
+                </div>
+                <div class="lv">781<small>关</small></div>
+              </div>
+              <div class="rank-row">
+                <div class="rk">4</div>
+                <div class="av" style="background:#8A8175">鹿</div>
+                <div>
+                  <div class="nm">鹿早</div>
+                  <div class="sub">5 小时前</div>
+                </div>
+                <div class="lv">744<small>关</small></div>
+              </div>
+              <div class="rank-row">
+                <div class="rk">5</div>
+                <div class="av" style="background:#6B8F71">苔</div>
+                <div>
+                  <div class="nm">苔小豆</div>
+                  <div class="sub">2 天前</div>
+                </div>
+                <div class="lv">712<small>关</small></div>
+              </div>
+              <div class="rank-row">
+                <div class="rk">6</div>
+                <div class="av" style="background:#B98F5C">木</div>
+                <div>
+                  <div class="nm">木木三</div>
+                  <div class="sub">3 天前</div>
+                </div>
+                <div class="lv">690<small>关</small></div>
+              </div>
+            </div>
+
+            <div class="my-rank">
+              <div class="rk">37</div>
+              <div class="nm">小满（我）</div>
+              <div class="lv">38<small style="font-family:var(--sans);font-size:9px;opacity:.75;letter-spacing:.12em"> 关</small></div>
+            </div>
+          </div>
+
+          <div class="tabbar">
+            <div class="tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 L12 3.5 L21 10.5 V20 a1 1 0 0 1-1 1 H4 a1 1 0 0 1-1-1 Z"/><path d="M9 21 V14 H15 V21"/></svg>
+              <span>主页</span>
+            </div>
+            <div class="tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18 C8 12, 10 8, 12 6 S 17 4, 20 6"/><circle cx="4" cy="18" r="1.8"/><circle cx="12" cy="6" r="1.8"/><circle cx="20" cy="6" r="1.8"/></svg>
+              <span>地图</span>
+            </div>
+            <div class="tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>
+              <span>主题</span>
+            </div>
+            <div class="tab on">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20 V10"/><path d="M12 20 V4"/><path d="M19 20 V13"/></svg>
+              <span>排行</span>
+            </div>
+            <div class="tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M5 20 C5 15.6 8 13.5 12 13.5 S 19 15.6 19 20"/></svg>
+              <span>我的</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="caption">
+        <div class="t">排行榜</div>
+        <div class="d">行高统一、前三只换底色不换结构；「我的名次」吸底一条玉青</div>
+      </div>
+    </div>
+
+    <!-- ========== 7 我的 ========== -->
+    <div class="screen-item">
+      <div class="phone">
+        <div class="scr">
+          <div class="statusbar">
+            <span>9:41</span>
+            <div class="sb-icons">
+              <i class="sb-bar1"></i><i class="sb-bar2"></i><i class="sb-bar3"></i><i class="sb-bar4"></i>
+              <div class="sb-batt"></div>
+            </div>
+          </div>
+          <div class="scr-header">
+            <div class="title" style="letter-spacing:.3em">我的</div>
+            <div class="right">
+              <div class="chip-pill chip-ink">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2 v3 M12 19 v3 M2 12 h3 M19 12 h3 M5 5 l2 2 M17 17 l2 2 M19 5 l-2 2 M7 17 l-2 2"/></svg>
+                设置
+              </div>
+            </div>
+          </div>
+          <div class="scr-body">
+            <div class="card profile-head">
+              <div class="avatar lg">满</div>
+              <div class="who">
+                <div class="n">小满</div>
+                <div class="meta">
+                  <span class="chip-pill chip-gold">LV 37</span>
+                  <span class="chip-pill chip-jade">赛季 S3</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="stat-grid">
+              <div class="stat-cell">
+                <div class="v">38<small>关</small></div>
+                <div class="k">最高关卡</div>
+              </div>
+              <div class="stat-cell">
+                <div class="v">2,341<small>步</small></div>
+                <div class="k">总步数</div>
+              </div>
+              <div class="stat-cell">
+                <div class="v">3.2<small>时</small></div>
+                <div class="k">总用时</div>
+              </div>
+              <div class="stat-cell">
+                <div class="v">2<small>/12</small></div>
+                <div class="k">收集主题</div>
+              </div>
+            </div>
+
+            <div class="wall-label">主题墙</div>
+            <div class="skin-wall">
+              <div class="w" style="background:#EFE7D9; position:relative">
+                <div style="position:absolute; left:18%; top:22%; width:26%; height:26%; background:#2D6A4F; border-radius:3px"></div>
+                <div style="position:absolute; left:48%; top:22%; width:26%; height:26%; background:#2D6A4F; border-radius:3px"></div>
+                <div style="position:absolute; left:33%; top:52%; width:34%; height:8%; background:#D96A2B; border-radius:4px"></div>
+              </div>
+              <div class="w" style="background:#12121F; position:relative">
+                <div style="position:absolute; left:18%; top:22%; width:26%; height:26%; background:#3D5A8C"></div>
+                <div style="position:absolute; left:48%; top:22%; width:26%; height:26%; background:#3D5A8C"></div>
+                <div style="position:absolute; left:33%; top:52%; width:34%; height:8%; background:#F2D34E"></div>
+              </div>
+              <div class="w empty"></div>
+              <div class="w empty"></div>
+              <div class="w empty"></div>
+              <div class="w empty"></div>
+              <div class="w empty"></div>
+              <div class="w empty"></div>
+            </div>
+
+            <div class="func-rows">
+              <div class="func-row">
+                音效
+                <div class="tail"><div class="toggle"></div></div>
+              </div>
+              <div class="func-row">
+                振动
+                <div class="tail"><div class="toggle off"></div></div>
+              </div>
+              <div class="func-row">
+                分享给好友
+                <div class="tail">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5 L16 12 L9 19"/></svg>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="tabbar">
+            <div class="tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 L12 3.5 L21 10.5 V20 a1 1 0 0 1-1 1 H4 a1 1 0 0 1-1-1 Z"/><path d="M9 21 V14 H15 V21"/></svg>
+              <span>主页</span>
+            </div>
+            <div class="tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18 C8 12, 10 8, 12 6 S 17 4, 20 6"/><circle cx="4" cy="18" r="1.8"/><circle cx="12" cy="6" r="1.8"/><circle cx="20" cy="6" r="1.8"/></svg>
+              <span>地图</span>
+            </div>
+            <div class="tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>
+              <span>主题</span>
+            </div>
+            <div class="tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20 V10"/><path d="M12 20 V4"/><path d="M19 20 V13"/></svg>
+              <span>排行</span>
+            </div>
+            <div class="tab on">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M5 20 C5 15.6 8 13.5 12 13.5 S 19 15.6 19 20"/></svg>
+              <span>我的</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="caption">
+        <div class="t">我的</div>
+        <div class="d">2×2 衬线数字统计 + 主题墙 + 极简功能行，不做设置迷宫</div>
+      </div>
+    </div>
+
+  </div><!-- /screen-grid -->
+
+  <footer class="stage-foot">
+    <span>光迹 Trail · 概念稿 v2 — 纯静态界面，未含交互与动效</span>
+    <span>暖纸 #F3EDE3 · 玉青 #2D6A4F · 琥珀 #D96A2B</span>
+  </footer>
+
+</div>
+
+<script>
+/* ============================================================
+   主题棋盘渲染器 —— 同一帧棋盘，六套主题语言
+   （demo 用；实现层对应 themes/index.ts 的通道结构）
+   ============================================================ */
+(function () {
+  const THEMES = {
+    trail: {
+      bg: '#EFE7D9', plate: '#E7DECC', paper: '#FFFCF7',
+      hair: 'rgba(38,34,28,.14)',
+      cell: '#2D6A4F', cellTop: '#3A7A5C', cellEdge: null,
+      path: '#D96A2B', pathHi: '#F0A56B',
+      block: '#3A342B', blockX: '#F3EDE3',
+      star: '#D9A441', starNum: '#6B4E12',
+      style: 'tile', scan: null, radius: 0.22
+    },
+    kintsugi: {
+      bg: '#E4ECEF', plate: '#D7E3E8', paper: '#F7FBFC',
+      hair: 'rgba(70,100,112,.22)',
+      cell: '#A9C3CC', cellTop: '#C0D6DD', cellEdge: null,
+      path: '#C8972F', pathHi: '#EBC66C',
+      block: '#5A7280', blockX: '#DDE8ED',
+      star: '#C8972F', starNum: '#7A5B14',
+      style: 'porcelain', scan: null, radius: 0.3
+    },
+    pixel: {
+      bg: '#12121F', plate: '#1B1B2E', paper: '#23233A',
+      hair: 'rgba(120,130,190,.30)',
+      cell: '#3D5A8C', cellTop: '#4A6C9F', cellEdge: '#2C4266',
+      path: '#F2D34E', pathHi: '#FBE9A0',
+      block: '#252540', blockX: '#8FA8D8',
+      star: '#F2D34E', starNum: '#12121F',
+      style: 'pixel', scan: 'rgba(120,140,220,.07)', radius: 0
+    },
+    ink: {
+      bg: '#F2EEE6', plate: '#E6E0D2', paper: '#F7F3EA',
+      hair: 'rgba(38,34,28,.16)',
+      cell: '#8C8676', cellTop: '#A29C8E', cellEdge: null,
+      path: '#2E2B25', pathHi: '#5A554C',
+      block: '#4A463E', blockX: '#EFEAE0',
+      star: '#B0402A', starNum: '#F2EEE6',
+      style: 'tile', scan: null, radius: 0.12
+    },
+    neon: {
+      bg: '#0B0B1A', plate: '#101024', paper: '#14142A',
+      hair: 'rgba(80,200,255,.35)',
+      cell: 'rgba(0,220,255,0)', cellTop: null, cellEdge: null,
+      cellStroke: '#28D8FF', path: '#FF4FD8', pathHi: '#FFA8EC',
+      block: '#25254A', blockX: '#FF4FD8',
+      star: '#FFE14F', starNum: '#0B0B1A',
+      style: 'neon', scan: null, radius: 0.14
+    },
+    abyss: {
+      bg: '#082026', plate: '#0C2C33', paper: '#11363E',
+      hair: 'rgba(120,220,220,.22)',
+      cell: '#1E6E72', cellTop: '#278085', cellEdge: null,
+      path: '#FF8A5C', pathHi: '#FFB896',
+      block: '#0A2A30', blockX: '#7FD8D8',
+      star: '#7FE8D8', starNum: '#082026',
+      style: 'soft', scan: null, radius: 0.45
+    }
+  };
+
+  const P7 = {
+    cols: 7, rows: 7,
+    covered: (function () {
+      const a = [];
+      for (let c = 0; c <= 6; c++) a.push([c, 0]);
+      for (let c = 6; c >= 0; c--) a.push([c, 1]);
+      for (let c = 0; c <= 6; c++) a.push([c, 2]);
+      for (let c = 6; c >= 2; c--) a.push([c, 3]);
+      for (let c = 2; c <= 5; c++) a.push([c, 4]);
+      for (let c = 5; c >= 1; c--) a.push([c, 5]);
+      return a;
+    })(),
+    path: [[0, 0], [6, 0], [6, 1], [0, 1], [0, 2], [6, 2], [6, 3], [2, 3], [2, 4], [5, 4], [5, 5], [1, 5]],
+    blocks: [[0, 3], [6, 5]],
+    stars: [[3, 0, 1], [2, 2, 2], [3, 5, 3]],
+    head: [1, 5]
+  };
+
+  const P64 = {
+    cols: 6, rows: 4,
+    covered: (function () {
+      const a = [];
+      for (let c = 0; c <= 5; c++) a.push([c, 0]);
+      for (let c = 5; c >= 0; c--) a.push([c, 1]);
+      for (let c = 0; c <= 5; c++) a.push([c, 2]);
+      for (let c = 5; c >= 2; c--) a.push([c, 3]);
+      return a;
+    })(),
+    path: [[0, 0], [5, 0], [5, 1], [0, 1], [0, 2], [5, 2], [5, 3], [2, 3]],
+    blocks: [[0, 3]],
+    stars: [[2, 0, 1], [3, 2, 2]],
+    head: [2, 3]
+  };
+
+  function rr(ctx, x, y, w, h, r) {
+    if (r <= 0) { ctx.rect(x, y, w, h); return; }
+    const k = Math.min(r, w / 2, h / 2);
+    ctx.moveTo(x + k, y);
+    ctx.arcTo(x + w, y, x + w, y + h, k);
+    ctx.arcTo(x + w, y + h, x, y + h, k);
+    ctx.arcTo(x, y + h, x, y, k);
+    ctx.arcTo(x, y, x + w, y, k);
+    ctx.closePath();
+  }
+
+  function starPath(ctx, cx, cy, r) {
+    ctx.moveTo(cx, cy - r);
+    for (let i = 1; i < 10; i++) {
+      const ang = -Math.PI / 2 + i * Math.PI / 5;
+      const rad = i % 2 === 0 ? r : r * 0.42;
+      ctx.lineTo(cx + Math.cos(ang) * rad, cy + Math.sin(ang) * rad);
+    }
+    ctx.closePath();
+  }
+
+  function draw(cv, t, P) {
+    const ctx = cv.getContext('2d');
+    const dpr = 2;
+    const W = cv.width / dpr, H = cv.height / dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // 背景
+    ctx.fillStyle = t.bg;
+    ctx.fillRect(0, 0, W, H);
+    if (t.scan) {
+      ctx.fillStyle = t.scan;
+      for (let y = 0; y < H; y += 6) ctx.fillRect(0, y, W, 1.6);
+    }
+
+    // 底板
+    const pad = W * 0.035;
+    ctx.beginPath();
+    rr(ctx, pad, pad, W - pad * 2, H - pad * 2, W * 0.045);
+    ctx.fillStyle = t.plate;
+    ctx.fill();
+
+    // 格子几何
+    const gap = W * 0.02;
+    const cw = (W - pad * 2.4 - gap * (P.cols - 1)) / P.cols;
+    const x0 = pad * 1.2, y0 = pad * 1.2;
+    const rx = cw * (t.style === 'pixel' ? 0 : t.radius);
+    const at = (c, r) => [x0 + c * (cw + gap), y0 + r * (cw + gap)];
+
+    const coveredKeys = new Set(P.covered.map(([c, r]) => c + ',' + r));
+
+    // 未铺格
+    for (let r = 0; r < P.rows; r++) {
+      for (let c = 0; c < P.cols; c++) {
+        if (coveredKeys.has(c + ',' + r)) continue;
+        const [x, y] = at(c, r);
+        ctx.beginPath();
+        rr(ctx, x, y, cw, cw, rx);
+        if (t.style === 'neon') {
+          ctx.strokeStyle = t.hair; ctx.lineWidth = 1.4; ctx.stroke();
+        } else {
+          ctx.fillStyle = t.paper; ctx.fill();
+          ctx.strokeStyle = t.hair; ctx.lineWidth = 1; ctx.stroke();
+        }
+      }
+    }
+
+    // 已铺格
+    P.covered.forEach(([c, r]) => {
+      const [x, y] = at(c, r);
+      ctx.beginPath();
+      rr(ctx, x, y, cw, cw, rx);
+      if (t.style === 'neon') {
+        ctx.strokeStyle = t.cellStroke; ctx.lineWidth = 2;
+        ctx.shadowColor = t.cellStroke; ctx.shadowBlur = 8;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      } else {
+        const g = ctx.createLinearGradient(x, y, x, y + cw);
+        g.addColorStop(0, t.cellTop || t.cell);
+        g.addColorStop(1, t.cell);
+        ctx.fillStyle = g; ctx.fill();
+        if (t.cellEdge) {
+          ctx.fillStyle = t.cellEdge;
+          ctx.fillRect(x, y + cw - cw * 0.1, cw, cw * 0.1);
+          ctx.fillRect(x + cw - cw * 0.1, y, cw * 0.1, cw);
+        }
+        if (t.style === 'porcelain') {
+          // 金缮裂纹
+          ctx.strokeStyle = t.path; ctx.lineWidth = 1.1; ctx.globalAlpha = 0.85;
+          const seed = (c * 7 + r * 13) % 5;
+          ctx.beginPath();
+          ctx.moveTo(x + cw * (0.2 + seed * 0.08), y + cw * 0.15);
+          ctx.lineTo(x + cw * (0.45 + seed * 0.05), y + cw * 0.5);
+          ctx.lineTo(x + cw * (0.3 + seed * 0.07), y + cw * 0.88);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        } else {
+          ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = 1;
+          ctx.beginPath(); rr(ctx, x, y, cw, cw, rx); ctx.stroke();
+        }
+      }
+    });
+
+    // 石障
+    P.blocks.forEach(([c, r]) => {
+      const [x, y] = at(c, r);
+      ctx.beginPath();
+      rr(ctx, x, y, cw, cw, rx);
+      ctx.fillStyle = t.block; ctx.fill();
+      ctx.strokeStyle = t.blockX; ctx.lineWidth = cw * 0.075; ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x + cw * 0.3, y + cw * 0.3); ctx.lineTo(x + cw * 0.7, y + cw * 0.7);
+      ctx.moveTo(x + cw * 0.7, y + cw * 0.3); ctx.lineTo(x + cw * 0.3, y + cw * 0.7);
+      ctx.stroke();
+    });
+
+    // 星屑
+    P.stars.forEach(([c, r, n]) => {
+      const [x, y] = at(c, r);
+      const cx = x + cw / 2, cy = y + cw / 2, sr = cw * 0.36;
+      ctx.beginPath(); starPath(ctx, cx, cy + cw * 0.05, sr);
+      ctx.fillStyle = t.starNum; ctx.globalAlpha = 0.35; ctx.fill(); ctx.globalAlpha = 1;
+      ctx.beginPath(); starPath(ctx, cx, cy, sr);
+      ctx.fillStyle = t.star; ctx.fill();
+      ctx.fillStyle = t.starNum;
+      ctx.font = '700 ' + (cw * 0.3) + 'px Georgia, serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(n), cx, cy + cw * 0.02);
+    });
+
+    // 路径
+    const pts = P.path.map(([c, r]) => {
+      const [x, y] = at(c, r);
+      return [x + cw / 2, y + cw / 2];
+    });
+    const trace = (color, width, dy, cap) => {
+      ctx.beginPath();
+      pts.forEach(([px, py], i) => i === 0 ? ctx.moveTo(px, py + (dy || 0)) : ctx.lineTo(px, py + (dy || 0)));
+      ctx.strokeStyle = color; ctx.lineWidth = width;
+      ctx.lineCap = cap || (t.style === 'pixel' ? 'butt' : 'round');
+      ctx.lineJoin = t.style === 'pixel' ? 'miter' : 'round';
+      ctx.stroke();
+    };
+    trace('rgba(0,0,0,.13)', cw * 0.26, cw * 0.06);
+    if (t.style === 'neon') {
+      ctx.shadowColor = t.path; ctx.shadowBlur = 12;
+    }
+    trace(t.path, cw * 0.19);
+    ctx.shadowBlur = 0;
+    trace(t.pathHi, cw * 0.06, -cw * 0.04);
+
+    // 线头
+    const [hx, hy] = pts[pts.length - 1];
+    if (t.style === 'neon') { ctx.shadowColor = t.path; ctx.shadowBlur = 14; }
+    ctx.beginPath(); ctx.arc(hx, hy, cw * 0.24, 0, Math.PI * 2);
+    ctx.fillStyle = t.path; ctx.fill();
+    ctx.beginPath(); ctx.arc(hx, hy, cw * 0.24, 0, Math.PI * 2);
+    ctx.strokeStyle = t.paper; ctx.lineWidth = cw * 0.08; ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  document.querySelectorAll('.board-canvas').forEach(cv => {
+    const t = THEMES[cv.dataset.theme] || THEMES.trail;
+    const P = (parseInt(cv.dataset.cols, 10) === 6) ? P64 : P7;
+    draw(cv, t, P);
+  });
+})();
+</script>
+</body>
+</html>
