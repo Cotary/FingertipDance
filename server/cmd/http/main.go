@@ -76,11 +76,22 @@ func main() {
 		zap.Int("count", line.CoverLevels.Count()),
 	)
 
-	issuer := core.NewTokenIssuer(cfg.JWT.Secret, cfg.JWT.TTLHours)
-
 	// 可取消的根上下文，供后台任务使用
 	rootCtx, rootCancel := context.WithCancel(context.Background())
 	defer rootCancel()
+
+	// cover 关卡表（**数据库版**）：可写，供生成器入库 + 提示查参考解。
+	//
+	// 表是空的也不影响游戏 —— 提示接口会返回「没有参考解」，
+	// 客户端退回实时求解（与改造前一致）。
+	coverLevelDB := line.NewCoverLevelDB(db)
+	if n, err := coverLevelDB.Count(rootCtx); err != nil {
+		logger.Warn("统计数据库 cover 关卡数失败（提示将退回实时求解）", zap.Error(err))
+	} else {
+		logger.Info("数据库 cover 关卡表就绪", zap.Int("count", n))
+	}
+
+	issuer := core.NewTokenIssuer(cfg.JWT.Secret, cfg.JWT.TTLHours)
 
 	// 每日凌晨重建总榜（保证与数据库一致）
 	go func() {
@@ -159,6 +170,9 @@ func main() {
 		auth.POST("/cover/progress", line.CoverProgressHandler(db, rdb))
 		auth.POST("/cover/challenge", line.CoverChallengeHandler(db))
 		auth.POST("/cover/skip", line.CoverSkipHandler(db))
+		// 提示：**查参考解**，O(1) 切片，零计算。
+		// 玩家走岔时返回 fromReference=false，客户端退回实时求解。
+		auth.POST("/cover/hint", line.CoverHintHandler(coverLevelDB))
 
 		// ── 调试接口（仅测试环境）──
 		//
