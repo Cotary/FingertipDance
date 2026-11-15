@@ -261,15 +261,51 @@ export interface DiffContext {
   mechTerm: number;
   /** 诱饵项归一。 */
   baitTerm: number;
+  /**
+   * 规模归一的下界（可走格数）。
+   *
+   * `null` = 用默认值 `SIZE_FLOOR`。
+   */
+  sizeFloor?: number;
+  /**
+   * 规模归一的上界（可走格数）。
+   *
+   * `null` = 用默认值 `SIZE_CEIL`。
+   */
+  sizeCeil?: number;
+  /**
+   * **世界项**：难度阶梯的位置（0 = 第一世界，1 = 最后世界）。
+   *
+   * ## 为什么必须显式引入
+   *
+   * 早期公式只有「规模 × 结构」两段。规模统一之后：
+   *   - 规模项对所有关卡恒等（无区分度）；
+   *   - 结构项的世界间差异很小（实测各世界结构分几乎一样）。
+   * 于是难度分全表塌成 92~100 —— **编排器完全无法排序**，
+   * 「难度曲线」这个概念就失效了。
+   *
+   * 而世界递进本来就有明确内容：**机制逐级叠加 + 起终点逐级钉死**。
+   * 这些差异现在被显式编码进这一项。
+   *
+   * `null` = 关闭（难度只由结构决定）。
+   */
+  worldTerm?: number;
 }
 
 /**
- * 规模归一区间。
+ * 规模归一区间（默认值）。
  *
- * 下界取 10（4x4=16 格的实际起步规模），上界取 121（11x11）。
+ * ## 为什么要有「默认值 + 可覆盖」两套
+ *
+ * 早期这里写死 `10` / `121`（对应 4×4 ~ 11×11 的尺寸阶梯）。
+ * 但尺寸是**可调的**（见 `generate.ts` 的 `SIZE_CONFIG`）——
+ * 全表统一成 5×6（30 格）之后，写死的区间就完全错位了：
+ * 所有关卡的 `sizeNorm` 都挤在 0.16 附近，难度分全表塌成一个值（19~25）。
+ *
+ * 所以区间必须**跟着实际尺寸走**：由调用方按当前尺寸配置算出来传进来。
  */
-const SIZE_FLOOR = 10;
-const SIZE_CEIL = 121;
+export const SIZE_FLOOR = 10;
+export const SIZE_CEIL = 121;
 
 /**
  * 难度分 0..100。
@@ -326,24 +362,49 @@ export function computeDiff(m: Metrics, ctx: DiffContext): number {
   const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
   // Uniqueness: fewer solutions = harder (core signal).
-  const uniqTerm = m.solutionCount > 0 ? clamp01(1 - (m.solutionCount - 1) / 8) : 1;
-  // Decision load: turn count. Normalize at 50 (measured max is around 62).
-  const turnTerm = clamp01(m.turns / 50);
+  //
+  // 归一化到 **解数 1~4** 而不是 1~9：
+  // 实测 5×6 盘上解数普遍在 1~4 之间（p50 ≈ 2），
+  // 用 1~9 归一会把所有关卡的这一项都压在 0.75~0.88 的窄带里，失去区分度。
+  const uniqTerm = m.solutionCount > 0 ? clamp01(1 - (m.solutionCount - 1) / 3) : 1;
+  // Decision load: turn count.
+  //
+  // 归一化到 **转弯 6~20**：实测 5×6 盘上转弯数在 10~18 之间，
+  // 用 50 归一会把这一项压在 0.2~0.36 的窄带里。
+  const turnTerm = clamp01((m.turns - 6) / 14);
   // Topology pressure: long forced corridor ratio.
-  const topologyTerm = clamp01(m.corridorRatio / 0.35);
+  // 实测 5×6 盘的走廊占比在 0.05~0.09，归一到 0.15 才有区分度。
+  const topologyTerm = clamp01(m.corridorRatio / 0.15);
+  // Endpoint pinning: D=0 (both free) is easiest, D=2 (both pinned) is hardest.
+  //
+  // **这一项以前是缺的** —— 注释里一直写着「端点固定度用 m.deadEnds」，
+  // 但 `computeDiff` 根本没用到它。
+  // 结果是：钉死起终点只影响**玩法**，对**难度分**毫无贡献。
+  // 尺寸统一成 5×6 之后规模项不再有区分度，这一项就成了世界间难度递进的主力。
+  const endTerm = clamp01(m.deadEnds / 2);
+  // Branch pressure: 分叉越多 → 每一步的选择越多 → 决策负担越大。
+  // 实测 5×6 盘上分叉数在 15~22 之间。
+  const branchTerm = clamp01((m.branches - 10) / 14);
 
   const structureTerm = clamp01(
-    0.35 * uniqTerm +
-    0.30 * turnTerm +
-    0.15 * topologyTerm +
-    0.12 * ctx.mechTerm +
+    0.24 * uniqTerm +
+    0.19 * turnTerm +
+    0.13 * topologyTerm +
+    0.13 * endTerm +
+    0.09 * branchTerm +
+    0.14 * ctx.mechTerm +
     0.08 * ctx.baitTerm
   );
 
-  // Size baseline curve (calibrated).
-  const sizeNorm = clamp01((m.required - SIZE_FLOOR) / (SIZE_CEIL - SIZE_FLOOR));
-  const sizeBaseline = Math.pow(sizeNorm, 0.8) * 1.15;
+  // 规模缩放：阶梯模式下按面积曲线，统一尺寸时恒为 1。
+  const floor = ctx.sizeFloor ?? SIZE_FLOOR;
+  const ceil = ctx.sizeCeil ?? SIZE_CEIL;
+  const sizeNorm = ceil > floor ? clamp01((m.required - floor) / (ceil - floor)) : 1;
+  const sizeScale = Math.pow(sizeNorm, 0.8);
 
-  const diff = 100 * sizeBaseline * (0.6 + 0.55 * structureTerm);
+  // 世界项：难度阶梯的位置（0 = 第一世界，1 = 最后世界）。
+  const worldTerm = clamp01(ctx.worldTerm ?? 0);
+
+  const diff = 100 * sizeScale * (0.6 * worldTerm + 0.4 * structureTerm);
   return Math.max(0, Math.min(100, Math.round(diff)));
 }

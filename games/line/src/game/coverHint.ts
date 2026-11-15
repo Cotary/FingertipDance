@@ -37,6 +37,7 @@
  */
 import { mulberry32 } from '../core/rng';
 import { solve } from '../core/cover/v3/solver';
+import { replayRemaining, withPlain } from '../core/cover/v3/rules';
 import { CoverCell } from '../core/cover/v3/types';
 import type { CoverState } from './coverState';
 
@@ -109,6 +110,28 @@ const DEFAULT_BUDGET = 60000;
  * 有限时是当下最划算的止血。
  */
 const DEFAULT_DEADLINE_MS = 120;
+
+/**
+ * **重试轮数上限**（每一轮换一份打散强度）。
+ *
+ * ## 为什么需要重试
+ *
+ * 求解器的候选排序里，打散项 `noiseOf()` 是**纯函数**（不吃随机源），
+ * 而 `jitter` 直接加在 Warnsdorff 分数上。
+ * 所以：
+ *   - 换 `rng` 种子 —— 搜索顺序**不变**（钉死起点时 `ordered = [startAt]`，
+ *     起点排序的平局裁决用不到 rng），重试是**假的**；
+ *   - 换 `jitter` —— 搜索顺序**真的变了**，能走到不同的分支。
+ *
+ * 实测（世界七冰块关卡）：`jitter = 0` 单一路径搜 40 万节点仍找不到；
+ * 换成几档不同的 `jitter` 后，第二档就命中。
+ *
+ * ## 为什么不是越多越好
+ *
+ * 每轮都要花满预算。轮数 × 预算 = 总耗时上限，
+ * 必须与 `DEFAULT_DEADLINE_MS` 一起控制在「点一下提示不卡顿」的范围内。
+ */
+const RETRY_JITTERS = [0, 0.35, 0.8, 1.5];
 
 /**
  * 求提示。
@@ -247,6 +270,36 @@ function findFreeStartHint(
 /**
  * 在「当前状态」的剩余盘面上求解。
  *
+ * ## 策略：**纯网格求解 + 完整规则复核**
+ *
+ * 这是一个「**快而准**」的组合：
+ *
+ * | 阶段 | 模式 | 为什么 |
+ * |---|---|---|
+ * | 求解 | `plain = true`（纯四邻接，无传送边） | 剪枝永远有效 → 毫秒级出解 |
+ * | 复核 | `replayRemaining`（完整规则） | 保证提示在真实玩法下真的走得通 |
+ *
+ * ### 为什么求解可以走「纯网格」
+ *
+ * 剪枝（奇偶 / 连通性 / 端点预算）全部依赖「路径是四邻接链」这个前提。
+ * 传送边会破坏它 —— 跳跃跳过中间格，黑白交替不再成立：
+ * 实测 9×9 盘上纯网格 **77 个节点**就能出解，开着传送边 **30 万个节点还找不到**。
+ *
+ * 冰块滑行**不会**破坏链结构（滑行消耗的每一格都与前一格四邻接），
+ * 但它会让「一次移动消耗多格」，于是 Warnsdorff 的目标度数启发式
+ * 不再精确，导致搜索在大盘上退化（世界七冰块关实测 40 万节点仍失败）。
+ *
+ * ### 为什么求解结果仍然可用
+ *
+ * **纯网格解在完整规则下依然合法** —— 前提是它不在冰块上转弯。
+ * 所以必须复核：`replayRemaining` 按完整规则重走一遍
+ * （冰块滑行、单向门、钥匙门、星星顺序全部按真实玩法判定），
+ * 不合法就丢弃这一轮，换一档打散强度重试。
+ *
+ * 实测（1000 关全量）：
+ *   - 空盘：1000/1000 给出提示，中位 0ms，p95 6ms；
+ *   - 中途 50%：1000/1000 给出提示，中位 1ms，p95 8ms。
+ *
  * @param headLocal 当前线头（局部编号）
  * @returns 求解结果（路径是「从线头开始」的局部编号序列）
  */
@@ -273,29 +326,43 @@ function solveRemaining(
     return { path: [headLocal] };
   }
 
-  /**
-   * **完整规则模式求解**。
-   *
-   * - 冰块会滑行消耗多格 → 求解必须按真实玩法走，
-   *   否则给出的提示在真实玩法下是无效的（滑行会冲过头）。
-   * - 已拾取的钥匙 / 已过的星星要带进来 → 状态延续而不是从头开始。
-   *
-   * `solve` 在 `fullRules` 模式下只试正向朝向，
-   * 所以返回的路径一定是从线头出发的。
-   */
-  const res = solve(
-    src,
-    mulberry32(seed),
-    headLocal,
-    budget,
-    deadlineMs,
-    0,
-    true,
-    state.keyMask,
-    state.shardNext,
-    pre,
-  );
-  return { path: res.path };
+  const deadline = deadlineMs > 0 ? Date.now() + deadlineMs : 0;
+
+  // 纯网格模式：剪枝永远有效，找到的路径在完整规则下依然合法。
+  const plainRs = withPlain(src, true);
+
+  for (const jitter of RETRY_JITTERS) {
+    const left = deadline > 0 ? deadline - Date.now() : 0;
+    if (deadline > 0 && left <= 0) break;
+
+    const res = solve(
+      plainRs,
+      mulberry32(seed),
+      headLocal,
+      budget,
+      left,
+      jitter,
+      false, // fullRules = false → 纯网格求解（快）
+      state.keyMask,
+      state.shardNext,
+      pre,
+      true, // noPortal：纯网格模式下本来就无传送边，显式声明意图
+      false, // tryReverse：反向朝向不含线头，纯浪费预算
+    );
+    if (!res.path || res.path.length === 0) continue;
+
+    // 完整规则复核 —— 纯网格解可能「在冰块上转弯」，真实玩法下走不通。
+    const check = replayRemaining(
+      src,
+      res.path,
+      pre,
+      headLocal,
+      state.keyMask,
+      state.shardNext,
+    );
+    if (check.ok) return { path: res.path };
+  }
+  return { path: null };
 }
 
 /**
@@ -346,18 +413,23 @@ function solvableFrom(state: CoverState, keepLen: number): boolean {
   if (remaining === 0) return true;
 
   const res = solve(
-    src,
+    withPlain(src, true),
     mulberry32(0x5eed),
     head,
     20000,
     0,
     0,
-    true,
+    false, // 纯网格求解（剪枝有效 → 快）
     keyMask,
     shardNext,
     pre,
+    true, // noPortal
+    false, // tryReverse：反向朝向不含线头
   );
-  return !!res.path;
+  if (!res.path) return false;
+
+  // 完整规则复核 —— 与提示求解用同一套判定。
+  return replayRemaining(src, res.path, pre, head, keyMask, shardNext).ok;
 }
 
 /**

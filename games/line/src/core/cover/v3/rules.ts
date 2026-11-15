@@ -54,6 +54,24 @@ export interface RuleSet {
    *   - 找到的路径在完整规则下依然合法 -> 正确。
    */
   plain: boolean;
+  /**
+   * **禁用传送边**（冰块滑行仍然生效）。
+   *
+   * ## 为什么需要这个独立于 `plain` 的开关
+   *
+   * `plain=true` 把**滑行和传送边一起关掉**，于是它求出来的路径
+   * 可能「在冰块上转弯」—— 真实玩法下滑行会冲过头，这条路走不通。
+   *
+   * 而 `plain=false`（完整规则）把传送边也打开，于是**路径不再是四邻接链**：
+   * 传送跳跃会跳过中间格，黑白交替（奇偶剪枝）的前提被破坏，
+   * 求解器被迫在「大得多」的路径空间里搜索 —— 9x9 盘上实测
+   * 纯网格 77 个节点就找到解，完整规则要 30 万个节点还找不到。
+   *
+   * 但**传送边其实用不上**：传送门是**可选**的（见 `candidateMoves` 的说明），
+   * 生成器保证的参考解**从不使用传送边**。所以只要关掉传送边、
+   * 保留滑行，就既拿到了「真实玩法下的合法路径」，又保住了剪枝。
+   */
+  noPortal: boolean;
 }
 
 /** 一次移动的结果。 */
@@ -147,13 +165,25 @@ export function buildRuleSet(
     hasIce,
     hasPortal,
     plain: false,
+    noPortal: false,
   };
 }
 
-/** 复制一份规则集（可切换纯网格模式）。 */
+/** 复制一份规则集（可切换纯网格模式 / 禁用传送边）。 */
 export function withPlain(rs: RuleSet, plain: boolean): RuleSet {
   if (rs.plain === plain) return rs;
   return { ...rs, plain };
+}
+
+/**
+ * 复制一份规则集，**禁用传送边**（冰块滑行仍然生效）。
+ *
+ * 这是提示求解器要的「中间档」：滑行要遵守（真实玩法如此），
+ * 传送边不要（参考解从不使用它，而它会毁掉剪枝）。
+ */
+export function withNoPortal(rs: RuleSet): RuleSet {
+  if (rs.noPortal) return rs;
+  return { ...rs, noPortal: true };
 }
 
 /** 某个格是否可以进入（不考虑已走状态）。 */
@@ -234,7 +264,8 @@ export function candidateMoves(
   }
   // 传送门额外边：站在传送门上可以传送到搭档
   // 纯网格模式下禁用（保持剪枝有效，且参考解不需要传送）
-  if (!rs.plain && rs.typeOf[cur] === CoverCell.PORTAL) {
+  // `noPortal` 模式同样禁用 —— 保留冰块滑行，但要保住四邻接链的结构。
+  if (!rs.plain && !rs.noPortal && rs.typeOf[cur] === CoverCell.PORTAL) {
     const partner = rs.portalOf[cur];
     if (partner >= 0 && !visited[partner]) {
       out.push(makeMove(rs, -1, [partner], true));
@@ -271,6 +302,98 @@ export function shardAllows(rs: RuleSet, v: number, shardNext: number): boolean 
   if (rs.typeOf[v] !== CoverCell.SHARD) return true;
   // group 为 0 基编号，必须等于下一个待收集的编号
   return rs.groupOf[v] === shardNext;
+}
+
+/**
+ * 回放校验**剩余段**：从线头出发走完 `path`，检查每一步都合法。
+ *
+ * ## 与 `replay` 的区别
+ *
+ * - `replay`：校验**整盘** —— path 必须覆盖全部可走格，长度必须等于 `rs.n`。
+ *   用于生成器校验参考解。
+ * - `replayRemaining`：校验**续段** —— 玩家已经走过一部分（记在 `pre` 里），
+ *   这里只校验「剩下的部分能不能接着走完」。
+ *   用于提示系统：提示给出的是「从线头开始的剩余路线」。
+ *
+ * ## 判定内容
+ *
+ * 1. 路径起点必须就是线头（`path[0] === head`）；
+ * 2. 每一步都必须是**完整规则**下合法的移动（冰块滑行、单向门、
+ *    传送边、钥匙门都按真实玩法走）；
+ * 3. 星星必须按编号顺序收集；
+ * 4. 钉死了终点就必须落在终点；
+ * 5. **剩余格必须被全部覆盖** —— 不能漏格（漏了就是没走完）。
+ *
+ * 第 2 条是提示系统的**正确性关键**：
+ * 求解器可以用「纯网格模式」求解（剪枝永远有效，快），
+ * 但纯网格模式下冰块不会滑行 —— 求出的路径可能在冰块处转弯，
+ * 真实玩法下滑行会冲过头，这条路走不通。
+ * 所以纯网格求出的路径**必须**用本函数在完整规则下复核。
+ *
+ * @param pre 已经走过的格（局部编号集合，非 0 = 障碍）
+ * @param head 当前线头（局部编号）
+ * @param initKeyMask 玩家已持有的钥匙
+ * @param initShardNext 玩家下一个要收集的星星编号
+ */
+export function replayRemaining(
+  rs: RuleSet,
+  path: number[],
+  pre: Uint8Array,
+  head: number,
+  initKeyMask = 0,
+  initShardNext = 0,
+): { ok: boolean; error?: string } {
+  if (path.length === 0) return { ok: false, error: '空路径' };
+  if (path[0] !== head) return { ok: false, error: `路径起点 ${path[0]} != 线头 ${head}` };
+
+  const visited = pre.slice();
+  const state = { keyMask: initKeyMask, shardNext: initShardNext };
+
+  let cur = head;
+  visited[cur] = 1;
+  if (rs.typeOf[cur] === CoverCell.KEY) state.keyMask |= 1 << rs.groupOf[cur];
+  if (rs.typeOf[cur] === CoverCell.SHARD) state.shardNext = rs.groupOf[cur] + 1;
+
+  let p = 1;
+  while (p < path.length) {
+    const moves = candidateMoves(rs, cur, visited, state.keyMask);
+    let matched: Move | null = null;
+    for (const mv of moves) {
+      if (p + mv.consumed.length > path.length) continue;
+      let ok = true;
+      for (let k = 0; k < mv.consumed.length; k++) {
+        if (mv.consumed[k] !== path[p + k]) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) {
+        matched = mv;
+        break;
+      }
+    }
+    if (!matched) {
+      return { ok: false, error: `第 ${p} 步不是合法移动（当前 ${cur}）` };
+    }
+    // 星星顺序
+    for (const c of matched.consumed) {
+      if (rs.typeOf[c] === CoverCell.SHARD && rs.groupOf[c] !== state.shardNext) {
+        return { ok: false, error: `星星顺序错误：期望 ${state.shardNext}，实际 ${rs.groupOf[c]}` };
+      }
+    }
+    applyMove(matched, visited, state);
+    cur = matched.target;
+    p += matched.consumed.length;
+  }
+
+  if (rs.endAt >= 0 && cur !== rs.endAt) {
+    return { ok: false, error: `终点应为 ${rs.endAt}，实际 ${cur}` };
+  }
+  // 覆盖检查：所有「没走过」的格都必须被这段路径覆盖。
+  for (let i = 0; i < rs.n; i++) {
+    if (!visited[i]) return { ok: false, error: `未覆盖格 ${i}` };
+  }
+  return { ok: true };
 }
 
 /**

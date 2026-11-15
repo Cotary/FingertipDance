@@ -36,7 +36,7 @@
  */
 import type { Rng } from '../../rng';
 import { CoverCell } from './types';
-import { applyMove, candidateMoves, shardAllows, withPlain, type RuleSet } from './rules';
+import { applyMove, candidateMoves, shardAllows, withPlain, withNoPortal, type RuleSet } from './rules';
 
 /** 求解结果。 */
 export interface SolveResult {
@@ -107,7 +107,7 @@ export function reachableAll(
   let head = 0;
   let count = 0;
   let total = 0;
-  const portalEdges = !rs.plain && rs.hasPortal;
+  const portalEdges = !rs.plain && !rs.noPortal && rs.hasPortal;
   while (head < q.length) {
     const v = q[head++];
     for (let d = 0; d < 4; d++) {
@@ -156,7 +156,7 @@ export function forcedEndCount(
   const forced = new Set<number>();
   // 传送门搭档格不能算「强制端点」——
   // 它可以通过传送边成为路径的内部点（进 A 出 B 后继续走）。
-  const portalEdges = !rs.plain && rs.hasPortal;
+  const portalEdges = !rs.plain && !rs.noPortal && rs.hasPortal;
   for (let v = 0; v < rs.n; v++) {
     if (visited[v]) continue;
     if (v === excludeLocal) continue;
@@ -337,15 +337,24 @@ function canFinish(st: SearchState, cur: number, endAt: number): boolean {
  * @param initShardNext 起始星星进度（玩家已经过的最大星星编号 + 1）
  * @param preVisited 已经走过的格（局部编号集合）。这些格**不计入覆盖目标**，
  *   但仍然占据棋盘位置（是障碍）。
+ * @param noPortal   禁用传送边（冰块滑行仍然生效）。
+ *   提示求解用这个模式 —— 见 `RuleSet.noPortal` 的说明。
  *
- * ## 两种模式的区别
+ * ## 三种模式的区别
  *
  * - `fullRules = false`（默认，生成器用）：全程按四邻接走，
  *   剪枝永远有效。找到的路径在完整规则下依然合法 ——
  *   机制是「加在已验证存在的解上」的，参考解走的就是普通四邻接路径。
- * - `fullRules = true`（提示用）：按真实玩法走 ——
+ * - `fullRules = true`（完整玩法）：按真实玩法走 ——
  *   进冰块会滑行消耗多格，传送门提供额外边。
  *   路径是「格序列」，滑行消耗的格会依次出现在序列里。
+ *
+ *   ⚠️ **传送边会毁掉剪枝**：跳跃跳过中间格，黑白交替的前提被破坏，
+ *   搜索空间暴增（9x9 盘上纯网格 77 个节点能找到解，完整规则 30 万个还找不到）。
+ *   所以提示求解**不要**用这个模式。
+ * - `fullRules = true, noPortal = true`（提示求解用这个）：
+ *   保留冰块滑行（真实玩法如此），关掉传送边（参考解从不用它）。
+ *   路径仍是四邻接链 -> 剪枝有效 -> 毫秒级出解。
  */
 export function solve(
   rsIn: RuleSet,
@@ -358,10 +367,12 @@ export function solve(
   initKeyMask = 0,
   initShardNext = 0,
   preVisited?: Uint8Array,
+  noPortal = false,
+  tryReverse = true,
 ): SolveResult {
   // 纯网格模式：剪枝永远有效，且找到的路径在完整规则下依然合法。
   // 完整规则模式：按真实玩法走（滑行 / 传送），路径是「格序列」。
-  const rs = withPlain(rsIn, !fullRules);
+  const rs = noPortal ? withNoPortal(withPlain(rsIn, !fullRules)) : withPlain(rsIn, !fullRules);
   const n = rs.n;
   if (n === 0) return { path: null, expanded: 0, exhausted: false };
   if (n === 1) {
@@ -373,7 +384,10 @@ export function solve(
   //
   // 传送边在用时这条不成立：有搭档的格可以是路径内部点，
   // 所以死端可以超过 2 个。此时交给搜索自己判断。
-  const portalEdges = !rs.plain && rs.hasPortal;
+  //
+  // **冰块滑行不影响这条判断**：滑行消耗的每一格都与前一格四邻接，
+  // 所以路径始终是一条「格级相邻」的链，度=1 的格必然是路径端点。
+  const portalEdges = !rs.plain && !rs.noPortal && rs.hasPortal;
   if (!portalEdges && countDeadEnds(rs) > 2) {
     return { path: null, expanded: 0, exhausted: false };
   }
@@ -438,9 +452,15 @@ export function solve(
       : starts.slice(0, FREE_START_CAP));
 
   // D=2 时两个端点都已钉死：A->B 和 B->A 两种朝向都要试，否则会误杀合法盘面。
+  //
+  // **提示场景可以只试一种朝向**（`tryReverse = false`）：
+  // 提示的线头已经在 `preVisited` 里 —— 它是**障碍**不是目标。
+  // 反向搜索求的是「从终点起步、覆盖除线头外所有格」的路径，
+  // 这条路径**根本不含线头**，对本提示毫无用处，却要烧掉一半预算。
   const orientations: Array<[number, number]> = [];
   if (startAt >= 0 && rs.endAt >= 0 && !fullRules) {
-    orientations.push([startAt, rs.endAt], [rs.endAt, startAt]);
+    orientations.push([startAt, rs.endAt]);
+    if (tryReverse) orientations.push([rs.endAt, startAt]);
   } else {
     for (const s of ordered) orientations.push([s, rs.endAt]);
   }

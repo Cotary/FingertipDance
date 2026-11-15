@@ -118,10 +118,19 @@ export interface Candidate {
  *
  * 尺寸随难度阶梯增长；起终点按「自由 → 钉起点 → 钉两端」递进。
  * `holeRange` 把规模钉在设计区间内（见 WorldParams.holeRange 的说明）。
+ *
+ * ## `diffRange` 怎么定
+ *
+ * 它是**难度目标带**（先验值），编排器按它挑候选。
+ * 现在的值是 **5×6 统一尺寸 + 新难度公式**下的实测分位带（p10~p90），
+ * 与 `pool.ts` 的 `calibrateTargets`（按池子实测分布校准）一致。
+ *
+ * 尺寸配置改了（见 `SIZE_CONFIG`）、难度公式改了（见 `metrics.ts`），
+ * 这张表都要**重新校准** —— 否则编排器会一直够不到目标。
  */
 export const WORLDS: WorldParams[] = [
   {
-    // 世界一 苗圃：5×5，规模 21→25 —— 教学「铺满全盘」
+    // 世界一 苗圃：5×6，规模 26~28 —— 教学「铺满全盘」
     //
     // **尺寸对齐设计文档 §6.3**（世界一 = 5×5）。
     // v3 初版用 4×4 起，但 4×4 的形状空间太小：
@@ -139,50 +148,50 @@ export const WORLDS: WorldParams[] = [
      * 现在这里写的是 v3 公式在 1000 关全量生产下的实测分位带，
      * 与 `pool.ts` 的 `calibrateTargets`（按池子实测分布校准）**一致**。
      */
-    diffRange: [13, 16],
-    // 挖 0~12%：5×5=25 格 → 挖 0~2 格（规模 23~25）
+    diffRange: [11, 15],
+    // 挖 0~12%：5×6=30 格 → 挖 0~2 格（规模 28~30）
     holeRatio: [0, 0.12],
   },
   {
-    // 世界二 石溪：6×6，规模 30→36 —— 引入单向门
+    // 世界二 石溪：6×6，规模 24~28 —— 引入单向门
     from: 13, to: 32, w: 6, h: 6, w2: 6, h2: 6,
     endpoints: 'free', mechs: ['oneway'], families: ['corner', 'notch', 'island', 'domino'], scatterPairs: 1,
-    diffRange: [21, 29],
+    diffRange: [23, 30],
     holeRatio: [0, 0.16],
   },
   {
-    // 世界三 苔原：7×7，规模 39→49 —— 钉起点 + 星星
+    // 世界三 苔原：7×7，规模 24~28 —— 钉起点 + 星星
     from: 33, to: 64, w: 7, h: 7, w2: 7, h2: 7,
     endpoints: 'start', mechs: ['shard'], families: ['domino', 'notch', 'scatter', 'composite'], scatterPairs: 1,
-    diffRange: [30, 44],
+    diffRange: [36, 42],
     holeRatio: [0, 0.20],
   },
   {
-    // 世界四 熔炉：8×8，规模 50→64 —— 钥匙门
+    // 世界四 熔炉：8×8，规模 24~28 —— 钥匙门
     from: 65, to: 152, w: 8, h: 8, w2: 8, h2: 8,
     endpoints: 'start', mechs: ['keygate'], families: ['domino', 'notch', 'scatter', 'island'], scatterPairs: 2,
-    diffRange: [41, 58],
+    diffRange: [44, 50],
     holeRatio: [0, 0.24],
   },
   {
-    // 世界五 深井：8×8→9×9，规模 56→81 —— 钉两端 + 传送门
+    // 世界五 深井：8×8→9×9，规模 24~28 —— 钉两端 + 传送门
     from: 153, to: 404, w: 8, h: 8, w2: 9, h2: 9,
     endpoints: 'both', mechs: ['portal'], families: ['domino', 'scatter', 'notch', 'composite'], scatterPairs: 2,
-    diffRange: [46, 74],
+    diffRange: [54, 59],
     holeRatio: [0, 0.28],
   },
   {
-    // 世界六 云阶：9×9，规模 63→81 —— 隘口 + 诱饵
+    // 世界六 云阶：9×9，规模 22~28 —— 隘口 + 诱饵
     from: 405, to: 704, w: 9, h: 9, w2: 9, h2: 9,
     endpoints: 'both', mechs: ['oneway', 'shard'], families: ['scatter', 'composite', 'domino'], scatterPairs: 3,
-    diffRange: [54, 78],
+    diffRange: [68, 75],
     holeRatio: [0, 0.30],
   },
   {
-    // 世界七 星穹：10×10→11×11，规模 82→121 —— 冰块
+    // 世界七 星穹：10×10→11×11，规模 22~28 —— 冰块
     from: 705, to: 1000, w: 10, h: 10, w2: 11, h2: 11,
     endpoints: 'both', mechs: ['oneway', 'shard', 'ice'], families: ['composite', 'domino'], scatterPairs: 3,
-    diffRange: [68, 100],
+    diffRange: [79, 87],
     holeRatio: [0, 0.30],
   },
 ];
@@ -258,15 +267,143 @@ function previousWorld(wp: WorldParams): WorldParams | null {
   return i > 0 ? WORLDS[i - 1] : null;
 }
 
-/** 关号对应的棋盘尺寸。 */
+/**
+ * **棋盘尺寸总配置** —— 调「关卡太大 / 太难」时的**唯一旋钮**。
+ *
+ * ## 为什么要做成配置而不是改 `WORLDS`
+ *
+ * `WORLDS` 里的 `w/h/w2/h2` 是**阶梯**（世界一 5×5 → 世界七 11×11）。
+ * 用户反馈「太难了」时，常见诉求是「盘面小一点」。
+ * 如果直接改 `WORLDS`，就得改 7 个世界 × 4 个数字 = 28 处，
+ * 而且无法在不改代码的前提下做 A/B 对比。
+ *
+ * ## 两个旋钮
+ *
+ * - `uniform`：**所有关卡都用这个尺寸**（忽略阶梯）。
+ *   「先统一用 5×6 试试」这种诉求就设它。
+ * - `cap`：把阶梯整体**钳到不超过**这个尺寸。
+ *   「前面几关小一点、后面还是长大」这种诉求就设它。
+ *
+ * `uniform` 优先于 `cap`。
+ *
+ * ## 改了之后要做什么
+ *
+ * **必须重新生成关卡表** —— 尺寸写在每关的 `grid` 里：
+ *
+ * ```
+ * npm run cover:gen        # 重新产出 data/levels-v3{,-client}.json
+ * npm run cover:audit      # 独立审计落盘的表
+ * ```
+ *
+ * 服务端那份（`server/internal/games/line/levels-v3.json`）也要同步。
+ */
+export interface SizeConfig {
+  /**
+   * **统一尺寸**：所有关卡都用这个尺寸（忽略世界阶梯）。
+   *
+   * `null` = 关闭（按世界阶梯走）。
+   */
+  uniform: { w: number; h: number } | null;
+  /**
+   * **尺寸上限**：把阶梯结果钳到不超过这个尺寸。
+   *
+   * `null` = 不限。
+   * 注意它只**缩小**不放大 —— 阶梯本来就是单调增长的。
+   */
+  cap: { w: number; h: number } | null;
+}
+
+/**
+ * 当前的尺寸配置。
+ *
+ * ## 当前值：全表统一 5×6
+ *
+ * 用户反馈「太难了」→ 先把整表尺寸压到 5×6（30 格）试水。
+ * 相比世界七原来的 11×11（121 格），规模降到 **1/4**。
+ *
+ * **改回阶梯**：把 `uniform` 设为 `null`、`cap` 设为 `null` 即可。
+ */
+export const SIZE_CONFIG: SizeConfig = {
+  uniform: { w: 5, h: 6 },
+  cap: null,
+};
+
+/**
+ * 关号对应的棋盘尺寸。
+ *
+ * 优先级：`SIZE_CONFIG.uniform` > `SIZE_CONFIG.cap` > 世界阶梯。
+ *
+ * ## 尺寸变了，洞预算会跟着变
+ *
+ * `holeBudgetOf` 用 `sizeOf` 的结果乘以世界声明的 `holeRatio`（比例），
+ * 所以尺寸一小，洞的**绝对数**自动变小 —— 规模曲线不会失衡。
+ */
 export function sizeOf(idx: number): { w: number; h: number } {
+  // ① 统一尺寸：直接返回，忽略阶梯。
+  if (SIZE_CONFIG.uniform) {
+    return { w: SIZE_CONFIG.uniform.w, h: SIZE_CONFIG.uniform.h };
+  }
+
   const wp = worldOf(idx);
   const span = wp.to - wp.from;
   const t = span <= 0 ? 0 : (idx - wp.from) / span;
-  return {
-    w: Math.round(wp.w + (wp.w2 - wp.w) * t),
-    h: Math.round(wp.h + (wp.h2 - wp.h) * t),
-  };
+  let w = Math.round(wp.w + (wp.w2 - wp.w) * t);
+  let h = Math.round(wp.h + (wp.h2 - wp.h) * t);
+
+  // ② 尺寸上限：钳住。
+  if (SIZE_CONFIG.cap) {
+    w = Math.min(w, SIZE_CONFIG.cap.w);
+    h = Math.min(h, SIZE_CONFIG.cap.h);
+  }
+  return { w, h };
+}
+
+/**
+ * **世界项**：难度阶梯的位置（0 = 第一世界，1 = 最后世界）。
+ *
+ * 按世界序号线性铺开，让「世界一到世界七」在难度分上是一条直线。
+ * 世界内部再由结构项做细分。
+ */
+export function worldTermOf(idx: number): number {
+  const i = WORLDS.findIndex((wp) => idx >= wp.from && idx <= wp.to);
+  if (i < 0) return 0;
+  if (WORLDS.length <= 1) return 0;
+  return i / (WORLDS.length - 1);
+}
+
+/**
+ * 规模归一区间（供难度分使用）。
+ *
+ * ## 为什么必须动态
+ *
+ * `computeDiff` 的规模项是难度的主驱动（见 `metrics.ts`）。
+ * 它需要知道「当前尺寸配置下，盘面最小多大、最大多大」。
+ *
+ * 尺寸统一成 5×6（30 格）之后，如果还用写死的 10~121，
+ * 所有关卡的规模项都挤在 0.16 附近 → **难度分全表塌成一个值**。
+ *
+ * 所以这里按当前配置算出真实的区间：
+ * - `uniform` 模式：上下界相同 → 规模项恒为 1，
+ *   难度完全由结构项与世界项决定 ——
+ *   这正是「统一尺寸后靠结构拉难度」想要的效果。
+ * - 阶梯模式：取阶梯的最小 / 最大尺寸。
+ */
+export function sizeRange(): { floor: number; ceil: number } {
+  if (SIZE_CONFIG.uniform) {
+    const area = SIZE_CONFIG.uniform.w * SIZE_CONFIG.uniform.h;
+    return { floor: area, ceil: area };
+  }
+  let minW = Infinity;
+  let minH = Infinity;
+  let maxW = 0;
+  let maxH = 0;
+  for (const wp of WORLDS) {
+    minW = Math.min(minW, wp.w, wp.w2);
+    minH = Math.min(minH, wp.h, wp.h2);
+    maxW = Math.max(maxW, wp.w, wp.w2);
+    maxH = Math.max(maxH, wp.h, wp.h2);
+  }
+  return { floor: minW * minH, ceil: maxW * maxH };
 }
 
 /** 端点模式 → D 值。 */
@@ -666,7 +803,7 @@ function injectMechanics(
 /**
  * 棋盘指纹：形状（'#' 可走 / 'O' 石头 / '.' 缺口）+ 机制掩码。
  */
-function fingerprintOf(grid: Uint8Array, w: number, h: number): string {
+export function fingerprintOf(grid: Uint8Array, w: number, h: number): string {
   let s = '';
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -966,9 +1103,15 @@ export function generateCandidate(
     path,
   );
   metrics.solutionCount = est.count;
+  const range = sizeRange();
   const ctx: DiffContext = {
     mechTerm: mechTermOf(wp.mechs, cells.length),
     baitTerm: Math.min(1, metrics.maxBaitDepth / 6),
+    // 规模归一区间跟着当前尺寸配置走 —— 见 `sizeRange` 的说明。
+    sizeFloor: range.floor,
+    sizeCeil: range.ceil,
+    // 世界项：难度阶梯的位置。见 `DiffContext.worldTerm` 的说明。
+    worldTerm: worldTermOf(idx),
   };
   const diff = computeDiff(metrics, ctx);
 
