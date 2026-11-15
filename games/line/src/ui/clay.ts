@@ -3,7 +3,7 @@
  *
  * 与旧的 `draw.ts` 的**根本区别**（这是黏土 vs 塑料的分水岭）：
  *
- * | | draw.ts（糖果夜空） | clay.ts（黏土工坊） |
+ * | | draw.ts（糖果夜空） | clay.ts |
  * |---|---|---|
  * | 轮廓 | 完美圆 / 精确圆角矩形 | 半径带固定 seed 抖动的手捏轮廓 |
  * | 体积 | 沿法线的平滑渐变 | **2~3 个同心不规则色块叠成硬边色阶** |
@@ -16,6 +16,21 @@
  * 3. 高光不许锐利 —— 只能是柔光斑，禁止出现高光条
  *
  * 所有形状都是"确定性不规则"：同一 seed 每帧得到同一轮廓，不会抖动闪烁。
+ *
+ * ## 色彩语义（2026-11-15 起 = 秘色·天青）
+ *
+ * 形体引擎保留，色板从暖陶土（黏土工坊）迁到墨石展柜：页面底是墨石暗面，
+ * 卡片是深青石，主按钮是暗鎏金（配白字），成功是玉青，警示是朱砂。
+ * 键名沿用，语义已换：
+ *
+ * | 键 | 旧义 | 新义 |
+ * |---|---|---|
+ * | terracotta | 陶土橙 CTA | 暗鎏金 CTA（配白字） |
+ * | mint | 薄荷成功 | 玉青 |
+ * | mustard | 芥末高亮 | 亮金（星 / 当前关，配深字） |
+ * | blue | 黏土蓝板 | 墨青面板 |
+ * | cream | 奶油卡片 | 深青石卡片（配纸白字） |
+ * | rose | 玫瑰危险 | 朱砂 |
  */
 
 import { DESIGN_W, DESIGN_H } from '../render/layout';
@@ -40,54 +55,55 @@ export interface ClayColor {
  * 少了 `dark` 就没有体积，少了 `light` 就是一块死色。
  */
 export const CLAY = {
-  terracotta: { base: '#E07A4F', light: '#F2A882', dark: '#B4552F', shade: '#8A3D1E' },
-  mint: { base: '#7FBFA0', light: '#A9D9C1', dark: '#55917A', shade: '#386B57' },
+  terracotta: { base: '#8A6B3C', light: '#B89045', dark: '#5C4620', shade: '#3A2B12' },
+  mint: { base: '#6E9E82', light: '#A8C8B2', dark: '#4A7260', shade: '#2D5245' },
   mustard: { base: '#E0B33C', light: '#F4D278', dark: '#AE861F', shade: '#7F5F12' },
-  blue: { base: '#6C8AA6', light: '#9AB2C8', dark: '#4A637A', shade: '#33485B' },
-  cream: { base: '#F7EADA', light: '#FFFBF3', dark: '#DCC6AC', shade: '#B49A7C' },
-  rose: { base: '#D96A6A', light: '#F09E9E', dark: '#A74444', shade: '#7C2C2C' },
+  blue: { base: '#2D473C', light: '#4A6B5C', dark: '#1D332A', shade: '#0E1713' },
+  cream: { base: '#1E3229', light: '#2A4238', dark: '#16241D', shade: '#0C1310' },
+  rose: { base: '#C04B33', light: '#D9705A', dark: '#8E3424', shade: '#5E2014' },
   /**
    * 棋盘底板。
    * 砖块是「压进板子的凹坑」，板子必须比砖**亮一档** ——
    * 板子一深，砖就成了浮在板上的小方块，整块棋盘读作「一堆骰子」。
    */
-  board: { base: '#8CA6BA', light: '#B4C9D9', dark: '#6B8799', shade: '#4F6776' },
+  board: { base: '#44594D', light: '#5E7A6B', dark: '#2F4038', shade: '#22302A' },
   /** 比底板再深一号：阻挡块用 */
-  boardDark: { base: '#44596A', light: '#5E7A8C', dark: '#2F404E', shade: '#22303A' },
-  /** 星球表面的大陆（低饱和绿，压在蓝球上不刺眼） */
-  land: { base: '#A6CBAF', light: '#D4E8D8', dark: '#779E86', shade: '#52795C' },
+  boardDark: { base: '#2A3830', light: '#3E4F44', dark: '#1C2822', shade: '#121A16' },
+  /** 星球表面的大陆（低饱和玉青，压在墨青球上不刺眼） */
+  land: { base: '#779E86', light: '#A6CBAF', dark: '#52795C', shade: '#38543F' },
   /** 面板上的一块浅沙色内凹块（数据胶囊用） */
   sand: { base: '#E7D0B4', light: '#F5E3CB', dark: '#C9AE8E', shade: '#A88C6C' },
   /** 锁住的节点：比球体更深，才能从球上「浮」出来 */
-  lockTile: { base: '#3C5163', light: '#54708A', dark: '#28394A', shade: '#1C2833' },
+  lockTile: { base: '#2D3E36', light: '#44594D', dark: '#1C2822', shade: '#121A16' },
   /** 衬纸白：贴在深色件上的留白边（起终点圆片的衬圈） */
   paper: { base: '#FFFBF3', light: '#FFFFFF', dark: '#E6D8C6', shade: '#C2B09A' },
-  /** 凹槽：进度条的槽、任何要「挖进底面」的长条。比沙色深两档，浅底上才读得出 */
-  groove: { base: '#8E7053', light: '#A98B6C', dark: '#6E543B', shade: '#553F2A' },
+  /** 凹槽：进度条的槽、任何要「挖进底面」的长条 */
+  groove: { base: '#3E4F44', light: '#55685C', dark: '#2A3830', shade: '#1A2420' },
   /**
-   * 陈列台：一块烧过的深陶板。
-   * 彩色皮肤压在浅底上会互相打架，深陶底才托得住 —— 但必须偏**暖**，
-   * 用蓝灰（boardDark）会和皮肤的冷色撞成一片脏。
+   * 陈列台：墨石暗面。主题预览压在上面——
+   * 深石底托得住任何色相，且和「展柜」的隐喻同源。
    */
-  stage: { base: '#5A4436', light: '#7A5F4C', dark: '#3D2C21', shade: '#281C14' },
+  stage: { base: '#1D332A', light: '#2D473C', dark: '#132018', shade: '#0A120D' },
 } as const satisfies Record<string, ClayColor>;
 
 export type ClayKey = keyof typeof CLAY;
 
-/** 黏土工坊的界面色（浅底 + 深可可墨）。 */
+/** 天青界面色（墨石暗底 + 纸白字）。 */
 export const CLAY_UI = {
-  /** 页面底：暖陶土 */
-  bg: '#E3C9AE',
-  bgTop: '#EFDCC8',
-  bgBottom: '#CFAF92',
-  /** 陶土板（棋盘、面板） */
-  board: '#5E7A8C',
-  boardDark: '#44596A',
-  /** 文字 */
-  ink: '#4A3327',
-  inkSoft: '#8A6F58',
+  /** 页面底：墨石 */
+  bg: '#0C1310',
+  bgTop: '#14211B',
+  bgBottom: '#060A08',
+  /** 石板（棋盘、面板） */
+  board: '#2D473C',
+  boardDark: '#1D332A',
+  /** 文字（纸白） */
+  ink: '#EDE7DA',
+  inkSoft: '#A39B86',
+  /** 浅底上的深字（沙色胶囊 / 亮陶片上的文字，不许用 ink） */
+  inkOnLight: '#3A2E20',
   /** 反白字（深色底上） */
-  onDark: '#FFF6E9',
+  onDark: '#EDE7DA',
 } as const;
 
 export const CLAY_FONT = '"PingFang SC", "Microsoft YaHei", system-ui, sans-serif';

@@ -1,88 +1,175 @@
 /**
- * 关卡地图页 —— 一条通往星穹的古道（几何 / 状态 / 命中）。
+ * 关卡地图页 —— 一扇望向无尽山径的窗（几何 / 状态 / 命中）。
  *
- * ## 这一版换的不是装饰，是空间
+ * ## 这一版的坐标是「翻过来」的
  *
- * 上一版是「平铺的山道」：节点等大、路面等宽、世界门是一块横跨屏幕的牌子。
- * 它的问题不是颜色，是**没有纵深**——一屏十四个一样大的圆点，
- * 读起来像贴在墙上的清单，不像一条要走的路。
+ * 设计稿里 040 在画面底部、055 在顶部：**往上是未来，往下是来路**。
+ * 而关号越大，世界坐标 y 越大（沿路往下长）。所以屏幕 y 要翻一次：
  *
- * 新版按「站在路上往前看」组织：
+ *     screenY = FLIP_BASE − contentY + scrollY
  *
- * - **远小近大**：`depthScale(y)` 让位于视野上方的节点缩到 0.72、下方放到 1.05，
- *   路面同步从 28px 宽收到 80px。透视是唯一让人相信「前面还有路」的线索。
- * - **天空有层**：星点按 0.15 的视差走、星云几乎不动、行星固定在远处。
- *   滚动时三层速度不同，2D 画面就有了相机在动的错觉。
- * - **路是一条带**：不再是 `lineWidth` 描边，而是沿 Catmull-Rom 采样后
- *   左右各偏移半个路宽拼出的多边形，透视收窄会真的发生在几何上。
- * - **未解锁是暗星，不是坑**：深色球体 + 一圈冷光边，读作「还没点亮」。
- *   凹坑是黏土桌面的语言，放到星空里会变成一个黑洞。
+ * `FLIP_BASE = ROUTE_TOP + VIEW_BOTTOM`，正好是「屏幕中心 ↔ 内容不变」的
+ * 对称轴。翻完之后滚动方向也跟着反：手指往下拉 = 看上面的路（后面的关）。
  *
- * 配色按**当前棋盘主题**取（`render/mapstyle.ts`）：九套主题九片夜空，
- * 但共用同一套构图。
+ * 好处是滚动、命中、导轨三处的公式都不用改结构：
+ * - `scrollToLevel(L) = nodeY(L) − 中心`，和翻之前一模一样；
+ * - 可视内容区间仍是 `[scrollY + ROUTE_TOP, scrollY + VIEW_BOTTOM]`；
+ * - 只有「某个内容点画在屏幕哪」这一处需要翻（`screenYOf`）。
+ *
+ * ## 场景是卡，不是全屏
+ *
+ * 定稿把地图收进一张 662×972 的圆角卡：卡外是标题与脚卡，卡内是这一段山径，
+ * 卡的上缘与下缘各有一层雾 —— 雾外还有路，但看不见（那就是「无尽」）。
  *
  * ## 几何的两条硬约束（测试锁着）
  *
- * 1. 节点必须落在 `[40, 656]` 里 —— 右边 656 之后是导轨的手势区（见 `RAIL`）。
- * 2. 世界门必须夹在两个节点**中间**，不能和任何节点重叠（见 `test/mapview.test.ts`）。
+ * 1. 节点必须落在 `[40, RAIL.hitLeft − r]` 里 —— 右边是导轨的手势区。
+ * 2. `nodeY` 严格单调 —— `visibleRange` 的二分依赖它。
  *
  * 绘制在 `ui/mapdraw.ts`。这里只留「路在哪、点得中哪」。
  */
-import { DESIGN_W, DESIGN_H } from '../render/layout';
+import { DESIGN_W } from '../render/layout';
 import { SKINS } from '../render/skins';
 import { DEBUG_ENABLED } from '../core/debug';
 
 // ────────────────────────────── 尺寸 ──────────────────────────────
 
-/** 相邻两关的垂直间距。8 关左右填满一屏 —— 看细节，不是看清单。 */
-export const NODE_STEP = 116;
+/** 相邻两关的垂直间距（设计稿 31 CSS → 62）：一屏 15 关左右。 */
+export const NODE_STEP = 62;
 
 /**
- * 世界门独占的额外高度。门夹在两关之间，不占任何一关的位置。
+ * 第一关节点的内容 y。
  *
- * 140 而不是 96：门高 84，两关间距 = 116 + GATE_H ± 20（y 有 ±10 的呼吸）。
- * 96 时门顶正好压在**世界末关的星星**上（星星画在节点下方 r + 18 + 10 处），
- * 世界末关刚好插着旗、带着星，是这张图上最需要看清的一格。
+ * 420 是「第 1 关恰好落在雾气上沿之上」的位置：scrollY=0 时
+ * 它的屏幕 y = FLIP_BASE − 420 = 756，珠下的关号 818 也还在雾外。
+ * 再小（比如 240）第 1 关会被压进底部的雾里，新玩家第一眼看不到自己。
  */
-const GATE_H = 140;
+export const FIRST_NODE_Y = 420;
 
-/** 第一关节点的中心 y（顶部遮罩 204 以下留一点呼吸）。 */
-export const FIRST_NODE_Y = 246;
+/**
+ * 地图场景卡（设计稿 02 屏：22..353 × 87..657 CSS → 44..706 × 102..1074）。
+ *
+ * 卡片高度比设计稿矮（972 而不是 1140）：750×1334 的屏比 375×812 矮 145 CSS，
+ * 如果把卡做成 1140，标题与脚卡就没地方站了。卡占「标题之外的全部」，
+ * 这个比例（972/1334 ≈ 73%）和设计稿（570/776 ≈ 73%）是一致的。
+ */
+export const SCENE = { x: 44, y: 102, w: DESIGN_W - 88, h: 972, r: 40 } as const;
 
-/** 可视区顶部（遮罩下沿）。 */
-export const ROUTE_TOP = 200;
+/** 可视区顶部 = 卡片上沿。 */
+export const ROUTE_TOP = SCENE.y;
 
-/** 可视区底部。下面 196px 留给吸底的「继续」按钮和导航栏。 */
-export const VIEW_BOTTOM = DESIGN_H - 196;
+/** 可视区底部 = 卡片下沿。 */
+export const VIEW_BOTTOM = SCENE.y + SCENE.h;
+
+/** 屏幕 y 的翻转基准（对称轴）。 */
+export const FLIP_BASE = ROUTE_TOP + VIEW_BOTTOM;
+
+/**
+ * 内容 y → 屏幕 y（已减滚动）。
+ *
+ * 关卡越大越靠上：往上是没走完的路，往下是走过的路。
+ */
+export function screenYOf(contentY: number, scrollY: number): number {
+  return FLIP_BASE - contentY + scrollY;
+}
 
 /** 山道的中轴（0..706 的中点，右边 44px 是导轨）。 */
 export const CENTER_X = 353;
 
-/** 蜿蜒振幅。353 ± (198 + 20) = [135, 571]，加减最大节点半径 46 仍在 [89, 617] 内。 */
-const WAVE_AMP = 198;
+/**
+ * ── 山径的两层：一条走势腿 + 一层摆动 ──
+ *
+ * 定稿 02 屏实测（16 关，x 从 52 走到 272 CSS）：**整体向右上方走**，
+ * 沿途只是 ±35 CSS 的小幅摆动（周期约 7 关）。也就是说——
+ *
+ *   走势（低频、大振幅）负责「这一段山往右上」，
+ *   摆动（高频、小振幅）负责「路是人踩出来的，不是尺子画的」。
+ *
+ * 旧实现把两件事压成一层正弦：振幅 198、周期 6.6 关。结果是
+ * **一屏（15 关）横着扫两个来回**，读起来是弹簧或者折线，不是山路，
+ * 而且每个来回的中段是等斜率直线 —— 就是「圆与圆几乎直线相连」的来源。
+ *
+ * 现在拆成两层：
+ *
+ * - **走势**是「三角波 + 滑动平均」：一条上升腿（往右上）接一条折返腿
+ *   （往左上），转弯处用 1.8 关的滑动平均磨圆。三角波保证中段是真的在斜行
+ *   （斜率恒定、不磨蹭）；滑动平均只在拐角处生效，把尖角变成半径 ~110px 的弯。
+ *
+ *   为什么不用正弦或 `smoothstep`：两者在波峰附近斜率都趋近 0，于是路径会
+ *   **贴着头顶竖着走四五个节点**（两颗粒子上下叠着），比直线更难看。
+ *   三角波的斜率是常数，节点永远在往前走。
+ *
+ * - **摆动**是设计稿那条 ±26 的小波（周期 6.8 关），让每一段斜线都有起伏。
+ */
+const DRIFT_AMP = 230;
 
-/** 每个节点推进的相位。2π/0.72 ≈ 8.7 关一个来回 —— 长周期才像山路，短周期像弹簧。 */
-const WAVE_K = 0.95;
+/**
+ * 上升腿与折返腿跨越的关数。一个周期 28 关 ≈ 1.8 屏：
+ * **一屏里最多见一个回头弯**（旧版是两个半来回）。
+ */
+const LEG_UP = 16;
+const LEG_DOWN = 12;
 
-/** 右侧导轨。 */
+/** 拐角圆化窗口（关）。1.8 关 ≈ 110px 半径 —— 再大就开始吃掉直线段了。 */
+const DRIFT_SMOOTH = 1.8;
+
+/** 相位：整体平移到「第 1 关在左下、正往右上走」的位置。 */
+const DRIFT_PHASE = 0;
+
+/** 摆动振幅：设计稿 ±35 CSS → 70 设备像素；这里 26，叠上走势后每屏横跨约 430。 */
+const WOB_AMP = 26;
+
+/** 摆动周期 ≈ 6.8 关（设计稿 7 关），与走势周期（28）不整除。 */
+const WOB_K = 0.92;
+
+/** 摆动的相位与第二谐波：让「同一段斜坡」也有起伏，不是纯正弦。 */
+const WOB_PHI = 0.4;
+const WOB2_AMP = 5;
+const WOB2_K = 2.31;
+const WOB2_PHI = 1.1;
+
+/** 未圆化的走势：三角波，一个周期里先爬 16 关再折回 12 关。 */
+function triDrift(i: number): number {
+  const cycle = LEG_UP + LEG_DOWN;
+  const u = (((i + DRIFT_PHASE) % cycle) + cycle) % cycle;
+  if (u < LEG_UP) return -DRIFT_AMP + (2 * DRIFT_AMP * u) / LEG_UP;
+  return DRIFT_AMP - (2 * DRIFT_AMP * (u - LEG_UP)) / LEG_DOWN;
+}
+
+/**
+ * 走势腿的横向偏移（相对 `CENTER_X`）。
+ *
+ * = 三角波在 ±`DRIFT_SMOOTH`/2 范围内的 7 点平均。直线段原样通过，
+ * 只有拐角被磨圆 —— 这正是盘山路的形状：长直坡 + 一个抱过来的回头弯。
+ */
+function driftOf(i: number): number {
+  const N = 7;
+  let sum = 0;
+  for (let k = 0; k < N; k++) sum += triDrift(i + (k / (N - 1) - 0.5) * DRIFT_SMOOTH);
+  return sum / N;
+}
+
+/**
+ * 右侧导轨。
+ *
+ * 定稿没有导轨，但 1000 关靠手指滑是滑不到第 700 关的 —— 这是真实功能，
+ * 保留，做成「几乎看不见的一根线 + 一颗小金珠」，压在卡片右缘内 24px。
+ *
+ * **方向跟着地图翻**：珠子在上 = 走得远（∞），在下 = 第 1 关。
+ * 导轨若还是「上 = 内容开头」，手指往上推却看到关号变小，会立刻拧巴。
+ */
 export const RAIL = {
-  /**
-   * 手势区左边界（这个 x 以右都算导轨）。
-   *
-   * 节点最右到 617（`CENTER_X + WAVE_AMP + 副波 + 半径`），656 留了近 40px
-   * 余量：再往左就开始吃掉节点边缘的点击，再往右（比如 686）在 375 宽的手机上
-   * 只剩 24px，拇指按不准。
-   */
+  /** 手势区左边界（这个 x 以右都算导轨）。 */
   hitLeft: 656,
-  /** 轨道中心 x */
-  center: DESIGN_W - 28,
+  /** 轨道中心 x：卡片右缘 706 内收 24 */
+  center: SCENE.x + SCENE.w - 24,
   /** 轨道宽度 */
-  width: 7,
-  /** 轨道上下端 */
-  top: 214,
-  bottom: VIEW_BOTTOM - 8,
+  width: 6,
+  /** 轨道上下端（卡片内收 48） */
+  top: SCENE.y + 48,
+  bottom: SCENE.y + SCENE.h - 48,
   /** 滑块最小高度：太短就抓不住 */
-  thumbMinH: 64,
+  thumbMinH: 56,
 } as const;
 
 // ────────────────────────────── 世界 ──────────────────────────────
@@ -186,35 +273,29 @@ export interface MapViewState {
   debugUnlockAll: boolean;
 }
 
-/** 到指定关号为止，前面插了几道门。 */
-function gatesBefore(idx: number): number {
-  let n = 0;
-  for (let i = 1; i < WORLDS.length; i++) if (WORLDS[i].from <= idx) n++;
-  return n;
-}
-
 /**
- * 第 idx 关节点的中心 y（世界坐标，未减 scrollY）。
- * 关号 1-based。严格单调递增 —— `visibleRange` 靠这条做二分。
+ * 第 idx 关节点的内容 y（未减 scrollY、未翻转）。关号 1-based。
+ * 严格单调递增 —— `visibleRange` 靠这条做二分。
  */
 export function nodeY(idx: number): number {
   const i = idx - 1;
-  // 行距也留一点呼吸（±10）。等距会让「每一关都一样重」，
-  // 而不等距读起来像人一步步走出来的。下界 96 仍然远大于两个节点的半径和。
-  return FIRST_NODE_Y + i * NODE_STEP + Math.sin(i * 1.73) * 10 + gatesBefore(idx) * GATE_H;
+  // 行距也留一点呼吸（±10 → 间距 52..72）：等距会让「每一关都一样重」，
+  // 而不等距读起来像人一步步走出来的。设计稿实测间距就是 24..40 CSS。
+  return FIRST_NODE_Y + i * NODE_STEP + Math.sin(i * 1.73) * 10;
 }
 
 /**
  * 第 idx 关节点的中心 x。
  *
- * 主波是长周期正弦（山路），再叠一条几乎看不出来的高频小波：
- * 纯正弦的两个波峰波谷之间是等距的，加一点不规则才不像函数图像。
+ * 走势腿（往右上慢慢爬、偶尔绕一个回头弯）+ 摆动（踩出来的起伏）。
+ * 两层周期不整除，所以「每个弯长得不一样」，但整体方向始终是往上偏右。
  */
 export function nodeX(idx: number): number {
   const i = idx - 1;
-  // 主波决定走哪边，副波（20px、频率和主波不整除）负责「同一条斜坡上也有起伏」：
-  // 只有主波时，两个拐点之间的距离是一段**笔直**的斜线，一眼就是正弦函数图像。
-  return CENTER_X + Math.sin(i * WAVE_K) * WAVE_AMP + Math.sin(i * 2.41 + 0.7) * 20;
+  return CENTER_X
+    + driftOf(i)
+    + Math.sin(i * WOB_K + WOB_PHI) * WOB_AMP
+    + Math.sin(i * WOB2_K + WOB2_PHI) * WOB2_AMP;
 }
 
 /** 节点坐标。关号 1-based。 */
@@ -223,51 +304,21 @@ export function mapNodePos(idx: number): { x: number; y: number } {
 }
 
 /**
- * 透视缩放：视野上方（远）小，下方（近）大。
+ * 某关节点的视觉半径（设计稿实测 ×2）。
  *
- * 这是「3D 倾向」的全部秘密 —— 不改任何世界坐标，只改**画多大**。
- * 命中判断也用它，所以视觉大小和可点区域永远一致（不会出现
- * 「看着是个小星，点半天点不中」）。
- *
- * 指数 0.8 而不是线性：线性会让中段的路突然变宽，像折了一刀；
- * 0.8 的曲线在视野中部更平缓，符合「近处变化快、远处变化慢」的透视直觉。
- *
- * @param screenY 屏幕坐标 y（已减 scrollY）
+ * 定稿是**平的**：不再做「远小近大」。纸雕等高线的场景里没有灭点，
+ * 节点一旦随位置缩放，就看不出哪颗是「现在」——四态靠形状与颜色区分。
  */
-export function depthScale(screenY: number): number {
-  const t = clamp((screenY - ROUTE_TOP) / (VIEW_BOTTOM - ROUTE_TOP), 0, 1);
-  return 0.72 + 0.33 * Math.pow(t, 0.8);
-}
-
-/** 路面半宽（设计像素）。远处 14、近处 40 —— 一条真的会收窄的带子。 */
-export function roadHalfWidth(screenY: number): number {
-  const t = clamp((screenY - ROUTE_TOP) / (VIEW_BOTTOM - ROUTE_TOP), 0, 1);
-  return 11 + 16 * Math.pow(t, 0.9);
-}
-
-/** 某关节点的视觉半径（未解锁 / 已通关 / 当前关三态 + 透视）。 */
-export function nodeRadius(idx: number, screenY: number, st: MapViewState): number {
-  const milestone = WORLD_ENDS.includes(idx);
-  const base = idx === st.currentLevel ? 46 : idx < st.currentLevel ? (milestone ? 44 : 39) : 32;
-  return base * depthScale(screenY);
-}
-
-/** 第 gi 道门的中心 y。正好落在前后两关中间。导出供测试校验几何。 */
-export function gateCenterY(gi: number): number {
-  const from = WORLDS[gi + 1].from;
-  return (nodeY(from - 1) + nodeY(from)) / 2;
+export function nodeRadius(idx: number, _screenY: number, st: MapViewState): number {
+  if (idx === st.currentLevel) return 26;
+  if (idx > st.currentLevel) return idx % 10 === 0 ? 23 : 19;
+  return 20;
 }
 
 /** 关号所属的世界下标。 */
 export function worldOf(idx: number): number {
   for (let i = WORLDS.length - 1; i >= 0; i--) if (idx >= WORLDS[i].from) return i;
   return 0;
-}
-
-/** 内容总高度（最后一关再往下留一段，让它能滚到屏幕中部）。 */
-function contentBottom(levelCount: number): number {
-  if (levelCount <= 0) return ROUTE_TOP;
-  return nodeY(levelCount) + 120;
 }
 
 /**
@@ -290,7 +341,10 @@ export function createMapState(
     levelCount,
     stars,
     scrollY: 0,
-    maxScrollY: Math.max(0, contentBottom(levelCount) - VIEW_BOTTOM),
+    // 滚到底时最后一关正好落在卡片下沿：max 使 screenY(N) = VIEW_BOTTOM
+    maxScrollY: levelCount > 0
+      ? Math.max(0, nodeY(levelCount) - (FLIP_BASE - VIEW_BOTTOM))
+      : 0,
     toast: '',
     toastAt: 0,
     scrollTarget: null,
@@ -353,13 +407,11 @@ export function pickMapNode(x: number, y: number, st: MapViewState): number {
   const { first, last } = visibleRange(st.scrollY, st.levelCount);
   for (let i = first; i <= last; i++) {
     const p = mapNodePos(i);
-    const cy = p.y - st.scrollY;
+    const cy = screenYOf(p.y, st.scrollY);
     const dx = x - p.x;
     const dy = y - cy;
-    // 半径与视觉一致，再给 6px 宽容：远端的节点只有 26px，
-    // 严格按视觉半径判会让「看着能点」变成「点不中」。
-    // 下限 32 是触控底线，不能为了透视把手感做没了。
-    const r = Math.max(32, nodeRadius(i, cy, st) + 6);
+    // 半径与视觉一致，再给 8px 宽容。下限 34 是触控底线（19 的虚圈只有 38 宽）。
+    const r = Math.max(34, nodeRadius(i, cy, st) + 8);
     if (dx * dx + dy * dy <= r * r) return i;
   }
   return -1;
@@ -430,16 +482,22 @@ export function railGeometry(st: MapViewState): {
   const viewH = VIEW_BOTTOM - ROUTE_TOP;
   const ratio = st.maxScrollY > 0 ? clamp(viewH / st.maxScrollY, 0, 1) : 1;
   const thumbH = Math.max(RAIL.thumbMinH, Math.round(h * ratio));
+  // 上 = 走得远：滚得越深，珠子越靠上（和地图的翻转方向一致）
   const pos = st.maxScrollY > 0 ? clamp(st.scrollY / st.maxScrollY, 0, 1) : 0;
-  return { top, h, thumbH, thumbTop: top + (h - thumbH) * pos };
+  return { top, h, thumbH, thumbTop: top + (h - thumbH) * (1 - pos) };
 }
 
-/** 某一关在导轨上的 y（按内容比例映射）。 */
+/**
+ * 某一关在导轨上的 y —— **与滑块中心严格对齐**。
+ *
+ * 老实现用「内容比例」映射，和滑块的公式差半个滑块高，
+ * 结果「当前关的小点」飘在滑块旁边。这里直接从滑块几何反推，两者永远重合。
+ */
 export function railYOf(level: number, st: MapViewState): number {
   const g = railGeometry(st);
-  const contentH = st.maxScrollY + (VIEW_BOTTOM - ROUTE_TOP);
-  const p = contentH > 0 ? clamp(nodeY(level) / contentH, 0, 1) : 0;
-  return g.top + p * g.h;
+  const scroll = clamp(scrollToLevel(level), 0, st.maxScrollY);
+  const pos = st.maxScrollY > 0 ? scroll / st.maxScrollY : 0;
+  return g.top + (g.h - g.thumbH) * (1 - pos) + g.thumbH / 2;
 }
 
 /** 导轨上的落点 → 滚动偏移。`grab` 是按下点相对滑块顶部的偏移。 */
@@ -447,7 +505,8 @@ export function railScrollAt(y: number, st: MapViewState, grab: number): number 
   const g = railGeometry(st);
   const span = g.h - g.thumbH;
   const rel = span > 0 ? (y - grab - g.top) / span : 0;
-  return clamp(rel, 0, 1) * st.maxScrollY;
+  // 珠子越靠上 = 关号越大 = 滚得越深
+  return clamp(1 - rel, 0, 1) * st.maxScrollY;
 }
 
 /** 导轨命中结果。 */
@@ -480,11 +539,6 @@ export function pickRail(x: number, y: number, st: MapViewState): RailHit | null
   }
   if (Math.abs(y - railYOf(st.currentLevel, st)) <= 22) {
     return { kind: 'current', level: st.currentLevel, grab: 0 };
-  }
-  for (let wi = 1; wi < WORLDS.length; wi++) {
-    if (Math.abs(y - railYOf(WORLDS[wi].from, st)) <= 15) {
-      return { kind: 'world', level: WORLDS[wi].from, grab: 0 };
-    }
   }
   // 空白处按下 = 把滑块中心挪到手指处，然后跟着拖
   return { kind: 'scrub', grab: g.thumbH / 2 };

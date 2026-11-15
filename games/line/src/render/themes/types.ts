@@ -110,6 +110,12 @@ export interface ThemeChrome {
   ink: string;
   /** 弱化正文（读数、计数） */
   inkSoft: string;
+  /**
+   * 微文案（图例名、底注）。比 `inkSoft` 再暗一档 ——
+   * 设计稿这两处用 `--i500` (#7A7468)，和卡片里的读数不是一个亮度层级。
+   * 不填则回落 `inkSoft`。
+   */
+  inkDim?: string;
   /** 进度槽 */
   groove: string;
   /** 进度填充 */

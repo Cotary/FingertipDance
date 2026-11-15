@@ -1,16 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import {
   WORLDS as MAP_WORLDS, createMapState, mapNodePos, visibleRange, pickMapNode, scrollToLevel,
-  worldOf, nodeY, gateCenterY, nodeX, levelNear, stepMapScroll,
+  worldOf, nodeY, nodeX, levelNear, stepMapScroll,
   railGeometry, railScrollAt, railYOf, pickRail, RAIL,
-  ROUTE_TOP, VIEW_BOTTOM, depthScale, roadHalfWidth, nodeRadius,
+  ROUTE_TOP, VIEW_BOTTOM, nodeRadius, screenYOf, FLIP_BASE,
 } from '../src/ui/mapview';
 import { mapPalette } from '../src/render/mapstyle';
 import { THEMES } from '../src/render/themes';
 import { WORLDS as COVER_WORLDS } from '../src/core/cover/v3/generate';
 
-/** 未解锁 / 已通关 / 当前关三种半径里最大的那个（当前关 46）。 */
-const MAX_R = 46;
+/** 四态里最大的视觉半径（当前金珠 26）。 */
+const MAX_R = 26;
 
 describe('关卡地图', () => {
   it('节点不出界（含节点半径与右侧导轨的手势区）', () => {
@@ -28,8 +28,9 @@ describe('关卡地图', () => {
       const a = mapNodePos(i);
       const b = mapNodePos(i + 1);
       const d = Math.hypot(b.x - a.x, b.y - a.y);
-      // 两个 46 的圆贴在一起是 92；小波叠加后最窄处仍有 100 以上
-      expect(d).toBeGreaterThan(2 * MAX_R);
+      // 两枚已过关的盘（r20）贴在一起是 40；行距 ±10 抖动 + 横向摆动后
+      // 最窄处仍在 42 以上 —— 盘面不叠，只让当前关的外晕压一点邻居
+      expect(d).toBeGreaterThan(42);
     }
   });
 
@@ -53,6 +54,37 @@ describe('关卡地图', () => {
     expect(max - min).toBeGreaterThan(150);
   });
 
+  it('一屏（15 关）横向至少走 180：路径不是一根竖线', () => {
+    // 定稿 02 屏一屏走完 440 设备像素；这条守的是「斜着上山」的下限。
+    // 旧版（振幅 198、周期 6.6 关）一屏扫两个来回，跨度虽然够，但方向反了 5 次。
+    for (let s = 1; s + 15 <= 400; s += 2) {
+      let min = Infinity;
+      let max = -Infinity;
+      for (let i = s; i < s + 15; i++) {
+        min = Math.min(min, nodeX(i));
+        max = Math.max(max, nodeX(i));
+      }
+      expect(max - min).toBeGreaterThanOrEqual(180);
+    }
+  });
+
+  it('一屏里最多两次方向反转：不再「一屏绕几个弯」', () => {
+    // 旧实现（正弦 6.6 关一个来回）一屏反 5 次，读起来是弹簧。
+    // 现在是「长腿 + 一次折返」：允许摆动带来的一次小回头，但不许再来第三个。
+    for (let s = 1; s + 15 <= 400; s += 2) {
+      let turns = 0;
+      let last = 0;
+      for (let i = s; i < s + 14; i++) {
+        const dx = nodeX(i + 1) - nodeX(i);
+        if (Math.abs(dx) < 6) continue; // 拐点附近的小抖动不算一次转向
+        const sign = dx > 0 ? 1 : -1;
+        if (last !== 0 && sign !== last) turns++;
+        last = sign;
+      }
+      expect(turns).toBeLessThanOrEqual(2);
+    }
+  });
+
   it('世界边界与 cover 关卡生成器一致', () => {
     // 地图页画的世界门 / 世界名来自 `ui/mapview.ts` 的 WORLDS，
     // 关卡实际的世界划分来自 `core/cover/v3/generate.ts` 的 WORLDS。
@@ -64,21 +96,6 @@ describe('关卡地图', () => {
     }
     expect(MAP_WORLDS[0].from).toBe(1);
     expect(MAP_WORLDS[MAP_WORLDS.length - 1].to).toBe(1000);
-  });
-
-  it('世界门夹在两关中间，不和节点重叠', () => {
-    const GATE_HALF = 42; // 门高 84
-    for (let gi = 0; gi < MAP_WORLDS.length - 1; gi++) {
-      const gy = gateCenterY(gi);
-      const from = MAP_WORLDS[gi + 1].from;
-      const above = nodeY(from - 1);
-      const below = nodeY(from);
-      // 门心必须正好在两关的中点，偏一点就会顶着某一关
-      expect(Math.abs((gy - above) - (below - gy))).toBeLessThan(1);
-      // +74：世界末关下面还有一排星星（r + 18 + 10），门不能压到它
-      expect(gy - GATE_HALF).toBeGreaterThan(above + MAX_R + 28);
-      expect(gy + GATE_HALF).toBeLessThan(below - MAX_R);
-    }
   });
 
   it('关号能映射到所属世界', () => {
@@ -103,26 +120,35 @@ describe('关卡地图', () => {
     expect(r.first).toBeGreaterThanOrEqual(1);
   });
 
-  it('一屏 8~14 关（旧版 15~18 个同款圆点，新版看细节）', () => {
-    const r = visibleRange(0, 1000);
+  it('一屏 14~18 关（设计稿 31 CSS 行距 → 62）', () => {
+    // 第 1 屏的下半张卡是空的（路从下缘起步），所以量中路
+    const r = visibleRange(scrollToLevel(400), 1000);
     const n = r.last - r.first + 1;
-    expect(n).toBeGreaterThanOrEqual(8);
-    expect(n).toBeLessThanOrEqual(14);
+    // 卡高 972 / 行距 62 ≈ 15.7 屏内，`visibleRange` 再各多带一关（曲线切线要用）
+    expect(n).toBeGreaterThanOrEqual(14);
+    expect(n).toBeLessThanOrEqual(20);
   });
 
   it('点击节点能选中关号', () => {
     const st = createMapState(5, 1000, {});
     const p = mapNodePos(3);
-    expect(pickMapNode(p.x, p.y, st)).toBe(3);
+    expect(pickMapNode(p.x, screenYOf(p.y, st.scrollY), st)).toBe(3);
     expect(pickMapNode(5, 5, st)).toBe(-1);
   });
 
-  it('点到两关中间的空地不会误选邻居', () => {
+  it('点到两关之间的空处，只会落到这两关之一', () => {
     const st = createMapState(5, 1000, {});
     const a = mapNodePos(3);
     const b = mapNodePos(4);
-    // 中点到底离两边都有 50 以上
-    expect(pickMapNode((a.x + b.x) / 2, (a.y + b.y) / 2, st)).toBe(-1);
+    const ay = screenYOf(a.y, st.scrollY);
+    const by = screenYOf(b.y, st.scrollY);
+    // 行距 62、触控半径下限 34 —— 相邻两颗的命中圈本来就相交，
+    // 中间那块地不属于「空地」，属于「最近的那一关」。
+    // 这里要守的是：**不能因为指偏而选中更远的关**。
+    const hit = pickMapNode((a.x + b.x) / 2, (ay + by) / 2, st);
+    expect([3, 4]).toContain(hit);
+    // 明显偏到隔壁的世界（离得远）就必须落空
+    expect(pickMapNode(5, 5, st)).toBe(-1);
   });
 
   it('聚焦当前关的滚动偏移会被夹进合法区间', () => {
@@ -135,13 +161,13 @@ describe('关卡地图', () => {
       expect(y).toBeLessThanOrEqual(st.maxScrollY);
     }
     // 中间那些关是真的居中的
-    expect(scrollToLevel(500)).toBe(nodeY(500) - (200 + 1138) / 2);
+    expect(scrollToLevel(500)).toBe(nodeY(500) - (ROUTE_TOP + VIEW_BOTTOM) / 2);
   });
 
   it('levelNear 能反查滚动中部是哪一关', () => {
     const st = createMapState(1, 1000, {});
     st.scrollY = scrollToLevel(512);
-    expect(levelNear(st.scrollY + 669, 1000)).toBe(512);
+    expect(levelNear(st.scrollY + (ROUTE_TOP + VIEW_BOTTOM) / 2, 1000)).toBe(512);
   });
 
   it('currentLevel 语义 = 下一个可玩关（不是最高已通关关号）', () => {
@@ -156,9 +182,9 @@ describe('关卡地图', () => {
   it('地图节点三态：已通关 / 当前 / 未解锁（几何上都能命中，拦截在 main）', () => {
     const st = createMapState(2, 1000, { '1': 3 });
     const p1 = mapNodePos(1);
-    expect(pickMapNode(p1.x, p1.y - st.scrollY, st)).toBe(1);
+    expect(pickMapNode(p1.x, screenYOf(p1.y, st.scrollY), st)).toBe(1);
     const p3 = mapNodePos(3);
-    expect(pickMapNode(p3.x, p3.y - st.scrollY, st)).toBe(3);
+    expect(pickMapNode(p3.x, screenYOf(p3.y, st.scrollY), st)).toBe(3);
   });
 });
 
@@ -203,12 +229,11 @@ describe('右侧导轨', () => {
     }
   });
 
-  it('拖到轨道顶 = 第 1 关，拖到底 = 最后一关', () => {
+  it('拖到轨道顶 = 最后一关，拖到底 = 第 1 关（跟着地图翻转）', () => {
     const st = createMapState(1, 1000, {});
     const g = railGeometry(st);
-    expect(railScrollAt(g.top, st, 0)).toBe(0);
-    const atBottom = railScrollAt(g.top + g.h, st, g.thumbH);
-    expect(atBottom).toBe(st.maxScrollY);
+    expect(railScrollAt(g.top, st, 0)).toBe(st.maxScrollY);
+    expect(railScrollAt(g.top + g.h, st, g.thumbH)).toBe(0);
     // 中间是单调的
     const mid = railScrollAt(g.top + g.h / 2, st, g.thumbH / 2);
     expect(mid).toBeGreaterThan(0);
@@ -234,45 +259,25 @@ describe('右侧导轨', () => {
     expect(pickRail(RAIL.hitLeft - 1, 600, st)).toBeNull();
   });
 
-  it('点滑块返回抓取偏移，点世界刻度返回目标关号', () => {
+  it('点滑块返回抓取偏移，点空白处 = 把滑块挪到指下', () => {
     const st = createMapState(1, 1000, {});
     const g = railGeometry(st);
     const onThumb = pickRail(RAIL.center, g.thumbTop + 10, st);
     expect(onThumb?.kind).toBe('scrub');
     expect(onThumb?.grab).toBe(10);
 
-    // 取远处的世界（第 5 个：第 405 关）—— 近处的刻度会被滑块盖住，
-    // 那种情况按设计就该解析成「拖滑块」（见下一条用例）
-    const worldY = railYOf(MAP_WORLDS[4].from, st);
-    const onWorld = pickRail(RAIL.center, worldY, st);
-    expect(onWorld?.kind).toBe('world');
-    expect(onWorld?.level).toBe(MAP_WORLDS[4].from);
+    // 远离滑块与小点 → 直接进入拖动，抓取偏移取滑块半高
+    const r = pickRail(RAIL.center, g.top + 40, st);
+    expect(r?.kind).toBe('scrub');
+    expect(r?.grab).toBe(g.thumbH / 2);
   });
 
-  it('滑块与刻度重叠时优先拖滑块（否则想拖会弹到别的世界）', () => {
-    const st = createMapState(1, 1000, {});
-    const g = railGeometry(st);
-    // 找一个落在滑块内部的世界刻度
-    const ticks = MAP_WORLDS.slice(1).map((w) => railYOf(w.from, st));
-    const inside = ticks.find((y) => y > g.thumbTop + 2 && y < g.thumbTop + g.thumbH - 2);
-    if (inside !== undefined) {
-      expect(pickRail(RAIL.center, inside, st)?.kind).toBe('scrub');
-    }
-    // 至少保证「滑块自身范围」永远解析成 scrub
-    expect(pickRail(RAIL.center, g.thumbTop + g.thumbH / 2, st)?.kind).toBe('scrub');
-  });
-
-  it('世界刻度都在轨道内，且按关号顺序排列', () => {
-    const st = createMapState(1, 1000, {});
-    const g = railGeometry(st);
-    let prev = -Infinity;
-    for (let wi = 1; wi < MAP_WORLDS.length; wi++) {
-      const y = railYOf(MAP_WORLDS[wi].from, st);
-      expect(y).toBeGreaterThanOrEqual(g.top);
-      expect(y).toBeLessThanOrEqual(g.top + g.h);
-      expect(y).toBeGreaterThan(prev);
-      prev = y;
-    }
+  it('点当前关的小点 = 回到当前（缓动）', () => {
+    const st = createMapState(400, 1000, {});
+    st.scrollY = 0;
+    const hit = pickRail(RAIL.center, railYOf(400, st), st);
+    expect(hit?.kind).toBe('current');
+    expect(hit?.level).toBe(400);
   });
 
   it('当前关的圆点落在滑块里（点它就是在点自己）', () => {
@@ -285,45 +290,44 @@ describe('右侧导轨', () => {
   });
 });
 
-describe('星空古路的透视', () => {
-  it('远小近大：缩放随屏幕 y 单调递增，且夹在 0.72~1.05', () => {
-    expect(depthScale(ROUTE_TOP)).toBeCloseTo(0.72, 2);
-    expect(depthScale(VIEW_BOTTOM)).toBeCloseTo(1.05, 2);
-    let prev = 0;
-    for (let y = ROUTE_TOP; y <= VIEW_BOTTOM; y += 40) {
-      const s = depthScale(y);
-      expect(s).toBeGreaterThanOrEqual(prev);
-      expect(s).toBeGreaterThanOrEqual(0.72);
-      expect(s).toBeLessThanOrEqual(1.05);
-      prev = s;
+describe('翻转坐标（往上走 = 走向 ∞）', () => {
+  it('翻转轴 = 屏幕中心：内容点画在对称位置', () => {
+    const mid = (ROUTE_TOP + VIEW_BOTTOM) / 2;
+    expect(FLIP_BASE).toBe(ROUTE_TOP + VIEW_BOTTOM);
+    expect(screenYOf(mid, 0)).toBe(mid + (FLIP_BASE - ROUTE_TOP - VIEW_BOTTOM));
+    // 内容越小（关号越小）→ 屏幕越靠下
+    expect(screenYOf(200, 0)).toBeGreaterThan(screenYOf(400, 0));
+  });
+
+  it('滚到当前关时，当前关正好落在卡片中线', () => {
+    for (const lv of [1, 5, 400, 1000]) {
+      const st = createMapState(lv, 1000, {});
+      st.scrollY = Math.min(st.maxScrollY, scrollToLevel(lv));
+      const y = screenYOf(nodeY(lv), st.scrollY);
+      // 第 1 关受上边界夹取，不强制居中
+      if (lv > 80) expect(Math.abs(y - (ROUTE_TOP + VIEW_BOTTOM) / 2)).toBeLessThan(1);
+      expect(y).toBeGreaterThanOrEqual(ROUTE_TOP - 1);
+      expect(y).toBeLessThanOrEqual(VIEW_BOTTOM + 1);
     }
-    // 屏幕外的点不能继续放大 / 缩小
-    expect(depthScale(-500)).toBe(0.72);
-    expect(depthScale(4000)).toBe(1.05);
   });
 
-  it('路面近处比远处宽，且落在 11~27 的半宽里', () => {
-    expect(roadHalfWidth(ROUTE_TOP)).toBeCloseTo(11, 0);
-    expect(roadHalfWidth(VIEW_BOTTOM)).toBeCloseTo(27, 0);
-    expect(roadHalfWidth(VIEW_BOTTOM)).toBeGreaterThan(roadHalfWidth(ROUTE_TOP));
-    expect(roadHalfWidth(-100)).toBe(11);
-    expect(roadHalfWidth(9999)).toBe(27);
-  });
-
-  it('当前关永远比锁着的关大，且远端比近端小', () => {
+  it('节点半径是平的：四态各有定值，与位置无关', () => {
     const st = createMapState(40, 1000, {});
-    const near = nodeY(40) - scrollToLevel(40);
-    const far = nodeY(41) - scrollToLevel(40);
-    expect(nodeRadius(40, near, st)).toBeGreaterThan(nodeRadius(41, far, st));
-    // 同一个节点，画在屏幕上方时更小
-    expect(nodeRadius(41, far, st)).toBeLessThan(nodeRadius(41, far + 500, st));
+    expect(nodeRadius(40, 0, st)).toBe(26);       // 当前
+    expect(nodeRadius(39, 0, st)).toBe(20);       // 已过
+    expect(nodeRadius(41, 800, st)).toBe(19);     // 未至
+    expect(nodeRadius(50, 800, st)).toBe(23);     // 里程碑
+    // 同一个节点画在任何高度都一样大
+    expect(nodeRadius(41, ROUTE_TOP, st)).toBe(nodeRadius(41, VIEW_BOTTOM, st));
   });
 
-  it('远端节点仍然点得中（命中半径有 32 下限）', () => {
+  it('节点命中半径有 34 下限', () => {
     const st = createMapState(1, 1000, {});
-    const p = mapNodePos(1); // 屏幕最上方，视觉半径最小
-    expect(pickMapNode(p.x, p.y, st)).toBe(1);
-    expect(pickMapNode(p.x + 30, p.y, st)).toBe(1);
+    const p = mapNodePos(1);
+    const y = screenYOf(p.y, st.scrollY);
+    expect(pickMapNode(p.x, y, st)).toBe(1);
+    expect(pickMapNode(p.x + 30, y, st)).toBe(1);
+    expect(pickMapNode(p.x + 40, y, st)).toBe(-1);
   });
 });
 

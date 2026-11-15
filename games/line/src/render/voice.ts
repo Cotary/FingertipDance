@@ -727,11 +727,76 @@ const KINTSUGI: ThemeVoice = {
   ],
 };
 
+// ── 秘色天青 ────────────────────────────────────────────────
+
+/** 宫五声。雅乐不需要意外，和金线同一族——但音色把它们分开了。 */
+const MISE_SCALE = [0, 2, 4, 7, 9] as const;
+
+/**
+ * 秘色天青：瓷的清 + 磬的余。
+ *
+ * 音色纲和金缮相反：金缮是「瓷磬 2.76 比的暖」，天青是**瓷叩的清脆**——
+ * 主能量在中高频，三角波起音 1ms（玻璃的硬），泛音比 1.35 / 1.81
+ * （实测青瓷敲击的非谐成分），通关才放一记玉磬的长余韵。
+ */
+const MISE: ThemeVoice = {
+  id: 'mise',
+  name: '秘色天青',
+  desc: '瓷叩玉磬 · 1.2s 展柜',
+  space: { decay: 1.2, damp: 5200, wet: 0.16 },
+  step: (n) => {
+    const f = scaleAt(784, MISE_SCALE, n, 1);
+    return [
+      // 瓷体：三角波。正弦太暖（那是金缮的瓷），三角带棱才是「叩」
+      { wave: 'triangle', freq: f, dur: 95, gain: 0.105, attack: 1, hp: 220, wet: 0.13 },
+      // 非谐泛音两层：1.35 / 1.81 —— 决定「这是青瓷不是玻璃」
+      { wave: 'triangle', freq: f * 1.35, dur: 72, gain: 0.034, attack: 1, wet: 0.10 },
+      { wave: 'triangle', freq: f * 1.81, dur: 52, gain: 0.021, attack: 1, wet: 0.08 },
+      // 叩击的那一瞬
+      { wave: 'noise', freq: 0, dur: 8, gain: 0.036, attack: 1, hp: 5200, wet: 0.08 },
+    ];
+  },
+  tap: () => [
+    { wave: 'triangle', freq: 1174, dur: 42, gain: 0.052, attack: 1, hp: 300, wet: 0.08 },
+    { wave: 'noise', freq: 0, dur: 7, gain: 0.028, attack: 1, hp: 5600, wet: 0.06 },
+  ],
+  break: () => [
+    // 瓷裂：宽噪一记 + 两片碎瓷的下落音
+    { wave: 'noise', freq: 0, dur: 80, gain: 0.068, attack: 1, hp: 2600, lp: 9500, wet: 0.14 },
+    { wave: 'triangle', freq: 1568, to: 523, dur: 160, gain: 0.044, attack: 1, wet: 0.12 },
+    { wave: 'triangle', freq: 2093, to: 784, dur: 120, gain: 0.030, attack: 1, delay: 40, wet: 0.12 },
+  ],
+  win: (perfect) => [
+    // 玉磬余韵：非谐泛音列 1 / 2.76 / 5.4 / 8.93，长衰减是留白
+    { wave: 'sine', freq: 524, dur: 1450, gain: 0.115, attack: 1, wet: 0.30 },
+    { wave: 'sine', freq: 524 * 2.76, dur: 520, gain: 0.034, attack: 1, wet: 0.24 },
+    { wave: 'sine', freq: 524 * 5.4, dur: 260, gain: 0.018, attack: 1, wet: 0.20 },
+    // 一气呵成：印落纸 —— 全音色里唯一一记低频
+    ...(perfect
+      ? [{ wave: 'sine' as Wave, freq: 110, to: 58, dur: 210, gain: 0.058, attack: 2, lp: 420, wet: 0.12 }]
+      : []),
+  ],
+  unlock: () => [
+    // 金石细响：描金笔划过瓷面的一丝亮
+    { wave: 'triangle', freq: 1046, dur: 110, gain: 0.062, attack: 1, wet: 0.12 },
+    { wave: 'triangle', freq: 1318, dur: 110, gain: 0.058, attack: 1, delay: 70, wet: 0.14 },
+    { wave: 'triangle', freq: 1760, dur: 220, gain: 0.052, attack: 1, delay: 140, wet: 0.18 },
+    { wave: 'noise', freq: 0, dur: 10, gain: 0.028, attack: 1, hp: 5200, wet: 0.08 },
+  ],
+  signature: () => [
+    // 世界观一秒说完：一叩 + 一磬
+    { wave: 'triangle', freq: 784, dur: 95, gain: 0.095, attack: 1, hp: 220, wet: 0.12 },
+    { wave: 'noise', freq: 0, dur: 8, gain: 0.032, attack: 1, hp: 5200, wet: 0.08 },
+    { wave: 'sine', freq: 524, dur: 700, gain: 0.082, attack: 1, delay: 130, wet: 0.28 },
+    { wave: 'sine', freq: 524 * 2.76, dur: 240, gain: 0.022, attack: 1, delay: 130, wet: 0.22 },
+  ],
+};
+
 // ── 注册表 ─────────────────────────────────────────────────
 
 /** 全部音色。顺序无关，索引靠 `VOICE_MAP`。 */
 export const VOICES: readonly ThemeVoice[] = [
-  CLAY, INK, GLASS, PIXEL, ORBIT, NEON, BURN, GILDED, ABYSS, KINTSUGI,
+  CLAY, MISE, INK, GLASS, PIXEL, ORBIT, NEON, BURN, GILDED, ABYSS, KINTSUGI,
 ];
 
 const VOICE_MAP = new Map(VOICES.map((v) => [v.id, v]));

@@ -49,6 +49,8 @@ export interface Progress {
   totalSteps: number;
   /** 累计用时（毫秒，用于好友榜分数）。 */
   totalTimeMs: number;
+  /** 累计重来次数（结算页点「重来」就 +1，主页/我的页的「重来累计」读它）。 */
+  totalRetries: number;
   /** 昵称（来自服务端登录响应）。 */
   nickname: string;
   /** 头像 URL（空则程序化生成）。 */
@@ -133,11 +135,14 @@ export class ProgressStore {
     maxLevel: 0,
     unlockedSkins: ['wood', 'mint'],
     currentSkin: 'wood',
-    currentTheme: '',
-    unlockedThemes: [],
+    // 默认主题 = 秘色天青（free 档）：新用户一进游戏就是展柜+金缮的世界。
+    // 老存档里 currentTheme === '' 仍走经典皮肤渲染，可自行装备。
+    currentTheme: 'mise',
+    unlockedThemes: ['mise'],
     adWatchCnt: 0,
     totalSteps: 0,
     totalTimeMs: 0,
+    totalRetries: 0,
     nickname: '玩家',
     avatar: '',
     uid: 0,

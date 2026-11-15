@@ -335,7 +335,7 @@ function drawDebugKey(
   });
   clayText(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2, fs, {
     weight: 700,
-    fill: b.kind === 'ghost' && !on ? CLAY_UI.ink : '#FFF6E9',
+    fill: b.kind === 'ghost' && !on ? CLAY_UI.inkOnLight : '#FFF6E9',
     outline: b.kind === 'ghost' && !on ? undefined : 'rgba(90,38,16,0.45)',
     outlineWidth: b.kind === 'ghost' && !on ? 0 : 3,
     emboss: false,

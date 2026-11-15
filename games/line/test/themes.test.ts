@@ -1,16 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import { THEMES, themeById, isThemeId, themeUnlocked } from '../src/render/themes';
 import { clayFrom } from '../src/render/themes/types';
-import { pickSkinsTab, pickThemeChip, themeIdAt, isThemeOwned, type SkinsPageState } from '../src/ui/skins';
+import {
+  pickThemeChip, themeIdAt, isThemeOwned, shelfCardRect, shelfMaxScroll, clampShelfScroll,
+  shelfCount, type SkinsPageState,
+} from '../src/ui/skins';
 
 describe('棋盘主题 · 目录', () => {
-  it('九套，按解锁关号从小到大排列', () => {
+  it('十套，按解锁关号从小到大排列', () => {
     expect(THEMES.map((t) => t.id)).toEqual([
-      'ink', 'glass', 'kintsugi', 'pixel', 'orbit', 'neon', 'obsidian', 'gilded', 'abyss',
+      'mise', 'ink', 'glass', 'kintsugi', 'pixel', 'orbit', 'neon', 'obsidian', 'gilded', 'abyss',
     ]);
   });
 
-  it('九套的 id / 名字都不重复（重复的 id 会让装备值指向两套）', () => {
+  it('十套的 id / 名字都不重复（重复的 id 会让装备值指向两套）', () => {
     expect(new Set(THEMES.map((t) => t.name)).size).toBe(THEMES.length);
   });
 
@@ -90,40 +93,59 @@ describe('棋盘页 · 命中与解锁', () => {
     selected: 'wood',
     unlocked: new Set(['wood']),
     page: 0,
-    tab: 'skin',
     themeSelected: '',
     themeEquipped: '',
     maxLevel: 0,
   };
 
-  it('页签热区互不重叠，且都在标题带内', () => {
-    const skin = pickSkinsTab(60, 90);
-    const theme = pickSkinsTab(250, 90);
-    expect(skin).toBe('skin');
-    expect(theme).toBe('theme');
-    // 两块之间是空隙，不该有归属
-    expect(pickSkinsTab(232, 90)).toBe(null);
-    // 展台区域内点不到页签
-    expect(pickSkinsTab(375, 400)).toBe(null);
-  });
-
-  it('陶片：0 号是「经典」，1~9 是九套主题', () => {
+  it('陶片：0 号是「经典」，1~10 是十套主题', () => {
     expect(themeIdAt(0)).toBe('');
-    expect(themeIdAt(1)).toBe('ink');
-    expect(themeIdAt(9)).toBe('abyss');
+    expect(themeIdAt(1)).toBe('mise');
+    expect(themeIdAt(2)).toBe('ink');
+    expect(themeIdAt(10)).toBe('abyss');
+    expect(themeIdAt(11)).toBe('');
     expect(themeIdAt(99)).toBe('');
   });
 
-  it('十块陶片都能点中，且互不重叠（5 列 × 2 行，两行都满）', () => {
+  it('货架几何按设计稿：卡 320×252、间距 22、两列左沿 44 / 386', () => {
+    const a = shelfCardRect(0);
+    expect([a.x, a.y, a.w, a.h]).toEqual([44, 418, 320, 253]);
+    const b = shelfCardRect(1);
+    expect(b.x).toBe(386);
+    expect(b.y).toBe(418);
+    const c = shelfCardRect(2);
+    expect([c.x, c.y]).toEqual([44, 418 + 253 + 18]);
+  });
+
+  it('十一张卡都能点中，且互不重叠', () => {
     const hits: number[] = [];
-    // 两行各 5 块：总宽 5*121+4*10 = 645，左界 52.5；陶片 y 878 / 1022，高 104
-    for (let i = 0; i < 5; i++) hits.push(pickThemeChip(52.5 + i * 131 + 60, 930));
-    for (let i = 5; i < 10; i++) hits.push(pickThemeChip(52.5 + (i - 5) * 131 + 60, 1074));
-    expect(hits).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
-    // 名字也在热区里（字比色块小，点字也该选中）
-    expect(pickThemeChip(52.5 + 60, 1000)).toBe(0);
-    // 两行之间的空隙不该有归属（否则点空白会误选上一行）
-    expect(pickThemeChip(52.5 + 60, 1016)).toBe(-1);
+    for (let i = 0; i < shelfCount(); i++) {
+      const r = shelfCardRect(i, 0);
+      // 首屏之外的行先滚进来
+      const scroll = Math.max(0, r.y + r.h - 1200);
+      const rr = shelfCardRect(i, scroll);
+      hits.push(pickThemeChip(rr.x + 40, rr.y + 40, scroll));
+    }
+    expect(hits).toEqual([...Array(shelfCount()).keys()]);
+    // 卡内任意点都算命中（点名字/预览一样选中）
+    expect(pickThemeChip(44 + 20, 418 + 20)).toBe(0);
+    // 两列之间的空隙不该有归属
+    expect(pickThemeChip(375, 418 + 60)).toBe(-1);
+    // 两行之间的空隙不该有归属（卡底 664、下一行顶 684）
+    expect(pickThemeChip(44 + 160, 418 + 253 + 9)).toBe(-1);
+    // 大卡区域不该返回卡片
+    expect(pickThemeChip(44 + 160, 300)).toBe(-1);
+  });
+
+  it('滚动上限：恰好让最后一行贴住底栏，且不会滚成负数', () => {
+    const rows = Math.ceil(shelfCount() / 2);
+    const contentH = rows * 253 + (rows - 1) * 18;
+    expect(shelfMaxScroll()).toBe(contentH - (1214 - 418));
+    expect(clampShelfScroll(-99)).toBe(0);
+    expect(clampShelfScroll(99999)).toBe(shelfMaxScroll());
+    // 滚到底时最后一行正好露全
+    const last = shelfCardRect(shelfCount() - 1, shelfMaxScroll());
+    expect(last.y + last.h).toBe(1214);
   });
 
   it('里程碑未到不解锁；调试构建全解锁', () => {

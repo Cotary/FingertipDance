@@ -1,0 +1,1009 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>指尖舞 · 游戏内棋盘三方向材质对照</title>
+<style>
+  :root {
+    --page: #16171a;
+    --page2: #1e2024;
+    --fg: #E8E6E1;
+    --dim: #8C8A85;
+    --line: rgba(255,255,255,.10);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--page); color: var(--fg);
+    font-family: "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif; }
+  .wrap { width: 1480px; margin: 0 auto; padding: 34px 24px 60px; }
+  .head { display: flex; align-items: baseline; gap: 16px; padding-bottom: 20px;
+    border-bottom: 1px solid var(--line); margin-bottom: 26px; }
+  .head h1 { margin: 0; font-size: 19px; letter-spacing: .16em; font-weight: 700; }
+  .head .tag { font-size: 12px; color: var(--dim); letter-spacing: .06em; }
+  .row { display: flex; gap: 26px; align-items: flex-start; }
+  .col { flex: 1 1 0; min-width: 0; }
+  .frame { background: #000; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+  canvas { display: block; width: 100%; height: auto; }
+  .cap { padding: 16px 2px 0; }
+  .cap .name { font-size: 16px; font-weight: 700; letter-spacing: .05em; }
+  .cap .line { margin-top: 7px; font-size: 12px; line-height: 1.75; color: var(--dim); }
+  .cap .line b { color: var(--fg); font-weight: 600; }
+  .swatches { display: flex; gap: 6px; margin-top: 11px; }
+  .sw { width: 22px; height: 22px; border-radius: 3px; border: 1px solid rgba(255,255,255,.18); }
+  .note { margin-top: 30px; font-size: 12px; line-height: 1.9; color: var(--dim);
+    border-top: 1px solid var(--line); padding-top: 18px; }
+  .note b { color: var(--fg); }
+  /* 单列放大模式：?dir=A 只显示一列，画布 1:1 */
+  body.single .wrap { width: 750px; }
+  body.single .row { display: block; }
+  body.single .col { display: none; }
+  body.single .col.on { display: block; }
+  body.single .other { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h1>指尖舞 · 游戏内棋盘</h1>
+    <span class="tag">三套新材质语言对照 / 同一关卡（第 705 关，10×10，86 格可走，中局 52 格已铺） / 纯静态，无交互</span>
+  </div>
+  <div class="row" id="row"></div>
+  <div class="note">
+    <b>共同点</b>：三套都只保留「一种材质 + 一种强调色」；未走格与已走格的明度差都拉到能一眼数清；
+    HUD 里只有「提示」是实心块（唯一行动点），关号胶囊是描边件，其余是幽灵文字。<br />
+    <b>不同点</b>：A 走「印刷平版」的路子，靠压凹与油墨对比；B 走「测绘图纸」的路子，靠网格与路线带；
+    C 走「提花织锦」的路子，靠经纬与绣线。<br />
+    <b>看大图</b>：地址栏加 <code>?dir=A</code> / <code>?dir=B</code> / <code>?dir=C</code> 可 1:1 单列放大。
+  </div>
+</div>
+<script>
+'use strict';
+// ─────────────────────────────────────────────────────────────
+// 数据：真实第 705 关（取自 data/levels-v3.json，base64 grid 已解）
+// cell = [type, dir, group, walkOrder]；type 见 cover/v3/types.ts
+//   0 VOID 1 BRICK 2 BLOCK 3 ONEWAY 4 SHARD 5 KEY 6 GATE 7 PORTAL 8 ICE 9 START 10 END
+// ─────────────────────────────────────────────────────────────
+const LEVEL = {"w":10,"h":10,"cells":[[1,0,0,25],[1,0,0,26],[1,0,0,27],[1,0,0,30],[1,0,0,31],[1,0,0,34],[1,0,0,35],[1,0,0,44],[1,0,0,45],[1,0,0,46],[1,0,0,24],[2,0,0,-1],[1,0,0,28],[1,0,0,29],[1,0,0,32],[1,0,0,33],[1,0,0,36],[4,0,1,43],[1,0,0,42],[1,0,0,47],[1,0,0,23],[1,0,0,12],[1,0,0,11],[1,0,0,10],[2,0,0,-1],[4,0,0,17],[1,0,0,9],[2,0,0,-1],[2,0,0,-1],[1,0,0,37],[1,0,0,40],[1,0,0,41],[2,0,0,-1],[8,0,0,21],[1,0,0,38],[1,0,0,39],[1,0,0,48],[3,1,0,50],[1,0,0,51],[1,0,0,14],[1,0,0,7],[1,0,0,8],[1,0,0,84],[1,0,0,83],[1,0,0,82],[2,0,0,-1],[1,0,0,20],[1,0,0,15],[1,0,0,6],[2,0,0,-1],[2,0,0,-1],[1,0,0,75],[1,0,0,76],[1,0,0,81],[1,0,0,80],[2,0,0,-1],[1,0,0,19],[1,0,0,16],[1,0,0,5],[2,0,0,-1],[2,0,0,-1],[1,0,0,74],[1,0,0,77],[1,0,0,78],[1,0,0,79],[2,0,0,-1],[1,0,0,18],[1,0,0,17],[1,0,0,4],[1,0,0,63],[1,0,0,64],[1,0,0,73],[1,0,0,72],[1,0,0,71],[1,0,0,70],[1,0,0,53],[2,0,0,-1],[2,0,0,-1],[1,0,0,1],[1,0,0,2],[1,0,0,3],[1,0,0,62],[1,0,0,65],[1,0,0,66],[1,0,0,67],[3,3,0,78],[3,0,0,79],[1,0,0,68],[4,0,2,68],[1,0,0,69],[1,0,0,54],[1,0,0,0],[0,0,0,-1],[0,0,0,-1],[1,0,0,61],[1,0,0,60],[1,0,0,59],[1,0,0,58],[8,0,0,57],[1,0,0,56],[1,0,0,55]],"required":86,"diff":85};
+
+const DONE = 52;              // 中局：已铺 52 / 86
+const DESIGN_W = 750, DESIGN_H = 1334;
+const BOARD_TOP = 216, BOARD_BOTTOM = 1176, BOARD_SIDE = 40;
+const FONT = '"PingFang SC","Microsoft YaHei",system-ui,sans-serif';
+
+const T = { VOID:0, BRICK:1, BLOCK:2, ONEWAY:3, SHARD:4, KEY:5, GATE:6, PORTAL:7, ICE:8, START:9, END:10 };
+
+function layout(w, h) {
+  const maxW = DESIGN_W - BOARD_SIDE * 2, maxH = BOARD_BOTTOM - BOARD_TOP;
+  const cell = Math.floor(Math.min(maxW / w, maxH / h));
+  const boardW = cell * w, boardH = cell * h;
+  return { cell, originX: Math.round((DESIGN_W - boardW) / 2), originY: Math.round(BOARD_TOP + (maxH - boardH) / 2), boardW, boardH };
+}
+const L = layout(LEVEL.w, LEVEL.h);
+const GAP = Math.max(2, Math.floor(L.cell * 0.06));
+const SIZE = L.cell - GAP * 2;
+
+const cellAt = (x, y) => LEVEL.cells[y * LEVEL.w + x];
+const centerOf = (i) => ({ x: L.originX + (i % LEVEL.w) * L.cell + L.cell / 2, y: L.originY + Math.floor(i / LEVEL.w) * L.cell + L.cell / 2 });
+const rectOf = (i) => ({ x: L.originX + (i % LEVEL.w) * L.cell + GAP, y: L.originY + Math.floor(i / LEVEL.w) * L.cell + GAP });
+
+// 走过的格子 + 按顺序排好的路径点
+const WALKED = new Set();
+const PATH = [];
+LEVEL.cells.forEach((c, i) => { if (c[3] >= 0 && c[3] < DONE) { WALKED.add(i); PATH.push({ i, o: c[3] }); } });
+PATH.sort((a, b) => a.o - b.o);
+const PATH_PTS = PATH.map(p => centerOf(p.i));
+// 拐点
+const TURNS = [];
+for (let k = 1; k < PATH_PTS.length - 1; k++) {
+  const a = PATH_PTS[k - 1], b = PATH_PTS[k], c = PATH_PTS[k + 1];
+  if (Math.abs(a.x - b.x) !== Math.abs(b.x - c.x) || Math.abs(a.y - b.y) !== Math.abs(b.y - c.y)) TURNS.push(b);
+}
+// 下一个该收集的星星
+let nextShard = -1;
+for (const c of LEVEL.cells) if (c[0] === T.SHARD && c[3] >= DONE) { nextShard = c[2]; break; }
+
+// ───────────────────────────── 通用绘制工具 ─────────────────────────────
+function rr(ctx, x, y, w, h, r) {
+  const k = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + k, y);
+  ctx.arcTo(x + w, y, x + w, y + h, k);
+  ctx.arcTo(x + w, y + h, x, y + h, k);
+  ctx.arcTo(x, y + h, x, y, k);
+  ctx.arcTo(x, y, x + w, y, k);
+  ctx.closePath();
+}
+function fillRR(ctx, x, y, w, h, r, fill) { rr(ctx, x, y, w, h, r); ctx.fillStyle = fill; ctx.fill(); }
+function strokeRR(ctx, x, y, w, h, r, st, lw) { rr(ctx, x, y, w, h, r); ctx.strokeStyle = st; ctx.lineWidth = lw; ctx.stroke(); }
+
+// 带字距的文字（Canvas 的 letterSpacing 微信端不一定有，手工排）
+function textT(ctx, str, x, y, size, o = {}) {
+  const { align = 'center', weight = 800, fill = '#000', track = 0, baseline = 'middle' } = o;
+  ctx.save();
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.fillStyle = fill;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = baseline;
+  const chars = Array.from(str);
+  let total = 0;
+  for (const ch of chars) total += ctx.measureText(ch).width + track;
+  total = Math.max(0, total - track);
+  let cx = align === 'center' ? x - total / 2 : align === 'right' ? x - total : x;
+  for (const ch of chars) { ctx.fillText(ch, cx, y); cx += ctx.measureText(ch).width + track; }
+  ctx.restore();
+  return total;
+}
+function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+
+// 硬边色阶：用 clip + 偏移复制路径，绝不用平滑渐变
+function bevel(ctx, path, x, y, w, h, light, dark, lw = 2) {
+  ctx.save(); path(); ctx.clip();
+  ctx.fillStyle = light; ctx.fillRect(x, y, w, lw); ctx.fillRect(x, y, lw, h);
+  ctx.fillStyle = dark; ctx.fillRect(x, y + h - lw, w, lw); ctx.fillRect(x + w - lw, y, lw, h);
+  ctx.restore();
+}
+
+// 静态纹理：一次性生成 pattern，避免每帧重画
+const patternCache = {};
+function pattern(ctx, key, size, draw) {
+  if (patternCache[key]) return patternCache[key];
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  draw(c.getContext('2d'), size);
+  const p = ctx.createPattern(c, 'repeat');
+  patternCache[key] = p;
+  return p;
+}
+
+// 五角星
+function starPath(ctx, cx, cy, r, inner = 0.44) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const rr = i % 2 === 0 ? r : r * inner;
+    const px = cx + Math.cos(a) * rr, py = cy + Math.sin(a) * rr;
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+function diamondPath(ctx, cx, cy, r) {
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r, cy); ctx.lineTo(cx, cy + r); ctx.lineTo(cx - r, cy);
+  ctx.closePath();
+}
+function arrowPath(ctx, cx, cy, r, dir) {
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(dir * Math.PI / 2);
+  ctx.beginPath();
+  ctx.moveTo(0, -r); ctx.lineTo(r * 0.78, r * 0.55); ctx.lineTo(-r * 0.78, r * 0.55);
+  ctx.closePath();
+  ctx.restore();
+}
+
+// ───────────────────────────── HUD 骨架 ─────────────────────────────
+// 三套材质共用同一套 HUD 尺寸（对齐真实实现），只有材质不同。
+// 返回 36,78 104×88 / 关号胶囊 250×88@78 / 跳过 614,78 96×88
+// 进度读数 y=192 / 提示 534,1088 176×88 / 底部进度条 y=1196
+function drawHudFrame(ctx, s) {
+  // s: { panel, panelEdge, ink, inkSoft, accent, accentInk, solid, solidInk, label, sub }
+  // 返回
+  s.ghost(ctx, '返回', 36, 78, 104, 'left');
+  // 跳过
+  s.ghost(ctx, '跳过', 614, 78, 96, 'left');
+  // 关号胶囊
+  const px = (DESIGN_W - 250) / 2;
+  s.capsule(ctx, px, 78, 250, 88, '第 705 关');
+  // 进度读数
+  const done = DONE, total = LEVEL.required, left = total - done;
+  const num = `${done} / ${total}`;
+  const rest = `剩 ${left}`;
+  ctx.save();
+  ctx.font = `800 30px ${FONT}`; const w1 = ctx.measureText(num).width;
+  ctx.font = `700 23px ${FONT}`; const w2 = ctx.measureText(rest).width;
+  const w3 = nextShard >= 0 ? ctx.measureText(` · 下一个 ★${nextShard + 1}`).width : 0;
+  ctx.restore();
+  const gap = 30, x0 = DESIGN_W / 2 - (w1 + gap + w2 + w3) / 2;
+  textT(ctx, num, x0, 192, 30, { align: 'left', weight: 800, fill: s.ink });
+  textT(ctx, rest, x0 + w1 + gap, 193, 23, { align: 'left', weight: 700, fill: s.inkSoft });
+  if (nextShard >= 0) textT(ctx, ` · 下一个 ★${nextShard + 1}`, x0 + w1 + gap + w2, 193, 23, { align: 'left', weight: 700, fill: s.accent });
+  // 提示（唯一实心 CTA）
+  s.solidBtn(ctx, 534, 1088, 176, 88, '提示');
+  // 底部进度条
+  const bx = 40, by = 1196, bw = DESIGN_W - 80, bh = 20;
+  s.groove(ctx, bx, by, bw, bh);
+  const fw = Math.max(bh, bw * (done / total));
+  s.fill(ctx, bx, by, fw, bh);
+  s.knob(ctx, bx + fw - bh / 2, by + bh / 2, bh * 0.44);
+  textT(ctx, `705 / 1000 关`, bx, by + 38, 24, { align: 'left', weight: 700, fill: s.inkSoft, baseline: 'top' });
+  textT(ctx, '皮肤 6/16', bx + bw, by + 38, 24, { align: 'right', weight: 700, fill: s.inkSoft, baseline: 'top' });
+}
+
+// ═════════════════════════════ A · 铅印活字 ═════════════════════════════
+const A = {
+  name: 'A · 铅印活字',
+  tagline: '纸与油墨。玩家不是在连线，是在白纸上压印一条朱红的线。',
+  paper: '#F2ECDE', paperMid: '#E4DAC3', well: '#CDBE9F', wellEdge: '#A89978',
+  ink: '#2A2622', inkSoft: '#6E6559', verm: '#BE3A26',
+  sw: ['#EFE8D8', '#D2C5A9', '#2A2622', '#BE3A26'],
+
+  bg(ctx) {
+    ctx.fillStyle = this.paper; ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+    // 纸纤维
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = pattern(ctx, 'paper', 160, (g, s) => {
+      const r = rng(20261115);
+      g.clearRect(0, 0, s, s);
+      for (let i = 0; i < 420; i++) {
+        const x = r() * s, y = r() * s, len = 2 + r() * 7, a = r() * Math.PI;
+        g.strokeStyle = `rgba(120,104,74,${0.03 + r() * 0.05})`;
+        g.lineWidth = 0.8;
+        g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len); g.stroke();
+      }
+    });
+    ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+    ctx.restore();
+    // 纸边暗角
+    const v = ctx.createRadialGradient(DESIGN_W / 2, DESIGN_H * 0.42, 200, DESIGN_W / 2, DESIGN_H * 0.5, 900);
+    v.addColorStop(0, 'rgba(90,70,40,0)'); v.addColorStop(1, 'rgba(90,70,40,0.13)');
+    ctx.fillStyle = v; ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+  },
+
+  plate(ctx) {
+    const x = L.originX - 26, y = L.originY - 26, w = L.boardW + 52, h = L.boardH + 52;
+    // 版台：比纸低半档
+    fillRR(ctx, x, y, w, h, 8, this.paperMid);
+    ctx.save(); ctx.globalAlpha = 0.5; ctx.fillStyle = this.well; rr(ctx, x, y, w, h, 8); ctx.fill(); ctx.restore();
+    // 双线框（印刷表格线）
+    strokeRR(ctx, x, y, w, h, 8, this.ink, 2.2);
+    ctx.save(); ctx.globalAlpha = 0.32;
+    strokeRR(ctx, x + 8, y + 8, w - 16, h - 16, 4, this.ink, 1);
+    ctx.restore();
+    // 角上的规矩线（crop mark）
+    ctx.save(); ctx.globalAlpha = 0.55; ctx.strokeStyle = this.ink; ctx.lineWidth = 2;
+    const cm = [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]];
+    for (const [cx, cy, sx, sy] of cm) {
+      ctx.beginPath();
+      ctx.moveTo(cx + sx * 6, cy + sy * 26); ctx.lineTo(cx + sx * 6, cy + sy * 6); ctx.lineTo(cx + sx * 26, cy + sy * 6);
+      ctx.stroke();
+    }
+    ctx.restore();
+  },
+
+  cell(ctx, x, y, s, type, dir, group, walked, order) {
+    const r = 7;
+    if (type === T.VOID) return;
+    if (type === T.BLOCK) {
+      // 铅字块：凸起，硬边倒角
+      const p = () => rr(ctx, x, y, s, s, r);
+      p(); ctx.fillStyle = this.ink; ctx.fill();
+      bevel(ctx, p, x, y, s, s, 'rgba(255,255,255,0.20)', 'rgba(0,0,0,0.55)', 2.5);
+      ctx.save(); ctx.globalAlpha = 0.55; ctx.strokeStyle = this.paper; ctx.lineWidth = Math.max(2.5, s * 0.075);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x + s * 0.33, y + s * 0.33); ctx.lineTo(x + s * 0.67, y + s * 0.67);
+      ctx.moveTo(x + s * 0.67, y + s * 0.33); ctx.lineTo(x + s * 0.33, y + s * 0.67);
+      ctx.stroke(); ctx.restore();
+      return;
+    }
+    // 可走格：一律先压一个凹坑
+    const well = () => rr(ctx, x, y, s, s, r);
+    well(); ctx.fillStyle = this.well; ctx.fill();
+    ctx.save(); well(); ctx.clip();
+    ctx.fillStyle = 'rgba(96,78,48,0.26)'; ctx.fillRect(x, y, s, 3);
+    ctx.fillStyle = 'rgba(255,255,255,0.42)'; ctx.fillRect(x, y + s - 2.5, s, 2.5);
+    ctx.restore();
+
+    if (walked) {
+      // 已走 = 深墨（不是朱红！）路径另用朱红，两者绝不同色，
+      // 否则路径从满屏红里跳不出来，「走到哪」就断了。
+      ctx.save();
+      well(); ctx.clip();
+      ctx.fillStyle = this.ink; ctx.fillRect(x, y, s, s);
+      // 墨的浓淡：越新的墨越亮一点（用一个极淡的斜向色阶暗示先后）
+      ctx.fillStyle = 'rgba(255,255,255,0.045)';
+      ctx.beginPath();
+      ctx.moveTo(x, y + s * 0.55); ctx.lineTo(x + s, y + s * 0.18);
+      ctx.lineTo(x + s, y + s * 0.42); ctx.lineTo(x, y + s * 0.80);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+
+    if (type === T.ONEWAY) {
+      ctx.save(); arrowPath(ctx, x + s / 2, y + s / 2, s * 0.28, dir);
+      ctx.fillStyle = this.ink; ctx.fill(); ctx.restore();
+    } else if (type === T.SHARD) {
+      const cx = x + s / 2, cy = y + s / 2, r0 = s * 0.30;
+      starPath(ctx, cx, cy, r0);
+      if (walked) { ctx.fillStyle = this.verm; ctx.fill(); ctx.strokeStyle = this.paper; ctx.lineWidth = 2; ctx.stroke(); }
+      else { ctx.fillStyle = 'rgba(46,40,34,0.30)'; ctx.fill(); ctx.strokeStyle = this.ink; ctx.lineWidth = 2; ctx.stroke(); }
+      // 收集顺序编号
+      textT(ctx, String(group + 1), x + s - 11, y + 11, 15, { weight: 800, fill: walked ? this.verm : this.inkSoft });
+    } else if (type === T.ICE) {
+      ctx.save(); ctx.globalAlpha = 0.9; ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+      const r = rng(7);
+      for (let k = 0; k < 3; k++) {
+        const yy = y + s * (0.3 + k * 0.2);
+        ctx.beginPath(); ctx.moveTo(x + s * 0.22, yy); ctx.lineTo(x + s * (0.42 + r() * 0.12), yy - s * 0.09);
+        ctx.lineTo(x + s * (0.62 + r() * 0.1), yy + s * 0.07); ctx.stroke();
+      }
+      ctx.restore();
+    } else if (type === T.KEY) {
+      diamondPath(ctx, x + s / 2, y + s / 2, s * 0.26);
+      ctx.strokeStyle = this.ink; ctx.lineWidth = 2.4; ctx.stroke();
+    } else if (type === T.GATE) {
+      ctx.save(); ctx.globalAlpha = 0.7; ctx.strokeStyle = this.ink; ctx.lineWidth = 2.4;
+      ctx.strokeRect(x + s * 0.26, y + s * 0.26, s * 0.48, s * 0.48); ctx.restore();
+    } else if (type === T.PORTAL) {
+      ctx.save(); ctx.globalAlpha = 0.75;
+      ctx.strokeStyle = this.verm; ctx.lineWidth = 2.4;
+      ctx.beginPath(); ctx.arc(x + s / 2, y + s / 2, s * 0.28, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x + s / 2, y + s / 2, s * 0.12, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+  },
+
+  endpoint(ctx, x, y, s, kind) {
+    const cx = x + s / 2, cy = y + s / 2, r = s * 0.44;
+    if (kind === 'start') {
+      // 空的铅字（未上墨的活版）
+      ctx.beginPath(); ctx.arc(cx, cy + 2, r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(70,56,32,0.22)'; ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = this.paper; ctx.fill();
+      ctx.strokeStyle = this.ink; ctx.lineWidth = 3; ctx.stroke();
+      textT(ctx, '起', cx, cy + 1, r * 0.78, { weight: 800, fill: this.ink });
+    } else {
+      ctx.beginPath(); ctx.arc(cx, cy + 2.5, r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(70,56,32,0.26)'; ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = this.verm; ctx.fill();
+      ctx.strokeStyle = this.paper; ctx.lineWidth = 2.5; ctx.stroke();
+      textT(ctx, '终', cx, cy + 1, r * 0.78, { weight: 800, fill: this.paper });
+    }
+  },
+
+  trail(ctx) {
+    if (PATH_PTS.length < 2) return;
+    const trace = () => {
+      ctx.beginPath();
+      PATH_PTS.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+    };
+    ctx.save();
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    // 压痕（版子压进纸里的凹槽阴影）
+    ctx.save(); ctx.translate(0, 2);
+    trace(); ctx.strokeStyle = 'rgba(96,78,48,0.22)'; ctx.lineWidth = L.cell * 0.21; ctx.stroke();
+    ctx.restore();
+    // 朱红油墨
+    trace(); ctx.strokeStyle = this.verm; ctx.lineWidth = L.cell * 0.145; ctx.stroke();
+    // 墨的实体感：一条更深的芯
+    ctx.save(); ctx.translate(0, -L.cell * 0.012);
+    trace(); ctx.strokeStyle = 'rgba(140,32,20,0.55)'; ctx.lineWidth = L.cell * 0.075; ctx.stroke();
+    ctx.restore();
+    ctx.restore();
+    // 拐角：活版字块（方）
+    for (const t of TURNS) {
+      ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = 'rgba(90,68,40,0.25)'; ctx.fillRect(-L.cell * 0.085 + 1.5, -L.cell * 0.085 + 2, L.cell * 0.17, L.cell * 0.17);
+      ctx.fillStyle = this.verm; ctx.fillRect(-L.cell * 0.085, -L.cell * 0.085, L.cell * 0.17, L.cell * 0.17);
+      ctx.restore();
+    }
+    // 笔尖（当前手指位置）
+    const head = PATH_PTS[PATH_PTS.length - 1];
+    ctx.beginPath(); ctx.arc(head.x, head.y, L.cell * 0.155, 0, Math.PI * 2);
+    ctx.strokeStyle = this.ink; ctx.lineWidth = 3; ctx.stroke();
+    ctx.beginPath(); ctx.arc(head.x, head.y, L.cell * 0.05, 0, Math.PI * 2);
+    ctx.fillStyle = this.ink; ctx.fill();
+  },
+
+  ghost(ctx, label, x, y, w, align) {
+    textT(ctx, label, x + (align === 'left' ? 4 : w - 4), y + 44, 30, { align, weight: 700, fill: this.ink });
+    ctx.save(); ctx.globalAlpha = 0.5; ctx.strokeStyle = this.ink; ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    const lx = align === 'left' ? x + 4 : x + w - 4;
+    ctx.moveTo(lx, y + 62); ctx.lineTo(lx + (align === 'left' ? 58 : -58), y + 62);
+    ctx.stroke(); ctx.restore();
+  },
+  capsule(ctx, x, y, w, h, label) {
+    fillRR(ctx, x, y, w, h, h / 2, this.paper);
+    strokeRR(ctx, x, y, w, h, h / 2, this.ink, 3);
+    ctx.save(); ctx.globalAlpha = 0.30;
+    ctx.fillStyle = this.ink; ctx.fillRect(x + 26, y + h - 12, w - 52, 2);
+    ctx.restore();
+    textT(ctx, label, x + w / 2, y + h / 2 - 3, 36, { weight: 800, fill: this.ink });
+  },
+  solidBtn(ctx, x, y, w, h, label) {
+    fillRR(ctx, x, y + 3, w, h, 12, 'rgba(70,56,32,0.30)');
+    fillRR(ctx, x, y, w, h, 12, this.ink);
+    textT(ctx, label, x + w / 2, y + h / 2, 34, { weight: 800, fill: this.paper });
+  },
+  groove(ctx, x, y, w, h) { fillRR(ctx, x, y, w, h, h / 2, this.well); },
+  fill(ctx, x, y, w, h) { fillRR(ctx, x, y - 2, w, h, h / 2, this.ink); },
+  knob(ctx, cx, cy, r) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fillStyle = this.verm; ctx.fill(); },
+};
+
+// ═════════════════════════════ B · 等高线地图 ═════════════════════════════
+const B = {
+  name: 'B · 等高线地图',
+  tagline: '测绘图纸。玩家不是在连线，是在标出一条勘测路线。',
+  paper: '#F2EEE4', paperHi: '#FBF8F0', grid: 'rgba(46,68,66,0.11)',
+  ink: '#233029', inkSoft: '#66756E', accent: '#0E6B54', accentHi: '#1C8B6C',
+  slate: '#6D8CA0',
+  sw: ['#F2EEE4', '#0E6B54', '#233029', '#6D8CA0'],
+
+  bg(ctx) {
+    ctx.fillStyle = this.paper; ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+    // 细网格
+    ctx.save(); ctx.strokeStyle = this.grid; ctx.lineWidth = 1;
+    for (let x = 0; x <= DESIGN_W; x += 25) { ctx.beginPath(); ctx.moveTo(x + .5, 0); ctx.lineTo(x + .5, DESIGN_H); ctx.stroke(); }
+    for (let y = 0; y <= DESIGN_H; y += 25) { ctx.beginPath(); ctx.moveTo(0, y + .5); ctx.lineTo(DESIGN_W, y + .5); ctx.stroke(); }
+    ctx.restore();
+    // 等高线
+    ctx.save(); ctx.strokeStyle = 'rgba(14,107,84,0.14)';
+    for (let k = 0; k < 6; k++) {
+      const r = rng(1000 + k * 37);
+      const cx = 120 + r() * 520, cy = 200 + r() * 900;
+      const base = 60 + k * 46 + r() * 40;
+      ctx.lineWidth = k % 2 ? 1 : 1.6;
+      ctx.beginPath();
+      const n = 26, pts = [];
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const rr = base * (0.72 + r() * 0.5);
+        pts.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.78]);
+      }
+      ctx.moveTo((pts[0][0] + pts[n - 1][0]) / 2, (pts[0][1] + pts[n - 1][1]) / 2);
+      for (let i = 0; i < n; i++) {
+        const p = pts[i], q = pts[(i + 1) % n];
+        ctx.quadraticCurveTo(p[0], p[1], (p[0] + q[0]) / 2, (p[1] + q[1]) / 2);
+      }
+      ctx.closePath(); ctx.stroke();
+    }
+    ctx.restore();
+    // 纸面肌理
+    ctx.save(); ctx.globalAlpha = 0.5;
+    ctx.fillStyle = pattern(ctx, 'mapgrain', 140, (g, s) => {
+      const r = rng(4242);
+      g.clearRect(0, 0, s, s);
+      for (let i = 0; i < 300; i++) {
+        g.fillStyle = `rgba(90,110,100,${0.02 + r() * 0.04})`;
+        g.fillRect(r() * s, r() * s, 1.4, 1.4);
+      }
+    });
+    ctx.fillRect(0, 0, DESIGN_W, DESIGN_H); ctx.restore();
+  },
+
+  plate(ctx) {
+    const x = L.originX - 26, y = L.originY - 26, w = L.boardW + 52, h = L.boardH + 52;
+    // 图幅边框：细双线 + 四角十字线
+    ctx.save();
+    ctx.strokeStyle = 'rgba(35,48,41,0.34)'; ctx.lineWidth = 1.4;
+    ctx.strokeRect(x + .5, y + .5, w, h);
+    ctx.strokeStyle = 'rgba(35,48,41,0.16)'; ctx.lineWidth = 1;
+    ctx.strokeRect(x + 7.5, y + 7.5, w - 15, h - 15);
+    ctx.strokeStyle = 'rgba(35,48,41,0.45)'; ctx.lineWidth = 1.6;
+    for (const [cx, cy] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]]) {
+      ctx.beginPath();
+      ctx.moveTo(cx - 9, cy); ctx.lineTo(cx + 9, cy);
+      ctx.moveTo(cx, cy - 9); ctx.lineTo(cx, cy + 9);
+      ctx.stroke();
+    }
+    ctx.restore();
+  },
+
+  cell(ctx, x, y, s, type, dir, group, walked, order) {
+    const r = 4;
+    if (type === T.VOID) return;
+    if (type === T.BLOCK) {
+      // 石山：地图标准符号（实心三角）
+      const cx = x + s / 2, cy = y + s * 0.64, h = s * 0.46;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - h); ctx.lineTo(cx + h * 0.72, cy); ctx.lineTo(cx - h * 0.72, cy);
+      ctx.closePath();
+      ctx.fillStyle = this.ink; ctx.fill();
+      ctx.save(); ctx.globalAlpha = 0.28; ctx.fillStyle = this.paperHi;
+      ctx.beginPath(); ctx.moveTo(cx, cy - h); ctx.lineTo(cx, cy); ctx.lineTo(cx - h * 0.72, cy); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      return;
+    }
+    // 可走格：极淡的方框，只为「能数」
+    ctx.save(); ctx.globalAlpha = 0.5;
+    strokeRR(ctx, x + 1, y + 1, s - 2, s - 2, r, 'rgba(35,48,41,0.16)', 1);
+    ctx.restore();
+    if (walked) {
+      // 已走 = 被勘测队踏平的地带：一块实打实的浅绿底 + 墨色边框。
+      // 必须比「未走的纸」明显得多（审计实测：原来只差 1.13，等于没分）。
+      ctx.save();
+      fillRR(ctx, x, y, s, s, r, 'rgba(14,107,84,0.42)');
+      ctx.restore();
+      ctx.save(); ctx.globalAlpha = 0.95;
+      strokeRR(ctx, x + 1.5, y + 1.5, s - 3, s - 3, r - 1, this.accent, 2.2);
+      ctx.restore();
+    }
+
+    if (type === T.ONEWAY) {
+      ctx.save(); ctx.strokeStyle = this.accent; ctx.lineWidth = s * 0.10; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.translate(x + s / 2, y + s / 2); ctx.rotate(dir * Math.PI / 2);
+      ctx.beginPath(); ctx.moveTo(-s * 0.16, s * 0.14); ctx.lineTo(0, -s * 0.16); ctx.lineTo(s * 0.16, s * 0.14); ctx.stroke();
+      ctx.restore();
+    } else if (type === T.SHARD) {
+      const cx = x + s / 2, cy = y + s / 2;
+      diamondPath(ctx, cx, cy, s * 0.24);
+      if (walked) { ctx.fillStyle = this.accent; ctx.fill(); }
+      else { ctx.fillStyle = this.paperHi; ctx.fill(); ctx.strokeStyle = this.accent; ctx.lineWidth = 2.2; ctx.stroke(); }
+      textT(ctx, String(group + 1), cx + s * 0.30, cy - s * 0.30, 15, { weight: 800, fill: this.accent });
+    } else if (type === T.ICE) {
+      // 沼泽符号
+      ctx.save(); ctx.strokeStyle = this.slate; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+      for (let k = 0; k < 3; k++) {
+        const yy = y + s * (0.34 + k * 0.16);
+        ctx.beginPath(); ctx.moveTo(x + s * 0.26, yy); ctx.lineTo(x + s * 0.74, yy); ctx.stroke();
+      }
+      for (let k = 0; k < 2; k++) {
+        const xx = x + s * (0.38 + k * 0.24);
+        ctx.beginPath(); ctx.moveTo(xx, y + s * 0.34); ctx.lineTo(xx, y + s * 0.66); ctx.stroke();
+      }
+      ctx.restore();
+    } else if (type === T.KEY) {
+      diamondPath(ctx, x + s / 2, y + s / 2, s * 0.24);
+      ctx.strokeStyle = this.accent; ctx.lineWidth = 2.4; ctx.stroke();
+    } else if (type === T.PORTAL) {
+      ctx.save(); ctx.strokeStyle = this.accent; ctx.lineWidth = 2.2;
+      ctx.beginPath(); ctx.arc(x + s / 2, y + s / 2, s * 0.26, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x + s / 2, y + s / 2, s * 0.10, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+  },
+
+  endpoint(ctx, x, y, s, kind) {
+    const cx = x + s / 2, cy = y + s / 2, r = s * 0.40;
+    if (kind === 'start') {
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = this.paperHi; ctx.fill();
+      ctx.strokeStyle = this.ink; ctx.lineWidth = 2.6; ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, cy, r * 0.34, 0, Math.PI * 2);
+      ctx.fillStyle = this.ink; ctx.fill();
+      textT(ctx, '起', cx, cy + r + 15, 20, { weight: 800, fill: this.ink });
+    } else {
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = this.accent; ctx.fill();
+      ctx.strokeStyle = this.paperHi; ctx.lineWidth = 3; ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2);
+      ctx.strokeStyle = this.paperHi; ctx.lineWidth = 2; ctx.stroke();
+      textT(ctx, '终', cx, cy + r + 15, 20, { weight: 800, fill: this.accent });
+    }
+  },
+
+  trail(ctx) {
+    if (PATH_PTS.length < 2) return;
+    const trace = () => {
+      ctx.beginPath();
+      PATH_PTS.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+    };
+    ctx.save();
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    // 勘测走廊（已清扫的地带）
+    trace(); ctx.strokeStyle = 'rgba(14,107,84,0.13)'; ctx.lineWidth = L.cell * 0.72; ctx.stroke();
+    // 路线带
+    trace(); ctx.strokeStyle = this.accent; ctx.lineWidth = L.cell * 0.34; ctx.stroke();
+    // 路线芯：更深的一层，让带子有厚度
+    ctx.save(); ctx.translate(0, -L.cell * 0.02);
+    trace(); ctx.strokeStyle = this.accentHi; ctx.lineWidth = L.cell * 0.12; ctx.stroke();
+    ctx.restore();
+    ctx.restore();
+    // 拐点的测量点
+    for (const t of TURNS) {
+      ctx.beginPath(); ctx.arc(t.x, t.y, L.cell * 0.075, 0, Math.PI * 2);
+      ctx.fillStyle = this.paperHi; ctx.fill();
+      ctx.strokeStyle = this.accent; ctx.lineWidth = 2.2; ctx.stroke();
+    }
+    // 当前位置
+    const head = PATH_PTS[PATH_PTS.length - 1];
+    ctx.beginPath(); ctx.arc(head.x, head.y, L.cell * 0.13, 0, Math.PI * 2);
+    ctx.strokeStyle = this.ink; ctx.lineWidth = 2.6; ctx.stroke();
+    ctx.beginPath(); ctx.arc(head.x, head.y, L.cell * 0.045, 0, Math.PI * 2);
+    ctx.fillStyle = this.ink; ctx.fill();
+  },
+
+  ghost(ctx, label, x, y, w, align) {
+    textT(ctx, '← ' + label, x + 4, y + 44, 27, { align: 'left', weight: 700, fill: this.ink });
+    ctx.save(); ctx.globalAlpha = 0.45; ctx.strokeStyle = this.ink; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(x + 4, y + 62); ctx.lineTo(x + 4 + 62, y + 62); ctx.stroke(); ctx.restore();
+  },
+  capsule(ctx, x, y, w, h, label) {
+    // 不用胶囊，用「图章式」编号 + 双横规
+    textT(ctx, '第 705 关', x + w / 2, y + h / 2 - 6, 38, { weight: 800, fill: this.ink, track: 2 });
+    ctx.save(); ctx.strokeStyle = this.ink; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x + 58, y + h / 2 + 26); ctx.lineTo(x + w - 58, y + h / 2 + 26); ctx.stroke();
+    ctx.globalAlpha = 0.4; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x + 78, y + h / 2 + 32); ctx.lineTo(x + w - 78, y + h / 2 + 32); ctx.stroke();
+    ctx.restore();
+  },
+  solidBtn(ctx, x, y, w, h, label) {
+    // 绿色方框 + 十字准星（像地图上的定位器）
+    fillRR(ctx, x, y, w, h, 8, this.paperHi);
+    strokeRR(ctx, x, y, w, h, 8, this.accent, 2.6);
+    const cx = x + 46, cy = y + h / 2;
+    ctx.save(); ctx.strokeStyle = this.accent; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(cx, cy, 13, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - 20, cy); ctx.lineTo(cx - 8, cy); ctx.moveTo(cx + 8, cy); ctx.lineTo(cx + 20, cy);
+    ctx.moveTo(cx, cy - 20); ctx.lineTo(cx, cy - 8); ctx.moveTo(cx, cy + 8); ctx.lineTo(cx, cy + 20);
+    ctx.stroke(); ctx.restore();
+    textT(ctx, label, x + w / 2 + 26, y + h / 2, 32, { weight: 800, fill: this.accent });
+  },
+  groove(ctx, x, y, w, h) { fillRR(ctx, x, y, w, h, h / 2, 'rgba(35,48,41,0.14)'); },
+  fill(ctx, x, y, w, h) { fillRR(ctx, x, y, w, h, h / 2, this.accent); },
+  knob(ctx, cx, cy, r) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fillStyle = this.accentHi; ctx.fill(); },
+};
+
+// ═════════════════════════════ C · 提花织物 ═════════════════════════════
+const C = {
+  name: 'C · 提花织锦',
+  tagline: '深色经纬布。玩家不是在连线，是用一根朱红丝线把整幅锦面绣满。',
+  cloth: '#1E2A38', clothHi: '#2B3A4C', clothLo: '#141C26',
+  ivory: '#E8DFCD', gold: '#C9A227', accent: '#D2452F', ice: '#A9C4D2',
+  ink: '#E8DFCD', inkSoft: '#94A2AE',
+  sw: ['#1E2A38', '#D2452F', '#E8DFCD', '#C9A227'],
+
+  bg(ctx) {
+    ctx.fillStyle = this.cloth; ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+    // 经纬织纹
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = pattern(ctx, 'weave', 8, (g, s) => {
+      g.clearRect(0, 0, s, s);
+      g.fillStyle = 'rgba(232,223,205,0.055)'; g.fillRect(0, 0, s, 3);
+      g.fillStyle = 'rgba(232,223,205,0.032)'; g.fillRect(0, 0, 3, s);
+      g.fillStyle = 'rgba(0,0,0,0.10)'; g.fillRect(0, 3, s, 1);
+    });
+    ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+    ctx.restore();
+    // 暗花（大提花团纹，很淡）
+    ctx.save(); ctx.strokeStyle = 'rgba(232,223,205,0.055)'; ctx.lineWidth = 2.2;
+    const step = 150;
+    for (let gy = -step / 2; gy < DESIGN_H + step; gy += step) {
+      for (let gx = -step / 2; gx < DESIGN_W + step; gx += step) {
+        const cx = gx + (Math.floor(gy / step) % 2 ? step / 2 : 0);
+        ctx.beginPath();
+        ctx.moveTo(cx, gy - 52);
+        ctx.bezierCurveTo(cx + 40, gy - 22, cx + 40, gy + 22, cx, gy + 52);
+        ctx.bezierCurveTo(cx - 40, gy + 22, cx - 40, gy - 22, cx, gy - 52);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+    // 暗角
+    const v = ctx.createRadialGradient(DESIGN_W / 2, DESIGN_H * 0.42, 220, DESIGN_W / 2, DESIGN_H * 0.5, 900);
+    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.38)');
+    ctx.fillStyle = v; ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+  },
+
+  plate(ctx) {
+    const x = L.originX - 24, y = L.originY - 24, w = L.boardW + 48, h = L.boardH + 48;
+    // 缝合边框（跑针）
+    ctx.save();
+    ctx.setLineDash([9, 7]); ctx.lineWidth = 2.4; ctx.strokeStyle = 'rgba(201,162,39,0.55)';
+    rr(ctx, x, y, w, h, 22); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.30; ctx.strokeStyle = this.ivory; ctx.lineWidth = 1;
+    rr(ctx, x + 9, y + 9, w - 18, h - 18, 16); ctx.stroke();
+    ctx.restore();
+  },
+
+  cell(ctx, x, y, s, type, dir, group, walked, order) {
+    const r = 8;
+    if (type === T.VOID) return;
+    if (type === T.BLOCK) {
+      // 沉在布里的织块
+      const p = () => rr(ctx, x, y, s, s, r);
+      p(); ctx.fillStyle = this.clothLo; ctx.fill();
+      bevel(ctx, p, x, y, s, s, 'rgba(232,223,205,0.13)', 'rgba(0,0,0,0.55)', 2.5);
+      ctx.save(); ctx.globalAlpha = 0.75; ctx.strokeStyle = this.ivory; ctx.lineWidth = Math.max(2, s * 0.06);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x + s * 0.34, y + s * 0.34); ctx.lineTo(x + s * 0.66, y + s * 0.66);
+      ctx.moveTo(x + s * 0.66, y + s * 0.34); ctx.lineTo(x + s * 0.34, y + s * 0.66);
+      ctx.stroke(); ctx.restore();
+      return;
+    }
+    // 可走格：布面上一小块略亮的织地
+    ctx.save(); ctx.globalAlpha = 0.05;
+    fillRR(ctx, x, y, s, s, r, this.ivory); ctx.restore();
+
+    if (walked) {
+      // 缎纹：硬边斜向色阶（提花的缎子光泽）。注意用**低饱和的靛蓝**，
+      // 不与朱红绣线同族 —— 否则路径从填充区里跳不出来。
+      ctx.save();
+      rr(ctx, x, y, s, s, r); ctx.clip();
+      ctx.fillStyle = 'rgba(150,185,210,0.42)'; ctx.fillRect(x, y, s, s);
+      ctx.fillStyle = 'rgba(210,232,244,0.20)';
+      ctx.beginPath();
+      ctx.moveTo(x, y + s * 0.30); ctx.lineTo(x + s, y - s * 0.05); ctx.lineTo(x + s, y + s * 0.34); ctx.lineTo(x, y + s * 0.70);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.24)';
+      ctx.beginPath();
+      ctx.moveTo(x, y + s * 0.70); ctx.lineTo(x + s, y + s * 0.34); ctx.lineTo(x + s, y + s * 0.56); ctx.lineTo(x, y + s * 0.92);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+      ctx.save(); ctx.globalAlpha = 0.55;
+      strokeRR(ctx, x + 1, y + 1, s - 2, s - 2, r - 1, this.ice, 1.8);
+      ctx.restore();
+    }
+
+    if (type === T.ONEWAY) {
+      ctx.save(); ctx.strokeStyle = this.ivory; ctx.globalAlpha = 0.9; ctx.lineWidth = s * 0.09;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.translate(x + s / 2, y + s / 2); ctx.rotate(dir * Math.PI / 2);
+      ctx.beginPath(); ctx.moveTo(-s * 0.17, s * 0.15); ctx.lineTo(0, -s * 0.17); ctx.lineTo(s * 0.17, s * 0.15); ctx.stroke();
+      ctx.restore();
+    } else if (type === T.SHARD) {
+      const cx = x + s / 2, cy = y + s / 2;
+      starPath(ctx, cx, cy, s * 0.29);
+      if (walked) { ctx.fillStyle = this.accent; ctx.fill(); }
+      else { ctx.fillStyle = 'rgba(232,223,205,0.16)'; ctx.fill(); ctx.strokeStyle = this.accent; ctx.lineWidth = 2; ctx.stroke(); }
+      textT(ctx, String(group + 1), x + s - 12, y + 12, 15, { weight: 800, fill: this.accent });
+    } else if (type === T.ICE) {
+      ctx.save(); ctx.strokeStyle = this.ice; ctx.globalAlpha = 0.85; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+      const r = rng(11);
+      for (let k = 0; k < 3; k++) {
+        const yy = y + s * (0.3 + k * 0.2);
+        ctx.beginPath(); ctx.moveTo(x + s * 0.22, yy); ctx.lineTo(x + s * (0.42 + r() * 0.12), yy - s * 0.09);
+        ctx.lineTo(x + s * (0.62 + r() * 0.1), yy + s * 0.07); ctx.stroke();
+      }
+      ctx.restore();
+    } else if (type === T.KEY) {
+      diamondPath(ctx, x + s / 2, y + s / 2, s * 0.24);
+      ctx.strokeStyle = this.gold; ctx.lineWidth = 2.4; ctx.stroke();
+    } else if (type === T.PORTAL) {
+      ctx.save(); ctx.strokeStyle = this.accent; ctx.lineWidth = 2.2;
+      ctx.beginPath(); ctx.arc(x + s / 2, y + s / 2, s * 0.26, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x + s / 2, y + s / 2, s * 0.10, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+  },
+
+  endpoint(ctx, x, y, s, kind) {
+    const cx = x + s / 2, cy = y + s / 2, r = s * 0.42;
+    if (kind === 'start') {
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = this.clothLo; ctx.fill();
+      ctx.strokeStyle = this.ivory; ctx.lineWidth = 3; ctx.stroke();
+      ctx.save(); ctx.setLineDash([5, 5]); ctx.globalAlpha = 0.55; ctx.strokeStyle = this.ivory; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(cx, cy, r + 8, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+      textT(ctx, '起', cx, cy + 1, r * 0.72, { weight: 800, fill: this.ivory });
+    } else {
+      ctx.beginPath(); ctx.arc(cx, cy + 2, r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = this.accent; ctx.fill();
+      ctx.strokeStyle = this.ivory; ctx.lineWidth = 2.4; ctx.stroke();
+      textT(ctx, '终', cx, cy + 1, r * 0.72, { weight: 800, fill: this.ivory });
+    }
+  },
+
+  trail(ctx) {
+    if (PATH_PTS.length < 2) return;
+    const trace = () => {
+      ctx.beginPath();
+      PATH_PTS.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+    };
+    ctx.save();
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    // 绣线的暗侧（垂坠感）
+    ctx.save(); ctx.translate(0, 2.5);
+    trace(); ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = L.cell * 0.19; ctx.stroke();
+    ctx.restore();
+    // 丝线本体
+    trace(); ctx.strokeStyle = this.accent; ctx.lineWidth = L.cell * 0.15; ctx.stroke();
+    // 线的捻光
+    ctx.save(); ctx.translate(0, -L.cell * 0.018);
+    trace(); ctx.strokeStyle = 'rgba(255,170,140,0.55)'; ctx.lineWidth = L.cell * 0.05; ctx.stroke();
+    ctx.restore();
+    ctx.restore();
+
+    // 平针：横跨丝线的短针脚（马鞍针）
+    ctx.save();
+    ctx.strokeStyle = 'rgba(232,223,205,0.62)'; ctx.lineWidth = 1.8; ctx.lineCap = 'butt';
+    const step = L.cell * 0.30;
+    for (let k = 1; k < PATH_PTS.length; k++) {
+      const a = PATH_PTS[k - 1], b = PATH_PTS[k];
+      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+      const ux = dx / len, uy = dy / len;
+      for (let t = step * 0.5; t < len; t += step) {
+        const px = a.x + ux * t, py = a.y + uy * t;
+        const nx = -uy, ny = ux, half = L.cell * 0.11;
+        ctx.beginPath();
+        ctx.moveTo(px - nx * half, py - ny * half);
+        ctx.lineTo(px + nx * half, py + ny * half);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    // 拐点：一个线结
+    for (const t of TURNS) {
+      ctx.beginPath(); ctx.arc(t.x, t.y, L.cell * 0.085, 0, Math.PI * 2);
+      ctx.fillStyle = this.accent; ctx.fill();
+      ctx.beginPath(); ctx.arc(t.x - L.cell * 0.02, t.y - L.cell * 0.02, L.cell * 0.028, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,180,150,0.75)'; ctx.fill();
+    }
+    // 针尖
+    const head = PATH_PTS[PATH_PTS.length - 1];
+    ctx.save();
+    ctx.translate(head.x, head.y); ctx.rotate(-Math.PI / 4);
+    ctx.fillStyle = this.ivory;
+    ctx.beginPath();
+    ctx.moveTo(0, -L.cell * 0.22); ctx.lineTo(L.cell * 0.028, 0); ctx.lineTo(0, L.cell * 0.22); ctx.lineTo(-L.cell * 0.028, 0);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  },
+
+  ghost(ctx, label, x, y, w, align) {
+    textT(ctx, label, x + 4, y + 44, 30, { align: 'left', weight: 700, fill: this.ivory });
+    ctx.save(); ctx.globalAlpha = 0.55; ctx.strokeStyle = this.gold; ctx.lineWidth = 2;
+    ctx.setLineDash([7, 6]);
+    ctx.beginPath(); ctx.moveTo(x + 4, y + 62); ctx.lineTo(x + 4 + 58, y + 62); ctx.stroke();
+    ctx.restore();
+  },
+  capsule(ctx, x, y, w, h, label) {
+    // 绣片 + 金线
+    ctx.save(); ctx.globalAlpha = 0.10; fillRR(ctx, x, y, w, h, h / 2, this.ivory); ctx.restore();
+    ctx.save(); ctx.setLineDash([10, 8]); ctx.strokeStyle = this.gold; ctx.lineWidth = 2.4;
+    rr(ctx, x + 3, y + 3, w - 6, h - 6, (h - 6) / 2); ctx.stroke(); ctx.restore();
+    textT(ctx, label, x + w / 2, y + h / 2, 34, { weight: 800, fill: this.ivory, track: 1 });
+  },
+  solidBtn(ctx, x, y, w, h, label) {
+    fillRR(ctx, x, y + 3, w, h, 12, 'rgba(0,0,0,0.45)');
+    fillRR(ctx, x, y, w, h, 12, this.ivory);
+    textT(ctx, label, x + w / 2, y + h / 2, 34, { weight: 800, fill: '#1E2A38' });
+  },
+  groove(ctx, x, y, w, h) { fillRR(ctx, x, y, w, h, h / 2, 'rgba(0,0,0,0.40)'); },
+  fill(ctx, x, y, w, h) { fillRR(ctx, x, y, w, h, h / 2, this.accent); },
+  knob(ctx, cx, cy, r) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fillStyle = this.ivory; ctx.fill(); },
+};
+
+// ───────────────────────────── 场景装配 ─────────────────────────────
+function renderScene(ctx, dir, opt = {}) {
+  ctx.clearRect(0, 0, DESIGN_W, DESIGN_H);
+  dir.bg(ctx);
+  dir.plate(ctx);
+
+  // 格子（先铺未走的，最后补已走的，让路径压在最上层）
+  for (let y = 0; y < LEVEL.h; y++) {
+    for (let x = 0; x < LEVEL.w; x++) {
+      const i = y * LEVEL.w + x;
+      const c = cellAt(x, y);
+      if (c[0] === T.VOID) continue;
+      const walked = c[3] >= 0 && c[3] < DONE;
+      if (walked) continue;
+      const r = rectOf(i);
+      dir.cell(ctx, r.x, r.y, SIZE, c[0], c[1], c[2], walked, c[3]);
+    }
+  }
+  // 已走格
+  for (let y = 0; y < LEVEL.h; y++) {
+    for (let x = 0; x < LEVEL.w; x++) {
+      const i = y * LEVEL.w + x;
+      const c = cellAt(x, y);
+      if (c[0] === T.VOID) continue;
+      if (!(c[3] >= 0 && c[3] < DONE)) continue;
+      const r = rectOf(i);
+      dir.cell(ctx, r.x, r.y, SIZE, c[0], c[1], c[2], true, c[3]);
+    }
+  }
+  // 路径
+  if (!opt.noTrail) dir.trail(ctx);
+  // 起终点
+  for (let y = 0; y < LEVEL.h; y++) {
+    for (let x = 0; x < LEVEL.w; x++) {
+      const i = y * LEVEL.w + x;
+      const c = cellAt(x, y);
+      if (c[0] !== T.START && c[0] !== T.END) continue;
+      if (opt.noTrail && (c[0] === T.START || c[0] === T.END)) continue;
+      const r = rectOf(i);
+      dir.endpoint(ctx, r.x, r.y, SIZE, c[0] === T.START ? 'start' : 'end');
+    }
+  }
+  // HUD
+  if (!opt.noHud) drawHudFrame(ctx, dir);
+}
+
+// ───────────────────────────── 页面装配 ─────────────────────────────
+//
+// 可选的客观校验：?audit=1 时量三套的「已走格 vs 未走格」明度差，
+// 以及「路径 vs 盘面」的对比度。凭感觉调色板容易骗自己。
+function lum(rgb) {
+  const c = rgb.map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); });
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+}
+function ratio(a, b) { const l1 = lum(a), l2 = lum(b); const hi = Math.max(l1, l2), lo = Math.min(l1, l2); return (hi + 0.05) / (lo + 0.05); }
+function audit() {
+  const out = [];
+  for (const dir of DIRS) {
+    const cv = document.createElement('canvas');
+    cv.width = DESIGN_W; cv.height = DESIGN_H;
+    const ctx = cv.getContext('2d');
+    renderScene(ctx, dir);
+    // 两遍取样：路径线正好压着格心，单遍量到的全是路径的颜色，比值全是假的。
+    //   带路径 → 找「与不带路径时颜色不同」的格 = 路径压过的地方
+    //   不带路径 → 量格子本身的颜色
+    renderScene(ctx, dir, { noTrail: true, noHud: true });
+    const bare = ctx.getImageData(0, 0, DESIGN_W, DESIGN_H);
+    renderScene(ctx, dir);
+    const full = ctx.getImageData(0, 0, DESIGN_W, DESIGN_H);
+    const at = (img, x, y) => { const i = (y * DESIGN_W + x) * 4; return [img.data[i], img.data[i + 1], img.data[i + 2]]; };
+
+    // 未走格 = BRICK 且还没走到（c[3] >= DONE）
+    // 已走格 = BRICK 且已走到（0 <= c[3] < DONE）
+    let empty = null, walked = null;
+    for (let y = 0; y < LEVEL.h; y++) {
+      for (let x = 0; x < LEVEL.w; x++) {
+        const c = cellAt(x, y);
+        if (c[0] !== T.BRICK) continue;
+        const r = rectOf(y * LEVEL.w + x);
+        const px = Math.round(r.x + SIZE / 2), py = Math.round(r.y + SIZE / 2);
+        if (c[3] >= DONE && !empty) empty = at(bare, px, py);
+        if (c[3] >= 0 && c[3] < DONE && !walked) walked = at(bare, px, py);
+      }
+    }
+    // 路径取样：取**线段中点**（一定在线上），并取多个采样点的众数，
+    // 避免偶尔撞上拐点的测量白点。
+    const votes = new Map();
+    for (let k = 4; k < PATH_PTS.length - 1; k++) {
+      const a = PATH_PTS[k], b = PATH_PTS[k + 1];
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const px = Math.round(mx), py = Math.round(my);
+      const bareC = at(bare, px, py), fullC = at(full, px, py);
+      if (bareC[0] === fullC[0] && bareC[1] === fullC[1] && bareC[2] === fullC[2]) continue;
+      const key = fullC.join(',');
+      votes.set(key, (votes.get(key) || 0) + 1);
+    }
+    let path = null, best = 0;
+    for (const [k, v] of votes) if (v > best) { best = v; path = k.split(',').map(Number); }
+    out.push({
+      name: dir.name,
+      empty, walked,
+      cellContrast: empty && walked ? +ratio(empty, walked).toFixed(2) : null,
+      path,
+      pathVsEmpty: path && empty ? +ratio(path, empty).toFixed(2) : null,
+      pathVsWalked: path && walked ? +ratio(path, walked).toFixed(2) : null,
+    });
+  }
+  console.log('AUDIT ' + JSON.stringify(out, null, 2));
+  const pre = document.createElement('pre');
+  pre.id = 'audit';
+  pre.style.cssText = 'white-space:pre-wrap;color:#cfc;font:12px monospace;padding:12px;border:1px solid #333;margin-top:16px';
+  pre.textContent = JSON.stringify(out, null, 2);
+  document.querySelector('.wrap').appendChild(pre);
+}
+
+const DIRS = [A, B, C];
+const row = document.getElementById('row');
+const params = new URLSearchParams(location.search);
+const only = (params.get('dir') || '').toUpperCase();
+
+if (only) document.body.classList.add('single');
+
+DIRS.forEach(dir => {
+  const col = document.createElement('div');
+  col.className = 'col' + (only && dir.name[0] === only ? ' on' : '');
+  const frame = document.createElement('div');
+  frame.className = 'frame';
+  const cv = document.createElement('canvas');
+  cv.width = DESIGN_W; cv.height = DESIGN_H;
+  frame.appendChild(cv);
+  const cap = document.createElement('div');
+  cap.className = 'cap';
+  const sw = dir.sw.map(c => `<span class="sw" style="background:${c}"></span>`).join('');
+  cap.innerHTML = `<div class="name">${dir.name}</div><div class="line">${dir.tagline}</div><div class="swatches">${sw}</div>`;
+  col.appendChild(frame); col.appendChild(cap);
+  row.appendChild(col);
+  const ctx = cv.getContext('2d');
+  renderScene(ctx, dir);
+});
+
+if (params.get('audit')) audit();
+</script>
+</body>
+</html>

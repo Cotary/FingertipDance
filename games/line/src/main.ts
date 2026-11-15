@@ -13,12 +13,15 @@ import { drawCoverTrail } from './render/coverTrail';
 import { Fx } from './render/fx';
 import { audio } from './render/audio';
 import { SKINS, skinById } from './render/skins';
-import { drawSkinsPage, pickSkinCard, pickSkinsTab, pickThemeChip, themeIdAt, isThemeOwned, PER_PAGE, type SkinsPageState } from './ui/skins';
+import { drawSkinsPage, pickThemeChip, themeIdAt, isThemeOwned, unlockedThemeCount, shelfCount, stepThemeScroll, clampShelfScroll, type SkinsPageState } from './ui/skins';
 import { themeById } from './render/themes';
 import { ads } from './ads/ads';
 import { needsAdForHint, canSkipToday, markSkippedToday } from './ads/rewardRules';
 import { tracker } from './analytics/tracker';
-import { drawHud, drawProgressBar, drawResult, drawButton, hitButton, starOfCover as starOfCoverLocal, type Button } from './ui/hud';
+import {
+  drawHud, drawPlayFootnote, drawPlayTip, drawPlayLegend, drawPlaySub, drawResult, drawButton, hitButton,
+  starOfCover as starOfCoverLocal, type Button,
+} from './ui/hud';
 import { drawHomePage, type HomePageState } from './ui/home';
 import {
   createMapState, pickMapNode, scrollToLevel, isLevelPlayable, stepMapScroll,
@@ -29,7 +32,8 @@ import { drawRankPage, createRankState, type RankPageState } from './ui/leaderbo
 import { drawProfilePage, type ProfilePageState } from './ui/profile';
 import { drawNav, pickNavTab, type NavTab } from './ui/nav';
 import { LOBBY_THEME } from './ui/theme';
-import { CLAY, CLAY_UI, clayBackdrop, clayBlock, clayText } from './ui/clay';
+import { CLAY, CLAY_UI, clayBlock, clayText } from './ui/clay';
+import { drawLobbyGround } from './ui/ground';
 import { publishProfile } from './platform/openData';
 import { parseChallenge, buildShareQuery } from './game/challenge';
 import { DEBUG_ENABLED } from './core/debug';
@@ -76,6 +80,11 @@ const session = new CoverSession();
 const levels = new CoverLevelStore();
 const progress = new ProgressStore();
 const fx = new Fx();
+
+/** 星级总和（主页票券「星星」、我的页统计共用一个口径）。 */
+function totalStars(): number {
+  return Object.values(progress.current.stars ?? {}).reduce((a, b) => a + (b ?? 0), 0);
+}
 
 let lastFrameAt = Date.now();
 let winAnimStart = 0;
@@ -126,7 +135,6 @@ let skinsPage: SkinsPageState = {
   selected: 'wood',
   unlocked: new Set(['wood', 'mint']),
   page: 0,
-  tab: 'skin',
   themeSelected: '',
   themeEquipped: '',
   maxLevel: 0,
@@ -159,6 +167,8 @@ let homePage: HomePageState = {
   avatar: '',
   skinCount: 2,
   totalSkins: 16,
+  starCount: 0,
+  totalRetries: 0,
 };
 let homeButtons: Button[] = [];
 
@@ -185,6 +195,21 @@ let mapDragStart: {
 let mapRailGrab: number | null = null;
 
 /**
+ * 主题货架的拖动状态。
+ *
+ * 货架有 12 张卡、一屏只放得下 3 行，所以必须能拖。这里的 `moved` 门槛（8px）
+ * 是为了区分「想选这套主题」和「想往下看」—— 没有它，每次滑动都会顺手改掉选中项。
+ */
+let shelfDragStart: {
+  y: number;
+  scroll: number;
+  moved: boolean;
+  lastY: number;
+  lastAt: number;
+  v: number;
+} | null = null;
+
+/**
  * 调试面板：关卡直达（**仅测试环境**）。
  *
  * 展开时它压在一切之上 —— 所有输入先给它，剩下的才轮到下面那一页。
@@ -209,6 +234,11 @@ let profilePage: ProfilePageState = {
   totalSkins: 16,
   soundOn: true,
   vibrateOn: true,
+  starCount: 0,
+  totalRetries: 0,
+  threeStarCount: 0,
+  currentLevel: 1,
+  uid: 0,
 };
 
 /**
@@ -269,9 +299,24 @@ function toDesign(clientX: number, clientY: number): { x: number; y: number } {
  * - **提示**是卡住时的高频动作，落在盘面下方 —— 拇指的自然停放区，够得着也不挡盘；
  * - **跳过**是低频且不可逆的动作，留在右上角，和「返回」隔着一整个关号胶囊。
  */
-const hintBtn: Button = { x: 534, y: 1088, w: 176, h: 88, label: '提示', kind: 'ghost', id: 'hint' };
-const skipBtn: Button = { x: 614, y: 78, w: 96, h: 88, label: '跳过', kind: 'ghost', id: 'skip' };
-const backHomeBtn: Button = { x: 36, y: 78, w: 104, h: 88, label: '返回', kind: 'ghost', id: 'backHome' };
+const hintBtn: Button = { x: 44, y: 876, w: 662, h: 104, label: '提 示', kind: 'primary', id: 'hint' };
+const skipBtn: Button = { x: 44, y: 1196, w: 321, h: 88, label: '跳 过', kind: 'secondary', id: 'skip' };
+const backHomeBtn: Button = { x: 385, y: 1196, w: 321, h: 88, label: '返 回', kind: 'secondary', id: 'backHome' };
+
+/**
+ * 盘面机制图例（设计稿 03 屏那一行六枚）。
+ *
+ * 色块用的是**格面本身的面色**（门/单向=石板青、星=鎏金、钥=铜、传送=暮紫、冰=霜青），
+ * 这样图例和盘上那格是同一个东西，而不是另画一套小图标。
+ */
+const LEGEND_META: Array<{ type: number; kind: 'arrow' | 'star' | 'key' | 'gate' | 'portal' | 'ice'; label: string; bg: string; ink: string }> = [
+  { type: 3, kind: 'arrow', label: '单向门', bg: '#26333B', ink: '#F2DCA8' },
+  { type: 4, kind: 'star', label: '星屑 序', bg: '#B89045', ink: '#2A2114' },
+  { type: 5, kind: 'key', label: '钥匙', bg: '#A07E3C', ink: '#2A2114' },
+  { type: 6, kind: 'gate', label: '门', bg: '#26333B', ink: 'rgba(240,235,220,0.8)' },
+  { type: 7, kind: 'portal', label: '传送门', bg: '#5C5192', ink: 'rgba(240,235,255,0.85)' },
+  { type: 8, kind: 'ice', label: '冰面', bg: '#7FA8A0', ink: 'rgba(20,50,45,0.75)' },
+];
 
 /** 需要显示底部导航的页面。 */
 const NAV_PAGES: NavTab[] = ['home', 'map', 'skins', 'rank', 'profile'];
@@ -322,8 +367,15 @@ async function gotoTab(tab: NavTab): Promise<void> {
     case 'skins':
       phase = 'skins';
       syncSkinsPage();
+      // 每次进来都从货架顶部开始：停在上一轮的滚动位置会让人以为少了主题
+      skinsPage.themeScroll = 0;
+      skinsPage.themeFling = 0;
+      shelfDragStart = null;
       ads.showBanner();
-      reportEvent('skin_page_view', { owned: skinsPage.unlocked.size, total: SKINS.length });
+      reportEvent('theme_page_view', {
+        owned: unlockedThemeCount(skinsPage),
+        total: shelfCount(),
+      });
       break;
     case 'rank':
       phase = 'rank';
@@ -341,6 +393,11 @@ async function gotoTab(tab: NavTab): Promise<void> {
         adWatchCnt: progress.current.adWatchCnt,
         unlockedSkins: progress.current.unlockedSkins,
         totalSkins: SKINS.length,
+        starCount: totalStars(),
+        totalRetries: progress.current.totalRetries ?? 0,
+        threeStarCount: Object.values(progress.current.stars ?? {}).filter((s) => s === 3).length,
+        currentLevel: progress.currentLevel,
+        uid: progress.current.uid,
       };
       reportEvent('profile_view', { max_level: progress.current.maxLevel });
       break;
@@ -799,19 +856,6 @@ async function useSkip() {
   void onWin(st.runtime.level.required - 1, 0, [], true);
 }
 
-/**
- * 装备当前选中（展台上）的皮肤。
- * 只有已解锁才生效 —— 未解锁时展台显示的是「拿不到的目标」，不是可装备项。
- */
-function equipSelectedSkin() {
-  const id = skinsPage.selected;
-  if (!skinsPage.unlocked.has(id) || skinsPage.equipped === id) return;
-  skinsPage.equipped = id;
-  progress.equipSkin(id);
-  audio.tap();
-  reportEvent('skin_equip', { skin_id: id });
-}
-
 /** 装备当前选中（展台上）的棋盘主题。空串 = 回到经典黏土盘面。 */
 function equipSelectedTheme() {
   const id = skinsPage.themeSelected ?? '';
@@ -831,18 +875,6 @@ function equipSelectedTheme() {
   // 那和「没有音效」没区别。`preview` 内部同时做了 `setVoice`。
   audio.preview(id);
   reportEvent('theme_equip', { theme_id: id || 'classic' });
-}
-
-/** 广告解锁皮肤。 */
-async function unlockByAd(skinId: string) {
-  const ok = await ads.showRewarded('skin_unlock');
-  if (!ok) return;
-  progress.unlockSkin(skinId);
-  skinsPage.unlocked.add(skinId);
-  skinsPage.equipped = skinId;
-  progress.equipSkin(skinId);
-  audio.unlock();
-  reportEvent('skin_unlock', { skin_id: skinId, via: 'ad' });
 }
 
 /** 从服务端刷新进度（切后台回前台时）。 */
@@ -1060,37 +1092,26 @@ function onDown(clientX: number, clientY: number) {
     return;
   }
   if (phase === 'skins') {
-    // 页签优先：它压在陶片网格上方，先判它就不会出现「点页签顺手换了皮肤」
-    const tab = pickSkinsTab(d.x, d.y);
-    if (tab) {
-      skinsPage.tab = tab;
-      audio.tap();
-      return;
-    }
-    if ((skinsPage.tab ?? 'skin') === 'theme') {
-      const chip = pickThemeChip(d.x, d.y);
-      if (chip >= 0) {
-        const id = themeIdAt(chip);
-        skinsPage.themeSelected = id;
-        // 点选就试一声：挑主题时耳朵比眼睛快。
-        // 用 `probe` 而不是 `preview` —— 玩家会连着点八套，播完整签名动机太吵。
-        // 未解锁的也照播：这是「先听再决定要不要打」，属于陈列的一部分。
-        audio.probe(id);
-        return;
-      }
-    } else {
-      // 点陶片只「选中」—— 装备留给展台上的按钮。
-      // 两件事挤在一次点击里，挑的过程就被跳过了，也容易误换皮肤。
-      const skin = pickSkinCard(d.x, d.y, skinsPage);
-      if (skin) {
-        skinsPage.selected = skin.id;
-        audio.tap();
-        return;
-      }
-    }
+    // 按钮优先（「使用」压在大卡上，先判它就不会出现「点按钮顺手换了主题」）
     for (const b of skinButtons) {
       if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
     }
+
+    // 货架：按下记起点，抬手时若没移动才算「选中」。
+    // 只在大卡以下才起拖 —— 在大卡上滑动不该把货架推走。
+    const scroll = skinsPage.themeScroll ?? 0;
+    const chip = pickThemeChip(d.x, d.y, scroll);
+    skinsPage.themeFling = 0;
+    shelfDragStart = {
+      y: d.y,
+      scroll,
+      moved: false,
+      lastY: d.y,
+      lastAt: Date.now(),
+      v: 0,
+    };
+    if (chip >= 0) pressedBtn = 'shelf:' + chip;
+    else shelfDragStart = null;
     return;
   }
   if (phase === 'result') {
@@ -1119,20 +1140,46 @@ function onMove(clientX: number, clientY: number) {
     mapPage.scrollY = railScrollAt(d.y, mapPage, mapRailGrab);
     return;
   }
+  if (phase === 'skins' && shelfDragStart) {
+    const wasMoved = shelfDragStart.moved;
+    // 甩出去：与地图同一条衰减曲线（320ms），门槛 0.18 像素/毫秒
+    if (wasMoved && Math.abs(shelfDragStart.v) > 0.18) {
+      skinsPage.themeFling = Math.max(-6, Math.min(6, shelfDragStart.v));
+    }
+    shelfDragStart = null;
+    if (wasMoved) { pressedBtn = null; return; }
+  }
+
   if (phase === 'map' && mapDragStart) {
     const dy = d.y - mapDragStart.y;
     if (Math.abs(dy) > 6) mapDragStart.moved = true;
     if (mapDragStart.moved) {
-      mapPage.scrollY = Math.max(0, Math.min(mapPage.maxScrollY, mapDragStart.scrollY - dy));
+      // 地图的屏幕 y 是翻转的（往上 = 后面的关），所以手指往下拉 = 加 scrollY
+      mapPage.scrollY = Math.max(0, Math.min(mapPage.maxScrollY, mapDragStart.scrollY + dy));
 
       // 速度：指数平滑，别用瞬时值 —— 抬手前那一下抖一下就决定了去哪，
       // 用瞬时值会变成「想停却飞出去三屏」
       const at = Date.now();
       const dt = Math.max(1, at - mapDragStart.lastAt);
-      const inst = -(d.y - mapDragStart.lastY) / dt;
+      const inst = (d.y - mapDragStart.lastY) / dt;
       mapDragStart.v = mapDragStart.v * 0.6 + inst * 0.4;
       mapDragStart.lastY = d.y;
       mapDragStart.lastAt = at;
+    }
+    return;
+  }
+
+  if (phase === 'skins' && shelfDragStart) {
+    const dy = d.y - shelfDragStart.y;
+    if (Math.abs(dy) > 8) shelfDragStart.moved = true;
+    if (shelfDragStart.moved) {
+      skinsPage.themeScroll = clampShelfScroll(shelfDragStart.scroll - dy);
+      const at = Date.now();
+      const dt = Math.max(1, at - shelfDragStart.lastAt);
+      const inst = -(d.y - shelfDragStart.lastY) / dt;
+      shelfDragStart.v = shelfDragStart.v * 0.6 + inst * 0.4;
+      shelfDragStart.lastY = d.y;
+      shelfDragStart.lastAt = at;
     }
     return;
   }
@@ -1201,6 +1248,16 @@ function onUp() {
       audio.tap();
       return;
     }
+    if (id.startsWith('shelf:')) {
+      const chip = parseInt(id.slice(6), 10);
+      const tid = themeIdAt(chip);
+      skinsPage.themeSelected = tid;
+      // 点选就试一声：挑主题时耳朵比眼睛快。
+      // 用 `probe` 而不是 `preview` —— 玩家会连着点八套，播完整签名动机太吵。
+      // 未解锁的也照播：这是「先听再决定要不要打」，属于陈列的一部分。
+      audio.probe(tid);
+      return;
+    }
     if (id.startsWith('map:')) {
       const idx = parseInt(id.slice(4), 10);
       if (isLevelPlayable(idx, mapPage)) {
@@ -1260,17 +1317,22 @@ function onUp() {
     // `resultData.levelIdx` 才是刚打完的关号。
     else if (id === 'retry') {
       challengeResult = null;
+      progress.sync({ totalRetries: (progress.current.totalRetries ?? 0) + 1 });
       const target = challenge ? challenge.levelIdx : (resultData?.levelIdx ?? pendingLevel);
       void enterLevel(target);
     }
     else if (id === 'share') doShare();
-    else if (id === 'skins') { phase = 'skins'; syncSkinsPage(); ads.showBanner(); reportEvent('skin_page_view', { owned: skinsPage.unlocked.size, total: SKINS.length }); }
+    else if (id === 'skins') {
+      phase = 'skins';
+      syncSkinsPage();
+      skinsPage.themeScroll = 0;
+      skinsPage.themeFling = 0;
+      shelfDragStart = null;
+      ads.showBanner();
+      reportEvent('theme_page_view', { owned: unlockedThemeCount(skinsPage), total: shelfCount() });
+    }
     else if (id === 'back') { phase = 'home'; ads.hideBanner(); }
-    else if (id === 'prevPage') skinsPage.page = Math.max(0, skinsPage.page - 1);
-    else if (id === 'nextPage') skinsPage.page = Math.min(Math.ceil(SKINS.length / PER_PAGE) - 1, skinsPage.page + 1);
-    else if (id === 'equipSkin') equipSelectedSkin();
     else if (id === 'equipTheme') equipSelectedTheme();
-    else if (id === 'unlockByAd') void unlockByAd(skinsPage.selected);
     return;
   }
   if (phase === 'playing') {
@@ -1380,6 +1442,7 @@ function frame() {
   // 必须每帧比对时间戳，不能靠 `setTimeout`：切后台时定时器被节流，
   // 回前台时「早该过期了」却还要等下一次触发。
   if (phase === 'playing') session.tick(now);
+  if (phase === 'skins') stepThemeScroll(skinsPage, dt);
 
   // 渲染异常不能拖垮整个游戏。
   //
@@ -1449,7 +1512,7 @@ function renderFrame(now: number, dt: number): void {
   //
   // 主题接管后由主题自己铺（每套的底纹是它成立的一半）。
   if (boardTheme) boardTheme.backdrop(ctx, visibleDesignBox());
-  else clayBackdrop(ctx, visibleDesignBox());
+  else drawLobbyGround(ctx, visibleDesignBox());
 
   if (st && session.layout && playing) {
     const rs = st.runtime.rs;
@@ -1550,21 +1613,36 @@ function renderFrame(now: number, dt: number): void {
     if (level.deadEnds === 0 && st.path.length === 0) {
       drawCoverFreeStartHint(ctx, session.layout, chrome?.inkSoft);
     }
-    drawProgressBar(
-      ctx,
-      progress.current.maxLevel,
-      totalLevelCount(),
-      `皮肤 ${progress.current.unlockedSkins.length}/${config?.skins?.length ?? 13}`,
-      chrome,
-    );
+    drawPlayFootnote(ctx, session.state?.undos ?? 0, chrome);
 
-    // 顶部按钮。
-    // 「提示」是这一屏唯一的行动点，有主题时升成主色 —— 黏土版把它画成 ghost
-    // 是因为浅底上一个沙色块已经够显眼，深底上同样的暗块会沉进背景。
-    drawButton(ctx, chrome ? { ...hintBtn, kind: 'primary' } : hintBtn, pressedBtn === 'hint', undefined, chrome);
+    // ── 盘底三层（设计稿 03）：金「提 示」→ 机制图例 → 次级行动
+    //
+    // 「提示」是这一屏唯一的正向行动点，做成满栏金条；
+    // 「返回 / 跳过」是负向/低频动作，压到最下面一行灰底 —— 和金子拉开层级，
+    // 也离盘面最远（误触代价最小）。
+    if (chrome) {
+      const badge = needsAdForHint(st.runtime.level.idx, st.hintUsed) ? '首 提 示 · 看 视 频' : null;
+      drawPlayTip(ctx, hintBtn, pressedBtn === 'hint', badge);
+    } else {
+      drawButton(ctx, hintBtn, pressedBtn === 'hint', undefined, chrome);
+    }
+
+    // 图例：只列盘上真有的机制（没有传送门的关里画传送门，玩家会去找它）
+    if (!challenge) {
+      const present = new Set<number>(rs.typeOf);
+      const items = LEGEND_META.filter((m) => present.has(m.type))
+        .map(({ kind, label, bg, ink }) => ({ kind, label, bg, ink }));
+      drawPlayLegend(ctx, items, 1008, chrome);
+    }
+
     // 挑战关不给「跳过」：比的就是谁真能走完，花钱跳过是另一种玩法
-    if (!challenge) drawButton(ctx, skipBtn, pressedBtn === 'skip', undefined, chrome);
-    drawButton(ctx, backHomeBtn, pressedBtn === 'backHome', undefined, chrome);
+    if (chrome) {
+      if (!challenge) drawPlaySub(ctx, skipBtn, pressedBtn === 'skip');
+      drawPlaySub(ctx, backHomeBtn, pressedBtn === 'backHome');
+    } else {
+      if (!challenge) drawButton(ctx, skipBtn, pressedBtn === 'skip', undefined, chrome);
+      drawButton(ctx, backHomeBtn, pressedBtn === 'backHome', undefined, chrome);
+    }
 
     // 挑战模式横幅：放**棋盘下方**那条空带里。
     //
@@ -1592,6 +1670,8 @@ function renderFrame(now: number, dt: number): void {
       maxLevel: progress.current.maxLevel,
       currentLevel: progress.currentLevel,
       skinCount: progress.current.unlockedSkins.length,
+      starCount: totalStars(),
+      totalRetries: progress.current.totalRetries ?? 0,
     };
     homeButtons = drawHomePage(ctx, homePage, now);
   }
@@ -1831,6 +1911,8 @@ async function boot() {
       avatar: progress.current.avatar || '',
       skinCount: progress.current.unlockedSkins.length,
       totalSkins: SKINS.length,
+      starCount: totalStars(),
+      totalRetries: progress.current.totalRetries ?? 0,
     };
     // 异步拉星级，不阻塞进大厅
     //

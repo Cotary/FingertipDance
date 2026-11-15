@@ -1,13 +1,13 @@
 /**
- * 设计 token —— 「糖果夜空 / Candy Night」唯一真相源。
+ * 设计 token —— 「秘色·天青 / Mise Celadon」唯一真相源。
  *
- * 全应用只有 **一套** 色板：深蓝紫夜空 + 高饱和糖果色 + 发光的厚圆角果冻块。
- * 大厅与游戏内不再区分明暗主题（旧的双主题正是「风格不一致」的根源），
- * 只在层级上区分：背景 < 玻璃卡片 < 糖果按钮 < 高光/发光。
+ * 全应用只有 **一套** 色板：墨石暗底 + 青瓷玉色 + 鎏金 CTA + 朱砂点睛。
+ * 层级：背景 < 石卡 < 金按钮 < 高光/光迹。
  *
  * 约束：
  * - 页面里禁止写死颜色，一律从 THEME / CANDY 取
  * - 不引入任何图片 / 字体文件 / SVG 资源，全部 Canvas 2D 程序化绘制
+ * - 金色覆盖 ≤8%：金只给 CTA 和光迹，不做装饰
  */
 
 /** 一种糖果色的四个明度层。 */
@@ -23,17 +23,17 @@ export interface CandyColor {
 }
 
 /**
- * 糖果色轮。按钮、徽章、图标按语义从这里取，不新造颜色。
+ * 色轮（天青语义）。按钮、徽章、图标按语义从这里取，不新造颜色。
  * 每个色都是「亮得起来、暗得下去」的一族，保证厚底边与高光都有色可用。
  */
 export const CANDY = {
-  blue: { base: '#4FC3F7', light: '#B3E9FF', dark: '#1B78C0', glow: 'rgba(79,195,247,0.45)' },
-  green: { base: '#7ED957', light: '#CDF7B0', dark: '#3E9A2A', glow: 'rgba(126,217,87,0.45)' },
-  orange: { base: '#FFA940', light: '#FFD79B', dark: '#C96A00', glow: 'rgba(255,169,64,0.45)' },
-  pink: { base: '#FF6B9D', light: '#FFBBD2', dark: '#BF2C60', glow: 'rgba(255,107,157,0.45)' },
-  purple: { base: '#B388FF', light: '#DCC7FF', dark: '#6B3FCB', glow: 'rgba(179,136,255,0.45)' },
-  gold: { base: '#FFD54F', light: '#FFEFB0', dark: '#C99400', glow: 'rgba(255,213,79,0.45)' },
-  coral: { base: '#FF6B6B', light: '#FFB5B5', dark: '#BE2F2F', glow: 'rgba(255,107,107,0.45)' },
+  blue: { base: '#6E9E82', light: '#A8C8B2', dark: '#4A7260', glow: 'rgba(110,158,130,0.45)' },
+  green: { base: '#4A7260', light: '#7FA892', dark: '#2D5245', glow: 'rgba(74,114,96,0.45)' },
+  orange: { base: '#C9A227', light: '#F2DCA8', dark: '#8A6B3C', glow: 'rgba(201,162,39,0.45)' },
+  pink: { base: '#C04B33', light: '#D9705A', dark: '#8E3424', glow: 'rgba(192,75,51,0.45)' },
+  purple: { base: '#7A6FA8', light: '#B8AED8', dark: '#524878', glow: 'rgba(122,111,168,0.45)' },
+  gold: { base: '#E0B33C', light: '#F4D278', dark: '#AE861F', glow: 'rgba(224,179,60,0.45)' },
+  coral: { base: '#D9705A', light: '#F0A896', dark: '#A74434', glow: 'rgba(217,112,90,0.45)' },
 } as const satisfies Record<string, CandyColor>;
 
 /** 糖果色键名。 */
@@ -83,26 +83,26 @@ export interface Theme {
   glassEdge: string;
 }
 
-/** 「糖果夜空」色板。全应用唯一。 */
+/** 「秘色天青」色板。全应用唯一。 */
 export const THEME: Theme = {
-  bg: '#1B1252',
-  bgLight: '#0B0824',
-  panel: '#2A2270',
-  border: 'rgba(255,255,255,0.20)',
-  text: '#FFFFFF',
-  subText: '#A9A6E0',
-  accent: '#FF6B6B',
-  success: '#7ED957',
-  blue: '#4FC3F7',
-  yellow: '#FFD54F',
-  purple: '#B388FF',
-  shadow: 'rgba(6,3,26,0.45)',
-  skyTop: '#2E2078',
-  skyMid: '#1B1252',
-  skyBottom: '#0B0824',
-  ridge: '#120C3A',
-  glass: 'rgba(255,255,255,0.09)',
-  glassEdge: 'rgba(255,255,255,0.20)',
+  bg: '#0C1310',
+  bgLight: '#060A08',
+  panel: '#1E3229',
+  border: 'rgba(197,191,175,0.14)',
+  text: '#EDE7DA',
+  subText: '#A39B86',
+  accent: '#C04B33',
+  success: '#6E9E82',
+  blue: '#8A6B3C',
+  yellow: '#E0B33C',
+  purple: '#7A6FA8',
+  shadow: 'rgba(3,6,5,0.50)',
+  skyTop: '#14211B',
+  skyMid: '#0C1310',
+  skyBottom: '#060A08',
+  ridge: '#0E1713',
+  glass: 'rgba(237,231,218,0.06)',
+  glassEdge: 'rgba(237,231,218,0.14)',
 };
 
 /**

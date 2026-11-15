@@ -1,14 +1,16 @@
 /**
- * 底部导航栏。主页 / 地图 / 皮肤 / 排行 / 我的 五个 Tab。
+ * 底部导航栏。主页 / 地图 / 主题 / 排行 / 我的 五个 Tab。
  *
- * 黏土版：奶油黏土板做底栏（顶部两角圆、左右圆角藏在屏幕外），
- * 选中项是一块**翘起来的陶土片**，把图标和文字一起包进去 —— 不再是发光的果冻胶囊。
+ * 定稿版：一条**发丝金线 + 半透墨条**，五个细线图标（描边 1.5 CSS、不填充），
+ * 选中项只靠**颜色**（金 → 素纸灰）区分，没有底板、没有翘起的石片。
+ *
+ * 为什么删掉那块「陶土片」：底栏是全局 chrome，一旦某页内容也是深色石卡，
+ * 底栏再压一块亮板就会把视线从内容抢走；导航只需要「在哪」和「能去哪」。
  * 全部 Canvas 绘制，零 DOM。
  */
 import { DESIGN_W, DESIGN_H } from '../render/layout';
-import { roundRect } from '../render/board';
-import { CLAY, CLAY_UI, clayBlock, clayText } from './clay';
-import { clayFrom, type ThemeChrome } from '../render/themes/types';
+import type { ThemeChrome } from '../render/themes/types';
+import { trackedText, trackedWidth } from './hud';
 
 /** 导航页签。 */
 export type NavTab = 'home' | 'map' | 'skins' | 'rank' | 'profile';
@@ -20,7 +22,7 @@ export const NAV_TABS: NavTab[] = ['home', 'map', 'skins', 'rank', 'profile'];
 export const NAV_LABELS: Record<NavTab, string> = {
   home: '主页',
   map: '地图',
-  skins: '皮肤',
+  skins: '主题',
   rank: '排行',
   profile: '我的',
 };
@@ -69,164 +71,171 @@ export function pickNavTab(x: number, y: number): NavTab | null {
  * 绘制底部导航栏。
  * @param active 当前页签
  * @param now 当前时间戳（ms），用于图标动画
+ * @param _chrome 保留参数：定稿底栏不再跟随主题换色（chrome 只换棋盘）
  */
 export function drawNav(
   ctx: CanvasRenderingContext2D,
   active: NavTab,
   now: number,
-  chrome?: ThemeChrome,
+  _chrome?: ThemeChrome,
 ): void {
-  // 主题色：底栏是「内容区的一部分」，深色主题下留一条奶油色板会像贴错了图。
-  //
-  // 三档色都从 chrome 取：
-  // - `plate` 背板 ← `chrome.pill`（就是「板上的一块」，和关号胶囊同一个语义）
-  // - `chip`  选中片 ← `chrome.primary`
-  // - `inkOn` 选中字 ← `chrome.primaryInk`；`inkOff` 未选中 ← `chrome.pillInk`（压到 55%）
-  //
-  // 未选中不能用 `inkSoft`：它是「深色背景上的弱化正文」，浅色底上会直接消失。
-  const plate = chrome ? clayFrom(chrome.pill) : CLAY.cream;
-  const chip = chrome ? clayFrom(chrome.primary) : CLAY.terracotta;
-  const inkOn = chrome ? chrome.primaryInk : '#FFF6E9';
-  const inkOff = chrome ? chrome.pillInk : CLAY_UI.inkSoft;
-  const offAlpha = chrome ? 0.55 : 1;
-
-  // 内容区在导航上沿的落影（导航是浮在内容之上的，所以影子朝上）
-  const fade = ctx.createLinearGradient(0, NAV_TOP - 40, 0, NAV_TOP);
-  fade.addColorStop(0, 'rgba(74,51,39,0)');
-  fade.addColorStop(1, chrome ? 'rgba(8,14,22,0.22)' : 'rgba(74,51,39,0.16)');
+  // 内容滚到栏下的渐隐：栏是「浮」在内容上的，所以影子朝上
+  const fade = ctx.createLinearGradient(0, NAV_TOP - 36, 0, NAV_TOP);
+  fade.addColorStop(0, 'rgba(6,10,8,0)');
+  fade.addColorStop(1, 'rgba(6,10,8,0.55)');
   ctx.fillStyle = fade;
-  ctx.fillRect(0, NAV_TOP - 40, DESIGN_W, 40);
+  ctx.fillRect(0, NAV_TOP - 36, DESIGN_W, 36);
 
-  // 背板：横向外扩 40，让左右圆角藏在屏幕外，只留顶部两角
-  clayBlock(ctx, -40, NAV_TOP - 6, DESIGN_W + 80, NAV_H + 80, 34, plate, 601, { depth: 0 });
+  // 墨条：半透，让地面极缓的明暗还能透上来一点（纯色会像贴了一条胶带）
+  ctx.fillStyle = 'rgba(10,16,13,0.82)';
+  ctx.fillRect(0, NAV_TOP, DESIGN_W, NAV_H);
 
-  // 上沿一道浅色高光，把背板从内容区里「切」出来
-  ctx.strokeStyle = 'rgba(255,251,243,0.85)';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(0, NAV_TOP + 1.5);
-  ctx.lineTo(DESIGN_W, NAV_TOP + 1.5);
-  ctx.stroke();
+  // 顶部发丝金线（1 CSS → 2）
+  ctx.fillStyle = 'rgba(212,175,106,0.14)';
+  ctx.fillRect(0, NAV_TOP, DESIGN_W, 2);
 
   navHitAreas().forEach((h, i) => {
     const cx = h.x + h.w / 2;
     const on = h.tab === active;
-    const iconY = NAV_TOP + 38;
-    const labelY = NAV_TOP + 93;
+    const color = on ? '#F2DCA8' : '#7A7468';
 
-    // 选中态：一整块翘起的陶土片（把图标和文字一起包住）
-    if (on) {
-      clayBlock(ctx, cx - 59, NAV_TOP + 6, 118, 106, 28, chip, 611 + i, { depth: 9 });
-    }
-
+    // 未选中项压到 88%：五个栏位都亮着就没有「当前在哪」了
     ctx.save();
-    if (!on) ctx.globalAlpha = offAlpha;
-    ctx.translate(cx, iconY + (on ? -3 : 0));
-    drawNavIcon(ctx, h.tab, on ? inkOn : inkOff, now + i * 120, on);
+    if (!on) ctx.globalAlpha = 0.88;
+    drawNavIcon(ctx, h.tab, cx, NAV_TOP + 41, color, on, now + i * 140);
     ctx.restore();
 
-    ctx.save();
-    if (!on) ctx.globalAlpha = offAlpha;
-    clayText(ctx, NAV_LABELS[h.tab], cx, labelY, on ? 23 : 21, {
-      weight: on ? 800 : 600,
-      fill: on ? inkOn : inkOff,
-      outline: on ? 'rgba(118,50,22,0.55)' : undefined,
-      outlineWidth: on ? 4 : 0,
-      emboss: false,
-    });
-    ctx.restore();
+    const label = NAV_LABELS[h.tab];
+    trackedText(
+      ctx,
+      label,
+      cx - trackedWidth(ctx, label, 19, 3.8, on ? 600 : 500) / 2,
+      NAV_TOP + 97,
+      19,
+      color,
+      3.8,
+      on ? 600 : 500,
+    );
   });
 }
 
 /**
- * 画一个导航图标（以原点为中心，约 44×44）。粗线条 + 圆头端点。
- * @param now 预留给动效的相位参数（各页签错开）
- * @param strong 选中态：线条更粗
+ * 画一个导航图标：设计稿的 24 格线性图标，等比放大到 44。
+ *
+ * 一律**描边不填充**（fill:none / stroke-width:1.5），圆头端点 ——
+ * 实心块在深色底上会糊成一团，细线才撑得住「精致」这两个字。
  */
 function drawNavIcon(
   ctx: CanvasRenderingContext2D,
   tab: NavTab,
+  cx: number,
+  cy: number,
   color: string,
-  now: number,
   strong: boolean,
+  now: number,
 ): void {
-  // 极轻微的呼吸，避免导航栏完全静止（幅度足够小，不干扰阅读）
-  const breath = 1 + Math.sin(now / 700) * 0.02;
+  // 极轻微的呼吸，避免底栏完全静止（幅度小到不干扰阅读）
+  const breath = 1 + Math.sin(now / 900) * 0.012;
+  const s = (44 / 24) * breath;
 
   ctx.save();
-  ctx.scale(breath, breath);
-  ctx.fillStyle = color;
+  ctx.translate(cx, cy);
+  ctx.scale(s, s);
+  ctx.translate(-12, -12);
   ctx.strokeStyle = color;
-  ctx.lineWidth = strong ? 5 : 4;
+  ctx.lineWidth = (strong ? 1.75 : 1.6) / breath;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
   switch (tab) {
     case 'home': {
-      // 房子：实心屋顶 + 屋身 + 门洞
+      // 房子：屋顶 + 屋身，门洞留白（一笔闭合）
       ctx.beginPath();
-      ctx.moveTo(0, -16);
-      ctx.lineTo(17, 1);
-      ctx.lineTo(-17, 1);
+      ctx.moveTo(4, 11);
+      ctx.lineTo(12, 4);
+      ctx.lineTo(20, 11);
+      ctx.lineTo(20, 20);
+      ctx.lineTo(14, 20);
+      ctx.lineTo(14, 15);
+      ctx.lineTo(10, 15);
+      ctx.lineTo(10, 20);
+      ctx.lineTo(4, 20);
       ctx.closePath();
-      ctx.fill();
-      roundRect(ctx, -12, 2, 24, 15, 5);
-      ctx.fill();
+      ctx.stroke();
       break;
     }
     case 'map': {
-      // 路线：折线 + 三个节点
+      // 折起来的地图：外轮廓 + 两道折痕
       ctx.beginPath();
-      ctx.moveTo(-14, 14);
-      ctx.lineTo(-4, -2);
-      ctx.lineTo(6, 8);
-      ctx.lineTo(15, -12);
+      ctx.moveTo(9, 4);
+      ctx.lineTo(3, 6);
+      ctx.lineTo(3, 20);
+      ctx.lineTo(9, 18);
+      ctx.lineTo(15, 20);
+      ctx.lineTo(21, 18);
+      ctx.lineTo(21, 4);
+      ctx.lineTo(15, 6);
+      ctx.closePath();
       ctx.stroke();
-      for (const [x, y] of [[-14, 14], [15, -12]] as const) {
-        ctx.beginPath();
-        ctx.arc(x, y, strong ? 5 : 4.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      ctx.beginPath();
+      ctx.moveTo(9, 4);
+      ctx.lineTo(9, 18);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(15, 6);
+      ctx.lineTo(15, 20);
+      ctx.stroke();
       break;
     }
     case 'skins': {
-      // 皮肤：2×2 圆角方块（代表色板）
-      for (const [x, y] of [[-12, -12], [3, -12], [-12, 3], [3, 3]] as const) {
-        roundRect(ctx, x, y, 10, 10, 3);
-        ctx.fill();
-      }
+      // 主题：一只瓷盘 + 盘心一道釉（圆心不在正中，才像笔意）
+      ctx.beginPath();
+      ctx.arc(12, 12, 8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(12, 12, 8, -Math.PI / 2, Math.PI / 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(12, 12, 5.5, Math.PI / 2, -Math.PI / 2, true);
+      ctx.stroke();
       break;
     }
     case 'rank': {
-      // 奖杯：杯身 + 杯柄 + 底座
+      // 排行：三根立柱 + 一条基线（不封口，留呼吸）
       ctx.beginPath();
-      ctx.moveTo(-11, -14);
-      ctx.lineTo(11, -14);
-      ctx.lineTo(9, -3);
-      ctx.quadraticCurveTo(0, 5, -9, -3);
-      ctx.closePath();
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(-11, -9, 5.5, Math.PI / 2, Math.PI * 1.5);
+      ctx.moveTo(6, 20);
+      ctx.lineTo(6, 12);
+      ctx.lineTo(10, 12);
+      ctx.lineTo(10, 20);
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(11, -9, 5.5, -Math.PI / 2, Math.PI / 2);
+      ctx.moveTo(10, 20);
+      ctx.lineTo(10, 7);
+      ctx.lineTo(14, 7);
+      ctx.lineTo(14, 20);
       ctx.stroke();
-      ctx.fillRect(-3, 4, 6, 6);
-      roundRect(ctx, -9, 11, 18, 5, 2.5);
-      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(14, 20);
+      ctx.lineTo(14, 10);
+      ctx.lineTo(18, 10);
+      ctx.lineTo(18, 20);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(4, 20);
+      ctx.lineTo(20, 20);
+      ctx.stroke();
       break;
     }
     case 'profile': {
-      // 人像：头 + 肩
+      // 人像：头 + 肩（肩是一条弧，不是实心块）
       ctx.beginPath();
-      ctx.arc(0, -8, 8.5, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.arc(12, 8.5, 3.5, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.beginPath();
-      ctx.moveTo(-14, 16);
-      ctx.quadraticCurveTo(0, -1, 14, 16);
-      ctx.closePath();
-      ctx.fill();
+      ctx.moveTo(5, 20);
+      ctx.quadraticCurveTo(5, 13, 12, 13);
+      ctx.quadraticCurveTo(19, 13, 19, 20);
+      ctx.stroke();
       break;
     }
   }

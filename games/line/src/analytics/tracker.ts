@@ -22,7 +22,7 @@ export type EventName =
   | 'level_fail' | 'level_abandon' | 'hint_use' | 'skip_use'
   | 'level_load_fail' | 'progress_report_failed' | 'canvas_resize'
   | 'ad_start' | 'ad_complete' | 'ad_abort' | 'ad_error'
-  | 'skin_unlock' | 'skin_equip' | 'skin_page_view' | 'theme_equip'
+  | 'skin_unlock' | 'skin_equip' | 'skin_page_view' | 'theme_equip' | 'theme_page_view'
   | 'leaderboard_view' | 'share_click' | 'share_success'
   | 'challenge_start' | 'challenge_result'
   // 大厅体系（T23）

@@ -11,7 +11,7 @@
  *   chrome --headless=new --screenshot=out.png --window-size=750,1334 --virtual-time-budget=4000 <url>
  */
 import { DESIGN_W, DESIGN_H } from '../src/render/layout';
-import { clayBackdrop } from '../src/ui/clay';
+import { drawLobbyGround } from '../src/ui/ground';
 import { drawNav } from '../src/ui/nav';
 import { pageByKey, PAGES, NOW } from './mock-ui';
 import { themeById } from '../src/render/themes';
@@ -31,7 +31,7 @@ const ctx = canvas.getContext('2d');
 if (!ctx) throw new Error('no 2d context');
 ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-clayBackdrop(ctx);
+drawLobbyGround(ctx);
 const themeChrome = themeById(params.get('t') ?? '')?.chrome;
 if (page) {
   page.draw(ctx);

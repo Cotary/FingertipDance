@@ -172,6 +172,43 @@ const OVERRIDES: Record<string, Partial<MapPalette>> = {
     worldTo: '#C6D2DC',
     worldK: 0.46,
   },
+  // 秘色天青：地图是「展柜上方的那片墨石夜」。
+  //
+  // 和金缮同一条道理：**路是金的**——盘面走过的金缮光迹，在地图上
+  // 延伸成整条古道。世界球往「青白瓷」混：七只瓷球 + 一条金路，
+  // 同一间展柜里的东西。
+  mise: {
+    skyTop: '#060B08',
+    skyMid: '#0C1712',
+    skyBottom: '#13241B',
+    nebulaA: 'rgba(110,158,130,0.14)',
+    nebulaB: 'rgba(184,144,69,0.08)',
+    star: '#EDE7DA',
+    starWarm: '#E9CC8A',
+    // 远景行星：一颗青石球
+    planet: '#3D5F50',
+    planetDark: '#060B08',
+    planetRing: 'rgba(184,144,69,0.22)',
+    road: '#B89045',
+    roadEdge: '#F2DCA8',
+    roadGlow: 'rgba(242,220,168,0.20)',
+    roadDim: '#6E5218',
+    rune: '#FFF6DC',
+    locked: '#0B1410',
+    lockedRim: 'rgba(150,180,162,0.24)',
+    current: '#F2DCA8',
+    currentInk: '#2A2114',
+    gate: '#2D5245',
+    gateInk: '#EDE7DA',
+    gold: '#E9CC8A',
+    panel: 'rgba(8,14,11,0.86)',
+    panelEdge: 'rgba(212,175,106,0.30)',
+    ink: '#EDE7DA',
+    inkSoft: 'rgba(197,191,175,0.64)',
+    // 世界色往青白瓷混，不往金混 —— 金路旁边站一排脏球就毁了
+    worldTo: '#C2D2C4',
+    worldK: 0.42,
+  },
   // 玻璃穹顶：极地夜空，星是冰蓝
   glass: {
     skyTop: '#04121C',

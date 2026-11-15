@@ -5,6 +5,7 @@
  *
  * | 主题 | 轴 | 换掉了什么 |
  * |---|---|---|
+ * | 秘色天青 | 釉面 | 平涂格 → 釉面棋子（暗展柜 + 金缮光迹，默认旗舰） |
  * | 水墨山河 | 媒介 | 深色发光 → 亮纸墨块（唯一的浅色盘面） |
  * | 玻璃穹顶 | 材质 | 实心块 → 透光块 |
  * | 金缮瓷盘 | 器物质感 | 发光的格 → 一片片瓷（缝是暗的，走过填金） |
@@ -33,6 +34,7 @@ import { NEON_THEME } from './neon';
 import { PIXEL_THEME } from './pixel';
 import { ABYSS_THEME } from './abyss';
 import { KINTSUGI_THEME } from './kintsugi';
+import { MISE_THEME } from './mise';
 
 /**
  * 金线装饰：独立渲染器（已实测）。
@@ -80,6 +82,7 @@ const GILDED: BoardTheme = {
 
 /** 全部主题（陈列顺序 = 解锁关号递增，玩家看到的就是「一条进阶线」）。 */
 export const THEMES: BoardTheme[] = [
+  MISE_THEME,
   INK_THEME,
   ...PREMIUM_SPECS.map(makeLinearTheme),
   KINTSUGI_THEME,

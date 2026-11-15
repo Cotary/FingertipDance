@@ -10,7 +10,7 @@ import { platform } from '../platform';
 const COPY_POOL = [
   '我卡在第 {lv} 关，你能连过去吗？',
   '这关我重来 {undos} 次，你呢？',
-  '敢不敢试试我的皮肤？',
+  '敢不敢试试我的主题？',
   '第 {lv} 关，我不信你过得去',
 ];
 

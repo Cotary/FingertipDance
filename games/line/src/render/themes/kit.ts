@@ -61,10 +61,33 @@ export interface ThemeKit {
   glyph: {
     style: GlyphStyle;
     pal: GlyphPalette;
+    /**
+     * 按格类型换一套图标色。
+     *
+     * 暗色棋盘上，图标必须是浅色；但鎏金/霜青这类**亮格**上浅色图标会消失。
+     * 主题自己按 type 决定用哪套（`CoverCell.SHARD` → 深墨、其余 → 浅釉）。
+     */
+    palFor?: (type: number) => GlyphPalette;
+    /**
+     * 按格类型微调图标倍率（乘在 `scale` 上）。
+     *
+     * 不同图标的**视觉重量**不一样：五角星这个形状几乎顶满 24×24 的画布，
+     * 而钥匙 / 门的线条只占中间 60% —— 用同一个倍率画出来，
+     * 星比门大一圈。设计稿是靠各自的留白控制的，这里按类型回调一次。
+     */
+    scaleFor?: (type: number) => number;
     /** 图标底盘；空串 = 不画 */
     back: string;
     backEdge: string;
     backR?: number;
+    /**
+     * 地形记号（石障 / 冰）的填色覆盖。
+     *
+     * 默认跟 `pal.accent`。但 accent 是金的主题（mise）必须压住它：
+     * 石块上一摊金填色会把路线的金压没——「金贵如缮」死在这里。
+     * 设成暗色/浅刻痕色，金只留给线。
+     */
+    terrainAccent?: string;
     /**
      * 图标相对格宽的倍率（默认 0.50）。
      *
@@ -290,7 +313,7 @@ function drawMarks(
       const terrain = type === CoverCell.BLOCK || type === CoverCell.ICE;
 
       let alpha = 1;
-      let size = glyphSize;
+      let size = glyphSize * (kit.glyph.scaleFor?.(type) ?? 1);
       // 已收的星 / 已拿的钥匙压暗缩小，但**不消失**：
       // 消失会让玩家以为那格空了，可以走回去
       if (type === CoverCell.SHARD && st.shardsGot.has(group)) {
@@ -321,7 +344,12 @@ function drawMarks(
         }
       }
 
-      drawGlyph(ctx, kind, kit.glyph.style, p.x, p.y, size, kit.glyph.pal, cellDir(byte) as Dir);
+      const gpal = kit.glyph.palFor
+        ? kit.glyph.palFor(type)
+        : terrain && kit.glyph.terrainAccent
+          ? { ...kit.glyph.pal, accent: kit.glyph.terrainAccent }
+          : kit.glyph.pal;
+      drawGlyph(ctx, kind, kit.glyph.style, p.x, p.y, size, gpal, cellDir(byte) as Dir);
 
       // 钥匙 / 传送门的编号：同组配对，不写数字玩家只能靠记位置
       if ((type === CoverCell.KEY || type === CoverCell.PORTAL) && cell >= 48) {

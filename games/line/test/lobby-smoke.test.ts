@@ -48,6 +48,8 @@ const HOME = {
   avatar: '',
   skinCount: 3,
   totalSkins: 16,
+  starCount: 42,
+  totalRetries: 5,
 };
 
 const PROFILE: ProfilePageState = {
@@ -61,6 +63,11 @@ const PROFILE: ProfilePageState = {
   totalSkins: 16,
   soundOn: true,
   vibrateOn: false,
+  starCount: 42,
+  totalRetries: 5,
+  threeStarCount: 3,
+  currentLevel: 8,
+  uid: 88214,
 };
 
 describe('大厅绘制冒烟', () => {
@@ -80,13 +87,13 @@ describe('大厅绘制冒烟', () => {
     }
   });
 
-  it('地图页能画完并返回返回按钮', () => {
+  it('地图页能画完并返回脚卡按钮（返回交给底栏，卡上不再放返回键）', () => {
     const ctx = fakeCtx();
     const st = createMapState(7, 1000, { '1': 3, '2': 2 });
     st.scrollY = 300;
     const buttons = drawMapView(ctx, st, 1000);
     const ids = buttons.map((b) => b.id);
-    expect(ids).toContain('navHome');
+    expect(ids).toContain('playCurrent');
     // 吸底的「继续」：一屏 16 关，不该让玩家自己找当前关
     expect(ids).toContain('playCurrent');
     // 可视区里至少有节点能被点中
@@ -103,7 +110,7 @@ describe('大厅绘制冒烟', () => {
       loading: false,
     };
     const tabs1 = drawRankPage(ctx, st, 1000);
-    expect(tabs1.map((b) => b.id)).toEqual(['tabGlobal', 'tabFriends']);
+    expect(tabs1.map((b) => b.id)).toEqual(['tabFriends', 'tabGlobal']);
     st.tab = 'friends';
     st.friends.loadingOpenData = false;
     st.friends.friends = [{ uid: 2, nickname: '好友', avatar: '', maxLevel: 5, totalTimeMs: 1000, skinCount: 2, isMutual: true }];
@@ -122,32 +129,51 @@ describe('大厅绘制冒烟', () => {
     expect(ids).toContain('clearCache');
   });
 
-  it('皮肤页能画完并返回按钮', () => {
+  it('主题页能画完并返回按钮（大卡 = 展签，货架 = 卡片）', () => {
     const ctx = fakeCtx();
-    const buttons = drawSkinsPage(
+    // 使用中的主题 → 没有动作按钮，只有「使用中」金签
+    const b1 = drawSkinsPage(
       ctx,
-      { equipped: 'wood', selected: 'wood', unlocked: new Set(['wood', 'mint']), page: 0 },
+      { equipped: 'wood', selected: 'wood', unlocked: new Set(['wood']), page: 0, themeSelected: 'mise', themeEquipped: 'mise', maxLevel: 0 },
       1000,
     );
-    expect(buttons.every((b) => typeof b.id === 'string')).toBe(true);
-    // 选中的是「已装备」→ 没有按钮；换一个已解锁未装备的，才会出现装备按钮
+    expect(b1).toEqual([]);
+    // 换一套已解锁但没装备的 → 出现「使用」按钮
     const b2 = drawSkinsPage(
       ctx,
-      { equipped: 'wood', selected: 'mint', unlocked: new Set(['wood', 'mint']), page: 0 },
+      { equipped: 'wood', selected: 'wood', unlocked: new Set(['wood']), page: 0, themeSelected: 'ink', themeEquipped: 'mise', maxLevel: 200 },
       1000,
     );
-    expect(b2.map((b) => b.id)).toContain('equipSkin');
+    expect(b2.map((b) => b.id)).toEqual(['equipTheme']);
+    // 金按钮落在屏内、在右半侧（设计稿右上角状态位）
+    const b = b2[0];
+    expect(b.x + b.w).toBeLessThanOrEqual(750);
+    expect(b.y + b.h).toBeLessThanOrEqual(1334);
+    expect(b.x).toBeGreaterThan(375);
   });
 
-  it('结算页 4 个按钮且全部落在加高后的面板内', () => {
+  it('结算页 4 个按钮且全部落在屏内（朱印版式 · 无面板）', () => {
     const ctx = fakeCtx();
     const buttons = drawResult(ctx, 7, 10, 8, 12345, null, 0.007);
     const ids = buttons.map((b) => b.id);
     expect(ids).toEqual(['next', 'share', 'skins', 'home']);
-    const panelBottom = 380 + 660;
+    // 朱印版式直接画在墨石暗幕上，没有奶油面板；
+    // 只要求按钮全部落在 750×1334 屏内、且彼此不重叠。
     for (const b of buttons) {
-      expect(b.y + b.h).toBeLessThanOrEqual(panelBottom);
+      expect(b.x).toBeGreaterThanOrEqual(0);
+      expect(b.y).toBeGreaterThanOrEqual(0);
+      expect(b.x + b.w).toBeLessThanOrEqual(750);
+      expect(b.y + b.h).toBeLessThanOrEqual(1334);
     }
+    for (let i = 1; i < buttons.length; i++) {
+      expect(buttons[i].y).toBeGreaterThanOrEqual(buttons[i - 1].y);
+    }
+    // 主按钮在上，分享/主题并排一行，返回大厅在最下
+    const [main, share, skins, home] = buttons;
+    expect(share.y).toBe(skins.y);
+    expect(share.x + share.w).toBeLessThanOrEqual(skins.x);
+    expect(main.y + main.h).toBeLessThanOrEqual(share.y);
+    expect(share.y + share.h).toBeLessThanOrEqual(home.y);
   });
 
   it('未捕获异常应被记录（防止绘制函数静默失败）', () => {

@@ -236,7 +236,19 @@ async function main() {
     await sleep(Number(process.env.AFTER_DRAG ?? 600));
   }
 
-  const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  // 可选：只截某一块（CSS 像素 `x,y,w,h`）。
+  // 设计稿一页摆着七台手机，整页截图在小内存机器上会把渲染进程拍崩；
+  // 只截一台就是 375×812，稳得多。
+  //   CLIP="1022,803,375,812" node tools/shot-cdp.mjs ...
+  const clip = process.env.CLIP;
+  const clipArg = clip
+    ? (([x, y, cw, ch]) => ({ x, y, width: cw, height: ch, scale: dpr }))(clip.split(',').map(Number))
+    : undefined;
+  const shot = await send('Page.captureScreenshot', {
+    format: 'png',
+    captureBeyondViewport: !!clipArg,
+    ...(clipArg ? { clip: clipArg } : {}),
+  });
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, Buffer.from(shot.data, 'base64'));
   if (process.env.LOG) {
