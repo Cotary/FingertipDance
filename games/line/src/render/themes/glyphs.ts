@@ -15,15 +15,32 @@
  * 所以线宽要在设置前除以缩放倍数（见 `px` 辅助）。
  */
 import { DIR, type Dir } from '../../core/cover/v3/types';
+import { fillGrain } from '../grain';
 
 /** 图元公共开关。`fill` / `stroke` 对所有形态都可选 —— 线也能被填（无实际效果，但省得逐个窄化）。 */
 interface PartBase {
   fill?: boolean;
   stroke?: boolean;
+  /**
+   * 虚线（单位空间里的 dash/gap）。
+   *
+   * 只对描边生效。用途很窄但很硬：传送门的**出口**必须和入口用同一对环、
+   * 只把环改成虚线 —— 同色不同实虚，玩家才一眼分清"进哪个、出哪个"。
+   */
+  dash?: [number, number];
+  /**
+   * 色调。默认用 `pal.accent`（填）/ `pal.ink`（描）。
+   *
+   * 一枚图标里常常有**两种材质**：门是玄墨门板 + 中间透出的天青光，
+   * 星屑是深釉底 + 金星。用一个 accent 画两种材质，必然有一种是错的
+   * （实测：开着的门，两片门板被染成了和中间光一个颜色，整枚散掉）。
+   * 所以图元可以点名要 `pal` 里的哪一档。
+   */
+  tone?: 'accent' | 'ink' | 'chip' | 'deep';
 }
 
 /** 单位空间里的一个图元。 */
-type Part = PartBase &
+export type GlyphPart = PartBase &
   (
     | { k: 'poly'; pts: Array<[number, number]> }
     | { k: 'circle'; cx: number; cy: number; r: number }
@@ -49,7 +66,7 @@ export type GlyphKind = 'star' | 'arrow' | 'key' | 'gate' | 'portal' | 'rock' | 
 export type GlyphStyle =
   | 'seal' | 'ice' | 'constellation'
   | 'ink' | 'neon' | 'pixel' | 'jelly'
-  | 'porcelain';
+  | 'porcelain' | 'mineral';
 
 /** 图标用色。 */
 export interface GlyphPalette {
@@ -61,6 +78,22 @@ export interface GlyphPalette {
   chip: string;
   /** 深色（描边 / 阴影） */
   deep: string;
+  /**
+   * 线宽倍率（只对「线状图元」生效）。
+   *
+   * 默认 1 —— 那是按"一笔厚色"定的（矿物笔触 0.26 half）。
+   * 但同一个笔触画**六边形**这种闭合小环时，同样的粗细会把中间糊死：
+   * 冰砖实测直接读成一个「N」。所以按面调：环越闭合，线就要越细。
+   */
+  lineW?: number;
+  /**
+   * 面状图元那圈"磕边"的线宽倍率。
+   *
+   * 默认 1（0.085 half）是给"颜料片"定的：边上压一道影，色块才贴在墙上。
+   * 但同一套里还有**贴金箔的星**和**刻出来的箭**，它们的边是一根细线（0.04 half），
+   * 按 0.085 描会变成一圈粗黑的轮廓，那正是"贴纸"的观感。
+   */
+  edgeW?: number;
 }
 
 // ────────────────────────────── 几何 ──────────────────────────────
@@ -76,62 +109,45 @@ function starPts(r: number, inner = 0.42): Array<[number, number]> {
   return pts;
 }
 
-/** 六角雪花：三条主轴 + 六个端点上的短枝。 */
-function snowParts(): Part[] {
-  const parts: Part[] = [];
-  for (let i = 0; i < 3; i++) {
-    const a = (i * Math.PI) / 3;
-    const c = Math.cos(a);
-    const s = Math.sin(a);
-    parts.push({ k: 'line', pts: [[-c * 0.92, -s * 0.92], [c * 0.92, s * 0.92]] });
-    // 端点短枝：雪花的辨识度全在这六个分叉上
-    for (const sign of [-1, 1]) {
-      const px = c * 0.92 * sign;
-      const py = s * 0.92 * sign;
-      for (const side of [-1, 1]) {
-        const b = a + (side * Math.PI) / 3;
-        parts.push({ k: 'line', pts: [[px, py], [px - Math.cos(b) * 0.34 * sign, py - Math.sin(b) * 0.34 * sign]] });
-      }
-    }
-  }
-  return parts;
-}
-
 /** 九种图标的几何。 */
-const GLYPHS: Record<GlyphKind, Part[]> = {
+const GLYPHS: Record<GlyphKind, GlyphPart[]> = {
   star: [{ k: 'poly', pts: starPts(0.94), fill: true, stroke: true }],
 
-  // 箭头朝上；绘制时按方向旋转
+  // 箭头朝上；绘制时按方向旋转。
+  //
+  // 设计稿是**一根杆 + 一个折角**（`M5 12 H15` + `M11 7 L17 12 L11 17`），
+  // 不是实心三角。填成实心会读成"播放键"或"指南针"，而它要说的只有一句：
+  // 只能往这边走。杆比尖端早收一格，尖端才不会被杆头撑钝。
   arrow: [
-    {
-      k: 'poly',
-      pts: [[0, -0.86], [0.72, 0.34], [0, 0.06], [-0.72, 0.34]],
-      fill: true,
-      stroke: true,
-    },
+    { k: 'line', pts: [[0, 0.58], [0, -0.24]] },
+    { k: 'line', pts: [[0.42, 0.10], [0, -0.42], [-0.42, 0.10]] },
   ],
 
+  // 钥匙：一把**斜着**的钥匙（环 + 杆 + 一齿）。
+  //
+  // 设计稿是纯线（`circle 9,9 r3.4` + `M11.4 11.4 L18 18` + `M15.5 15.5 L17.5 13.5`）。
+  // 旧版是横着一把"实心环 + 粗杆 + 两齿"，在铜面上填了深褐再描边，
+  // 远看是一小坨墨 —— 线稿才配得上"錾刻"这套语言。
   key: [
-    { k: 'circle', cx: -0.34, cy: 0, r: 0.40, stroke: true },
-    { k: 'circle', cx: -0.34, cy: 0, r: 0.13, fill: true },
-    { k: 'rect', x: -0.02, y: -0.11, w: 0.94, h: 0.22, fill: true },
-    { k: 'rect', x: 0.56, y: -0.11, w: 0.16, h: 0.50, fill: true },
-    { k: 'rect', x: 0.28, y: -0.11, w: 0.14, h: 0.38, fill: true },
+    { k: 'circle', cx: -0.25, cy: -0.25, r: 0.29 },
+    { k: 'line', pts: [[-0.04, -0.04], [0.50, 0.50]] },
+    { k: 'line', pts: [[0.30, 0.30], [0.47, 0.13]] },
   ],
 
-  // 拱门：两根柱 + 顶弧，门洞是负形
+  // 门：一扇立起来的板 + 一点门把（设计稿 `rect 7,4 10×16` + 把）。
+  //
+  // 旧版画的是"两根柱 + 顶弧"的拱门，实拍在 5×6 的大格上是一道**拱**，
+  // 读起来像"通道"；而门恰恰是"过不去"——一块板 + 一个门把才说得清。
   gate: [
-    { k: 'arc', cx: 0, cy: -0.06, r: 0.62, a0: Math.PI, a1: 0 },
-    { k: 'line', pts: [[-0.62, -0.06], [-0.62, 0.78]] },
-    { k: 'line', pts: [[0.62, -0.06], [0.62, 0.78]] },
-    { k: 'line', pts: [[-0.86, 0.78], [0.86, 0.78]] },
-    { k: 'circle', cx: 0, cy: 0.30, r: 0.15, fill: true },
+    { k: 'rect', x: -0.42, y: -0.66, w: 0.84, h: 1.32 },
+    { k: 'circle', cx: 0.18, cy: 0.06, r: 0.11, fill: true },
   ],
 
+  // 传送：两个**相扣**的环（设计稿 `circle 10,12 r4.6` + `circle 15,12 r4.6`）。
+  // 同心环是"靶心"，读成"目标"；错开才是"一对"，才配得上"两端互通"。
   portal: [
-    { k: 'circle', cx: 0, cy: 0, r: 0.86, stroke: true },
-    { k: 'circle', cx: 0, cy: 0, r: 0.52, stroke: true },
-    { k: 'arc', cx: 0, cy: 0, r: 0.28, a0: Math.PI * 0.2, a1: Math.PI * 1.2 },
+    { k: 'circle', cx: -0.17, cy: 0, r: 0.38 },
+    { k: 'circle', cx: 0.25, cy: 0, r: 0.38 },
   ],
 
   // 石头：不规则多边形 + 一条裂纹
@@ -145,7 +161,17 @@ const GLYPHS: Record<GlyphKind, Part[]> = {
     { k: 'line', pts: [[-0.16, -0.44], [0.06, 0.06], [-0.20, 0.44]] },
   ],
 
-  ice: snowParts(),
+  // 冰面：**斜面**（一条坡 + 一道分水线 + 一条下滑线），不是雪花。
+  //
+  // 雪花说的是"冷"，而这一格的规则是"踩上去会顺着坡滑到底"——
+  // 玩家要先知道"这里会滑"，才不会以为自己点歪了。
+  // 几何照抄设计稿 03 屏与盘下图例（`M6 16 L10 8 L14 16` / `M8.2 13 H11.8` /
+  // `M15 16 L18 8`）：图例和盘面必须是同一个形状，否则图例等于没画。
+  ice: [
+    { k: 'line', pts: [[-0.50, 0.33], [-0.17, -0.33], [0.17, 0.33]] },
+    { k: 'line', pts: [[-0.32, 0.08], [-0.02, 0.08]] },
+    { k: 'line', pts: [[0.25, 0.33], [0.50, -0.33]] },
+  ],
 
   start: [
     { k: 'circle', cx: 0, cy: 0, r: 0.70, stroke: true },
@@ -169,8 +195,18 @@ const DIR_ROT: Record<Dir, number> = {
 // ────────────────────────────── 笔触 ──────────────────────────────
 
 /** 图元 → 路径（不描边、不填充）。 */
-function tracePart(ctx: CanvasRenderingContext2D, p: Part): void {
+export function traceGlyphPart(ctx: CanvasRenderingContext2D, p: GlyphPart): void {
   ctx.beginPath();
+  // 虚线在 beginPath 之后、描边之前设。这里设而不是在笔触里设，
+  // 是因为 dash 是**图元属性**（传送门出口那一对环），不是语言属性 ——
+  // 同一套笔触画出来的东西，有的该是实线、有的该是虚线。
+  //
+  // `typeof` 守卫：单测用的是极简的 canvas 桩，没有 `setLineDash`。
+  // 为了一个可选装饰在测试里崩掉整个图标绘制，不值得。
+  if (typeof ctx.setLineDash === 'function') {
+    if (p.dash) ctx.setLineDash(p.dash);
+    else ctx.setLineDash([]);
+  }
   switch (p.k) {
     case 'poly':
       ctx.moveTo(p.pts[0][0], p.pts[0][1]);
@@ -194,7 +230,7 @@ function tracePart(ctx: CanvasRenderingContext2D, p: Part): void {
 }
 
 /** 是否可填充（line / arc 只描边）。 */
-function fillable(p: Part): boolean {
+function fillable(p: GlyphPart): boolean {
   return p.k === 'poly' || p.k === 'circle' || p.k === 'rect';
 }
 
@@ -211,7 +247,7 @@ function px(w: number, half: number): number {
  */
 const PAINTERS: Record<
   GlyphStyle,
-  (ctx: CanvasRenderingContext2D, parts: Part[], half: number, pal: GlyphPalette) => void
+  (ctx: CanvasRenderingContext2D, parts: GlyphPart[], half: number, pal: GlyphPalette) => void
 > = {
   // 印章：方朱底、白文。符号本身是「刻掉」的，所以用反白色描边不填充
   seal: (ctx, parts, half, pal) => {
@@ -222,7 +258,7 @@ const PAINTERS: Record<
     ctx.lineWidth = px(0.16, half);
     ctx.lineCap = 'round';
     for (const p of parts) {
-      tracePart(ctx, p);
+      traceGlyphPart(ctx, p);
       if (fillable(p) && p.fill) {
         ctx.fillStyle = pal.chip;
         ctx.fill();
@@ -239,7 +275,7 @@ const PAINTERS: Record<
     ctx.lineWidth = px(0.11, half);
     ctx.lineJoin = 'round';
     for (const p of parts) {
-      tracePart(ctx, p);
+      traceGlyphPart(ctx, p);
       if (fillable(p) && p.fill) {
         ctx.fill();
         ctx.stroke();
@@ -257,7 +293,7 @@ const PAINTERS: Record<
     ctx.lineWidth = px(0.13, half);
     ctx.lineCap = 'round';
     for (const p of parts) {
-      tracePart(ctx, p);
+      traceGlyphPart(ctx, p);
       ctx.stroke();
     }
     // 顶点小点：让线看起来「连的是星」，不是「画的图形」
@@ -287,20 +323,88 @@ const PAINTERS: Record<
     ctx.lineCap = 'round';
     for (const p of parts) {
       if (fillable(p) && p.fill) {
-        tracePart(ctx, p);
-        ctx.fillStyle = pal.accent;
+        traceGlyphPart(ctx, p);
+        ctx.fillStyle = p.tone ? pal[p.tone] : pal.accent;
         ctx.fill();
       }
     }
     ctx.strokeStyle = pal.ink;
     ctx.lineWidth = px(0.14, half);
     for (const p of parts) {
-      // 填过的面也要描轮廓：青花里「一块色」从来不是一团雾，它有料线的边
-      if (p.stroke || (fillable(p) && p.fill)) {
-        tracePart(ctx, p);
+      // **所有**图元都要描边，不只是标了 `stroke` 的。
+      //
+      // 这里踩过一个很贵的坑：`stroke` 是逐图元的可选标记，几何里只要漏写一个，
+      // 这个图形就在青花主题上**整块消失** —— 冰块（三条纯线）画出来是空气，
+      // 门（框 + 把）只剩一颗门把的豆子。而它俩在其他笔触上都正常，
+      // 于是"盘上冰面没有标记"这种 bug 看着像关卡数据错了，查半天。
+      //
+      // 青花的规矩本来就是"线是浓的、面是淡的"：填过的面也要有一道料线的边，
+      // 所以默认全描，只有显式 `stroke: false` 才跳过。
+      if (p.stroke !== false) {
+        traceGlyphPart(ctx, p);
         ctx.stroke();
       }
     }
+  },
+
+  /**
+   * 矿物（鸣沙·丹青）：色块堆上去，边被时间磕掉一圈。
+   *
+   * 壁画的形不是「画」出来的，是**把磨好的石色堆上去**的。所以这套笔触
+   * 有三条和青花正好相反的规矩：
+   *
+   * 1. **面是实的、边是暗的**（青花是"面淡、线浓"）。颜料比墙低半毫米，
+   *    边界是一道阴影，不是一道亮线 —— 描亮线立刻变成"贴纸"。
+   * 2. **面上必须落颗粒**。矿物色是粗磨的，放大看是砂；不落颗粒就只是一块纯色。
+   * 3. **线状图元改「钝笔」**。箭头 / 钥匙 / 传送环没有面可填，
+   *    就把笔画加粗到 0.26 half（87px 的格上约 11px 宽），读起来是一笔厚色 ——
+   *    再往左上错半像素补一道亮，这笔就"堆"起来了。
+   */
+  mineral: (ctx, parts, half, pal) => {
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+
+    // ① 面：实填 + 颗粒 + 磕边
+    //
+    // `tone` 让单枚图标里能有**两种材质**：开着的门是"赭石门板 + 中间暖金"，
+    // 共用一个 `accent` 会把门板染成和光一样的橙，整枚糊成一块（读作帐篷）。
+    for (const p of parts) {
+      if (!fillable(p) || !p.fill) continue;
+      ctx.save();
+      traceGlyphPart(ctx, p);
+      ctx.clip();
+      ctx.fillStyle = p.tone ? pal[p.tone] : pal.accent;
+      ctx.fillRect(-half * 2, -half * 2, half * 4, half * 4);
+      fillGrain(ctx, -half, -half, half * 2, half * 2, 0.9);
+      ctx.restore();
+      traceGlyphPart(ctx, p);
+      ctx.strokeStyle = pal.deep;
+      ctx.lineWidth = px(0.085 * (pal.edgeW ?? 1), half);
+      ctx.stroke();
+    }
+
+    // ② 线：钝笔
+    const lw = pal.lineW ?? 1;
+    ctx.strokeStyle = pal.accent;
+    ctx.lineWidth = px(0.26 * lw, half);
+    for (const p of parts) {
+      if (fillable(p) && p.fill) continue;
+      traceGlyphPart(ctx, p);
+      ctx.stroke();
+    }
+
+    // ③ 堆起来的那半毫米：同一根线往左上错一点，补一道更亮的
+    ctx.save();
+    ctx.translate(-half * 0.035, -half * 0.035);
+    ctx.globalAlpha *= 0.55;
+    ctx.strokeStyle = pal.chip;
+    ctx.lineWidth = px(0.075 * lw, half);
+    for (const p of parts) {
+      if (fillable(p) && p.fill) continue;
+      traceGlyphPart(ctx, p);
+      ctx.stroke();
+    }
+    ctx.restore();
   },
 
   /**
@@ -314,7 +418,7 @@ const PAINTERS: Record<
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     for (const p of parts) {
-      tracePart(ctx, p);
+      traceGlyphPart(ctx, p);
       if (fillable(p) && p.fill) {
         ctx.fillStyle = pal.accent;
         ctx.fill();
@@ -342,7 +446,7 @@ const PAINTERS: Record<
       ctx.strokeStyle = pass === 0 ? pal.accent : pal.chip;
       ctx.lineWidth = pass === 0 ? px(0.34, half) : px(0.11, half);
       for (const p of parts) {
-        tracePart(ctx, p);
+        traceGlyphPart(ctx, p);
         if (pass === 1 && fillable(p) && p.fill) {
           ctx.fillStyle = pal.accent;
           ctx.fill();
@@ -365,7 +469,7 @@ const PAINTERS: Record<
     ctx.miterLimit = 3;
     const w = Math.max(2, Math.round(px(0.16, half) / 2) * 2);
     for (const p of parts) {
-      tracePart(ctx, p);
+      traceGlyphPart(ctx, p);
       if (fillable(p) && p.fill) {
         ctx.fillStyle = pal.accent;
         ctx.fill();
@@ -394,13 +498,13 @@ const PAINTERS: Record<
     ctx.fillStyle = pal.accent;
     for (const p of parts) {
       if (!fillable(p)) continue;
-      tracePart(ctx, p);
+      traceGlyphPart(ctx, p);
       ctx.fill();
     }
     ctx.strokeStyle = pal.chip;
     ctx.lineWidth = px(0.11, half);
     for (const p of parts) {
-      tracePart(ctx, p);
+      traceGlyphPart(ctx, p);
       ctx.stroke();
     }
     ctx.fillStyle = pal.chip;
@@ -418,6 +522,77 @@ const PAINTERS: Record<
 
 // ────────────────────────────── 对外 ──────────────────────────────
 
+/**
+ * 主题自己的几何覆盖。
+ *
+ * 同一个机制在不同世界里**不是同一个形状**：秘色天青的冰面是「一道斜坡」
+ * （规则是"会滑"），鸣沙丹青的冰砖是「六边晶」（规则是"更亮的一格"）。
+ * 强行统一成一套几何，两边至少有一边是错的。
+ *
+ * 所以几何表可以按类型整条替换；没列出的仍用 `GLYPHS` 里的默认值。
+ *
+ * ## 键的命名：设计稿的大图怎么映射到这张表
+ *
+ * 设计稿（`风格样片/*.html` 的 `MARK_GROUPS`）给每一张**大图**一个名字，
+ * 而这里按"什么时候用哪张"来命名。对照关系只有两条规律：
+ *
+ * | 设计稿 | 这里 | 为什么改名 |
+ * |---|---|---|
+ * | `arrow` / `arrowR` / `arrowD` / `arrowL` | 一个 `arrow` | 四向是**同坯旋转**（设计稿自己也是 `<g transform="rotate(90)">`），代码用 `DIR` 转；四个键会变成四份要同步维护的路径 |
+ * | `star1` / `star2` / `star3` | `star` / `star2` / `star3` | 一阶就是"基础星形"，多一个 `star1` 是冗余别名 |
+ * | `door` / `door-open` | `gate` / `gateOpen` | `gate` 是内部类型名（`CoverCell.GATE`），`door` 是设计稿的叫法；两边都保留会让人以为有两个机制 |
+ * | `portal-a` / `portal-b` | `portalA` / `portalB` | 连字符在对象字面量里要加引号，没必要 |
+ *
+ * **没有变体的机制**（`ice` / `key` / `rock`）直接用类型名，因为它们在
+ * 整关内只有一个形态 —— 有变体的才需要额外键（开/闭、进/出、一/二/三阶）。
+ *
+ * 变体键由 `GlyphOpts.variant` 在运行时选。它们写在同一个表里是有意的：
+ * 就是"同一类形状的另一版"，分成两张表之后，主题文件里同一个机制会出现在两处。
+ */
+export type GlyphShapes = Partial<Record<GlyphKind, GlyphPart[]>> &
+  Record<string, GlyphPart[] | undefined>;
+
+/**
+ * 装饰层：笔触画完之后，主题自己再补几笔。
+ *
+ * 笔触是**语言**（面怎么填、线多粗），装饰是**这一枚图标的细节**——
+ * 星箔左上那道错开的亮边、单向箭上那三粒干笔缺口、冰晶里的分水面、
+ * 传送门虚线的后半环。这些只属于某一套的某几枚，塞进笔触里会污染所有图标。
+ *
+ * 拿到的是**已缩放到像素空间**的图元，`half` 是半径，所以里面的数字
+ * 按 `0.1 * half` 这种比例写，换格子大小不会走形。
+ */
+export type GlyphDecor = (
+  ctx: CanvasRenderingContext2D,
+  /**
+   * 现在画的是哪一版。
+   *
+   * 通常是 `GlyphKind`（`'gate'` / `'portal'` …），但**有变体时是变体键**
+   * （`'gateOpen'` / `'portalA'` / `'star2'`）—— 因为变体的细节层本来就不一样：
+   * 开的门要补透光、闭的门要补门框阴影。给的是类型而不是变体，装饰层就只能
+   * 画"两种门平均一下"的细节，那两版都会不对。
+   */
+  kind: string,
+  parts: GlyphPart[],
+  half: number,
+  pal: GlyphPalette,
+) => void;
+
+export interface GlyphOpts {
+  shapes?: GlyphShapes;
+  decor?: GlyphDecor;
+  /**
+   * 状态变体键。同一类机制在不同状态下**换一个形状**：
+   * `gateOpen` / `portalA` / `portalB` / `star2` / `star3` ……
+   *
+   * `shapes` 是按类型的**静态**覆盖，变体是**运行时**的二选一。
+   * 分开是因为它们的失效条件不同：类型在整关内不变，状态每走一步都可能变。
+   * 变体键在 `shapes` 里找不到就回落到基础形状 —— 所以主题只需要给
+   * 它真正想区分的那些状态命名。
+   */
+  variant?: string;
+}
+
 /** 画一个机制图标。 */
 export function drawGlyph(
   ctx: CanvasRenderingContext2D,
@@ -428,8 +603,17 @@ export function drawGlyph(
   size: number,
   pal: GlyphPalette,
   dir: Dir = DIR.UP,
+  opts?: GlyphOpts,
 ): void {
-  const parts = GLYPHS[kind];
+  // 变体优先：`shapes[变体键]` → `shapes[类型]` → 默认几何。
+  // 变体键挂在 `shapes` 上而不是单独一张表，是因为它本来就是"同一类形状的
+  // 另一版"，放两张表会让主题文件里同一个机制出现两处，改一处必忘另一处。
+  const shapes = opts?.shapes ?? {};
+  const key = opts?.variant;
+  const parts =
+    (key ? (shapes as Record<string, GlyphPart[] | undefined>)[key] : undefined) ??
+    shapes[kind] ??
+    GLYPHS[kind];
   if (!parts) return;
   const half = size / 2;
 
@@ -444,22 +628,27 @@ export function drawGlyph(
   ctx.scale(1, 1);
   const scaled = parts.map((p) => scalePart(p, half));
   PAINTERS[style](ctx, scaled, half, pal);
+  opts?.decor?.(ctx, key ?? kind, scaled, half, pal);
   ctx.restore();
   ctx.restore();
 }
 
 /** 单位图元 → 像素图元。 */
-function scalePart(p: Part, half: number): Part {
+function scalePart(p: GlyphPart, half: number): GlyphPart {
+  // `dash` 也必须缩放。单位空间里写 0.14 的 dash，在 180px 的图标上是
+  // 0.14 像素 —— 画出来就是实线（实测：传送门 A/B 长得一模一样）。
+  // 这是"和坐标同一套单位"的必然结果，漏掉一处就是一整个变体失效。
+  const dash = p.dash ? ([p.dash[0] * half, p.dash[1] * half] as [number, number]) : undefined;
   switch (p.k) {
     case 'poly':
-      return { ...p, pts: p.pts.map(([x, y]) => [x * half, y * half] as [number, number]) };
+      return { ...p, dash, pts: p.pts.map(([x, y]) => [x * half, y * half] as [number, number]) };
     case 'circle':
-      return { ...p, cx: p.cx * half, cy: p.cy * half, r: p.r * half };
+      return { ...p, dash, cx: p.cx * half, cy: p.cy * half, r: p.r * half };
     case 'rect':
-      return { ...p, x: p.x * half, y: p.y * half, w: p.w * half, h: p.h * half };
+      return { ...p, dash, x: p.x * half, y: p.y * half, w: p.w * half, h: p.h * half };
     case 'line':
-      return { ...p, pts: p.pts.map(([x, y]) => [x * half, y * half] as [number, number]) };
+      return { ...p, dash, pts: p.pts.map(([x, y]) => [x * half, y * half] as [number, number]) };
     case 'arc':
-      return { ...p, cx: p.cx * half, cy: p.cy * half, r: p.r * half };
+      return { ...p, dash, cx: p.cx * half, cy: p.cy * half, r: p.r * half };
   }
 }

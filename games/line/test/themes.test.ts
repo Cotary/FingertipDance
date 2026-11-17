@@ -7,13 +7,13 @@ import {
 } from '../src/ui/skins';
 
 describe('棋盘主题 · 目录', () => {
-  it('十套，按解锁关号从小到大排列', () => {
-    expect(THEMES.map((t) => t.id)).toEqual([
-      'mise', 'ink', 'glass', 'kintsugi', 'pixel', 'orbit', 'neon', 'obsidian', 'gilded', 'abyss',
-    ]);
+  it('只挂两套做完的，按解锁关号从小到大排列', () => {
+    // 目录里出现几套，就意味着几套是**六通道整套做完**的。
+    // 没做完的先摘掉 —— 主题页上凑数的卡片比少几张卡伤害大得多
+    expect(THEMES.map((t) => t.id)).toEqual(['mise', 'mingsha']);
   });
 
-  it('十套的 id / 名字都不重复（重复的 id 会让装备值指向两套）', () => {
+  it('id / 名字都不重复（重复的 id 会让装备值指向两套）', () => {
     expect(new Set(THEMES.map((t) => t.name)).size).toBe(THEMES.length);
   });
 
@@ -50,17 +50,20 @@ describe('棋盘主题 · 目录', () => {
   it('themeById / isThemeId 对未知 id 返回空（旧存档里的废弃主题要能安全退化）', () => {
     expect(themeById('bamboo')).toBeUndefined();
     expect(themeById('')).toBeUndefined();
-    // 注意：`bamboo`/`frost` 都曾经是「不存在的 id」样例，现在 `frost` 已下线、`kintsugi` 上线。
+    // 注意：`bamboo`/`frost` 都曾经是「不存在的 id」样例，现在 `frost` 已下线。
     // 挑样例时别用「即将上线的主题名」，否则新主题一落地这条就会假失败。
     expect(isThemeId('sakura')).toBe(false);
-    expect(isThemeId('kintsugi')).toBe(true);
-    expect(isThemeId('gilded')).toBe(true);
+    expect(isThemeId('mingsha')).toBe(true);
+    // 摘掉的主题：文件还在，但不注册 —— 旧存档里装备着它必须安全退回经典
+    expect(isThemeId('kintsugi')).toBe(false);
+    expect(isThemeId('gilded')).toBe(false);
   });
 
   it('里程碑解锁按最高通关关号判定', () => {
-    const glass = themeById('glass')!;
-    expect(themeUnlocked(glass, 199, new Set())).toBe(false);
-    expect(themeUnlocked(glass, 200, new Set())).toBe(true);
+    const mingsha = themeById('mingsha')!;
+    const gate = mingsha.unlock.value;
+    expect(themeUnlocked(mingsha, gate - 1, new Set())).toBe(false);
+    expect(themeUnlocked(mingsha, gate, new Set())).toBe(true);
   });
 });
 
@@ -98,12 +101,11 @@ describe('棋盘页 · 命中与解锁', () => {
     maxLevel: 0,
   };
 
-  it('陶片：0 号是「经典」，1~10 是十套主题', () => {
+  it('陶片：0 号是「经典」，1 起是主题，越界返回空', () => {
     expect(themeIdAt(0)).toBe('');
     expect(themeIdAt(1)).toBe('mise');
-    expect(themeIdAt(2)).toBe('ink');
-    expect(themeIdAt(10)).toBe('abyss');
-    expect(themeIdAt(11)).toBe('');
+    expect(themeIdAt(2)).toBe('mingsha');
+    expect(themeIdAt(3)).toBe('');
     expect(themeIdAt(99)).toBe('');
   });
 
@@ -117,7 +119,7 @@ describe('棋盘页 · 命中与解锁', () => {
     expect([c.x, c.y]).toEqual([44, 418 + 253 + 18]);
   });
 
-  it('十一张卡都能点中，且互不重叠', () => {
+  it('每张卡都能点中，且互不重叠', () => {
     const hits: number[] = [];
     for (let i = 0; i < shelfCount(); i++) {
       const r = shelfCardRect(i, 0);
@@ -137,21 +139,24 @@ describe('棋盘页 · 命中与解锁', () => {
     expect(pickThemeChip(44 + 160, 300)).toBe(-1);
   });
 
-  it('滚动上限：恰好让最后一行贴住底栏，且不会滚成负数', () => {
+  it('滚动上限：内容不足一屏时为 0，且不会滚成负数', () => {
     const rows = Math.ceil(shelfCount() / 2);
     const contentH = rows * 253 + (rows - 1) * 18;
-    expect(shelfMaxScroll()).toBe(contentH - (1214 - 418));
+    expect(shelfMaxScroll()).toBe(Math.max(0, contentH - (1214 - 418)));
     expect(clampShelfScroll(-99)).toBe(0);
     expect(clampShelfScroll(99999)).toBe(shelfMaxScroll());
-    // 滚到底时最后一行正好露全
-    const last = shelfCardRect(shelfCount() - 1, shelfMaxScroll());
-    expect(last.y + last.h).toBe(1214);
+    // 只有内容超出一屏时，滚到底才"最后一行正好露全"
+    if (shelfMaxScroll() > 0) {
+      const last = shelfCardRect(shelfCount() - 1, shelfMaxScroll());
+      expect(last.y + last.h).toBe(1214);
+    }
   });
 
   it('里程碑未到不解锁；调试构建全解锁', () => {
-    const gilded = themeById('gilded')!;
-    expect(isThemeOwned({ ...base, maxLevel: 899 }, gilded)).toBe(false);
-    expect(isThemeOwned({ ...base, maxLevel: 900 }, gilded)).toBe(true);
-    expect(isThemeOwned({ ...base, maxLevel: 0, themeAllUnlocked: true }, gilded)).toBe(true);
+    const mingsha = themeById('mingsha')!;
+    const gate = mingsha.unlock.value;
+    expect(isThemeOwned({ ...base, maxLevel: gate - 1 }, mingsha)).toBe(false);
+    expect(isThemeOwned({ ...base, maxLevel: gate }, mingsha)).toBe(true);
+    expect(isThemeOwned({ ...base, maxLevel: 0, themeAllUnlocked: true }, mingsha)).toBe(true);
   });
 });

@@ -28,8 +28,9 @@ import { roundRect } from '../board';
 import { CoverCell } from '../../core/cover/v3/types';
 import type { DesignBox, ThemeChrome } from './types';
 import { fillGrain } from '../grain';
-import type { GlyphPalette } from './glyphs';
-import { composeTheme, type CellGeom, type Pt } from './kit';
+import type { GlyphDecor, GlyphPalette, GlyphShapes } from './glyphs';
+import type { LegendKind, LegendMark } from './types';
+import { arcPts, composeTheme, portalEntrance, truncatePts, type CellGeom, type Pt } from './kit';
 
 // ────────────────────────────── 色板 ──────────────────────────────
 
@@ -95,36 +96,562 @@ const STONE_PAL: GlyphPalette = {
 };
 
 /**
- * 亮格（冰面）上的款：墨青线。
+ * 冰砖上的款：**白色**。
  *
- * 只给**霜青**用 —— 冰面是唯一一块偏冷的浅底。
+ * 设计稿 `.pc.frost .glyph svg { stroke: rgba(255,255,255,.8); stroke-width: 1.5 }`
+ * —— 霜青是整盘最亮的一块，深色线压上去会读成"写上去的字"；
+ * 白线才是**冰里的裂纹**（光从冰里透出来，不是笔画的）。
  */
-const DARK_PAL: GlyphPalette = {
-  ink: 'rgba(20,50,45,0.72)',
-  accent: '#2A2114',
-  chip: '#F2EEE6',
-  deep: '#2A2114',
+const FROST_PAL: GlyphPalette = {
+  ink: 'rgba(255,255,255,0.80)',
+  accent: 'rgba(214,236,242,0.50)',
+  chip: 'rgba(255,255,255,0.90)',
+  deep: 'rgba(255,255,255,0.35)',
 };
 
 /**
- * 金 / 铜面上的款：暖褐刻痕。
+ * 钥匙上的款：**朱印红**。
  *
- * 设计稿在鎏金格上刻的是 `#4A3510`（星）、`#2A2114`（钥匙）—— **暖褐**。
- * 早先图省事把它和冰面共用一套"墨绿"，金格上就出现一颗发绿的星，
- * 像贴了张塑料贴纸：深色本身没错，错在它是冷色。
+ * 「五色族里唯一不用金的机关」—— 这是设计稿给钥匙的一条硬规矩。
+ * 金色只许出现在箭坯与星屑上（金贵如缮，多一处就廉价一处）。
+ * 朱红是这一套的第二把颜色，正好给"开门"这件有因果的事。
  */
-const BROWN_PAL: GlyphPalette = {
-  ink: '#4A3510',
-  accent: '#2A2114',
-  chip: '#7A5E2C',
-  deep: '#3A2A0E',
+const KEY_PAL: GlyphPalette = {
+  ink: '#B4463A',
+  accent: '#B4463A',
+  chip: '#D9614A',
+  deep: 'rgba(122,42,32,0.55)',
+  edgeW: 0.5,
 };
+
+/**
+ * 门上的款：**玄墨**。
+ *
+ * 门扉是玄墨的（比背景暗一档），只有门缝和门环是鎏金 ——
+ * 那道金缝是"这里能开"的唯一暗示。门本身不能是金：
+ * 它不是藏品，是一块挡路的东西。
+ */
+const GATE_PAL: GlyphPalette = {
+  ink: 'rgba(255,255,255,0.12)',
+  accent: '#1B211D',
+  chip: '#C9A45C',
+  deep: 'rgba(0,0,0,0.6)',
+  edgeW: 0.6,
+};
+
+/**
+ * 门开之后：**门板还是玄墨，中间透天青**。
+ *
+ * 这是整套里唯一一枚"两种材质"的图标，所以 `deep` / `accent` 的分工必须写清：
+ * - `deep` = 两片门板（玄墨，比闭门略亮一点点 —— 开了，受光更多）；
+ * - `accent` = 门内涌出的青光；
+ * - `chip` = 光柱最亮的那道芯。
+ *
+ * 两个 alpha 必须**拉开**：格子本身已经是浅青（`GLAZE_OPEN`），
+ * 中间那块光若还是 0.34 的青，就和格面一个颜色、整枚糊掉（实测如此）。
+ * 所以门板压到近乎纯墨、中间压到 0.62 的青 —— 差得够大才看得出"两片 + 一个洞"。
+ */
+const GATE_OPEN_PAL: GlyphPalette = {
+  ink: 'rgba(31,54,44,0.55)',
+  accent: 'rgba(96,158,136,0.62)',
+  chip: 'rgba(226,246,238,0.95)',
+  /** 门板：玄墨（比闭门亮一档，因为开了） */
+  deep: '#1A241F',
+  edgeW: 0.6,
+};
+
 
 /** 稳定伪随机（同一格每帧必须同值，否则釉面会闪）。 */
 function hash(n: number): number {
   const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
   return s - Math.floor(s);
 }
+
+// ────────────────────── 机制图标 · 五枚器物 ──────────────────────
+
+/**
+ * 秘色天青的机制件几何（设计稿 壹·图标系统，48 视图）。
+ *
+ * ## 为什么不复用默认线稿
+ *
+ * 默认的 `GLYPHS` 是"一支笔画的符号"——箭头是一根杆加一个折角，
+ * 五套里三套都长这样。但天青的纪律是**「机制件是展柜里的一件件器物」**：
+ * 箭头必须是**鎏金箭坯**（实心、有厚度、錾刻暗线），星必须是
+ * **深釉嵌金星**（不是金格上画一颗黑星），冰必须是**六边晶**（不是一道斜坡）。
+ *
+ * 所以这五枚整条替换几何，其余（钥匙 / 门 / 起终点）仍走默认线稿 ——
+ * 它们本来就是"錾在釉面上的款"，线稿正是对的。
+ */
+const MS48 = (x: number, y: number): [number, number] => [(x - 24) / 24, (y - 24) / 24];
+
+function mpts(list: ReadonlyArray<readonly [number, number]>): Array<[number, number]> {
+  return list.map(([x, y]) => MS48(x, y));
+}
+
+/**
+ * **24 视图** → 单位空间：`(v − 12) / 12`。
+ *
+ * 与 `MS48` 的区别就是视图大小：`MS48` 是 `(v − 24) / 24`（48 视图，给图例用）。
+ * 两个混用是这一轮最大的坑 —— 24 视图的画布中心在 12，按 24 减会整体偏半个图，
+ * 图形被推到格心右下，边缘还被裁掉（实测：门的拱顶缺一块、钥匙飘出格）。
+ */
+const U24 = (x: number, y: number): [number, number] => [(x - 12) / 12, (y - 12) / 12];
+
+function m24(list: ReadonlyArray<readonly [number, number]>): Array<[number, number]> {
+  return list.map(([x, y]) => U24(x, y));
+}
+
+
+/**
+ * 箭坯轮廓。
+ *
+ * 设计稿 `M5 21.2 … L42 24 …` 画的是**朝右**的箭（尖端在 x=42）。
+ * 但 `drawGlyph` 只按 `DIR` 旋转：`DIR.UP` 是零度，所以几何必须**朝上**，
+ * 否则单向门朝上时箭会横着。这里把设计稿的点绕中心转 −90°：
+ * `(dx,dy) → (dy,−dx)`，杆落在下方、尖在正上。
+ */
+const ARROW_BODY: Array<[number, number]> = mpts([
+  [5, 21.2], [27, 21.2], [27, 14], [42, 24], [27, 34], [27, 26.8], [5, 26.8],
+].map(([x, y]) => {
+  const dx = x - 24;
+  const dy = y - 24;
+  return [24 + dy, 24 - dx] as [number, number];
+}));
+
+
+/**
+ * 星屑的火花形（设计稿 `MARKS` 的 `SPARK`，24 视图 → 这里换算成 48）。
+ *
+ * 设计稿的星屑**不是五角星**，是一枚四芒的火花（`M12 5.2 C…`，上下左右
+ * 各一个长芒、腰收得很细）。五角星读作"评分"，四芒火花才读作"一粒碎金"。
+ */
+function sparkPts(scale = 1, dx = 0, dy = 0): Array<[number, number]> {
+  // 24 视图的 SPARK 控制点（对称的四段二次曲线，这里用折线逼近：
+  // 格内尺寸下 8 个点的多边形与曲线在 28px 上无法分辨）
+  const ring: Array<[number, number]> = [
+    [12, 5.2], [12.9, 10.6], [18.8, 12], [12.9, 13.4],
+    [12, 18.8], [11.1, 13.4], [5.2, 12], [11.1, 10.6],
+  ];
+  return ring.map(([x, y]) => {
+    const ux = (x - 12) / 12;
+    const uy = (y - 12) / 12;
+    // 24 视图的 1 单位 = half/12；这里 `scale` 用来做二阶/三阶的缩小
+    return [ux * scale + dx, uy * scale + dy] as [number, number];
+  });
+}
+
+/**
+ * 格内标几何 —— 严格照设计稿 **`MARKS`（24 viewBox，格心小印）** 抄。
+ *
+ * ## 这一版修正的同一个方法论错误
+ *
+ * 上一版这些形状全部照 `ICONS`（48 viewBox 的**器物大图**）画。
+ * 使用说明把这件事写成了**最常见的误用**：
+ *
+ * > 把 48px 机制图标直接贴进棋格当机关 → 图标细节按 28px 灰度校过，
+ * > 贴格里**比例失衡、抢刻纹**。
+ *
+ * 两层资产岗位不同：
+ *
+ * | 层 | 资产 | 视图 | 用在哪 |
+ * |---|---|---|---|
+ * | L1 | `ICONS` | 48 | 图鉴 / 教程 / HUD（"看说明书"） |
+ * | L2 | `MARKS` | 24 | **棋盘格心**（"看棋盘"），格内渲染 36px |
+ *
+ * 两套必须分开，文档那句"机制图标和格内标混用同一份 SVG → 线宽、留白、
+ * 光位都不同，必须分两套"就是针对这个。
+ *
+ * ## 键的映射
+ *
+ * | 设计稿 `MARKS` | 这里 | 差异要点 |
+ * |---|---|---|
+ * | `arrow` + 四向 | `arrow` | 24 视图的箭**本来就朝上**（尖端 y=3.8），不再旋转 |
+ * | `star1/2/3` | `star`/`star2`/`star3` | 四芒火花，一/双/品字 |
+ * | `key` | `key` | 环 r=3.7（不是 48 视图的 8.2）+ 内孔 1.15 + 柄 + 双齿 |
+ * | `door` / `door-open` | `gate` / `gateOpen` | 圆拱 `A6.8 6.8` |
+ * | `portal-a` / `portal-b` | `portalA` / `portalB` | **同心**三环（不是错开的一对） |
+ *
+ * 起终点不走这里（`start` / `end` / `trail` 由 `endpoint` / `head` 整块接管），
+ * `arrive` 由 `arrive` 钩子接管。
+ */
+export const MISE_SHAPES: GlyphShapes = {
+  // 单向：金箭坯（`MARKS.arrow`：`M12 3.8 L19 12 … L5 12 Z`）
+  //
+  // **不旋转**：24 视图的箭尖端在 y=3.8，本来就朝上；
+  // `DIR_ROT` 是"基准朝上"的映射，再转一次就成朝左了。
+  arrow: [
+    {
+      k: 'poly',
+      pts: m24([
+        [12, 3.8], [19, 12], [15.4, 12], [15.4, 20], [8.6, 20], [8.6, 12], [5, 12],
+      ]),
+      fill: true,
+      stroke: true,
+    },
+  ],
+
+  // 星屑一阶：四芒火花（`SPARK`，24 视图）
+  star: [{ k: 'poly', pts: sparkPts(), fill: true, stroke: true }],
+  // 二阶：双星并列（`translate(±3.4) scale(0.72)`）
+  //
+  // 偏移用 `/12`：`sparkPts` 返回的是**单位空间**坐标（1 = half = 24 视图的 12），
+  // 所以 24 视图的 3.4 单位 = 3.4/12。写 `/24` 只有一半，双星会挤成一团。
+  star2: [
+    { k: 'poly', pts: sparkPts(0.72, -3.4 / 12, 0), fill: true, stroke: true },
+    { k: 'poly', pts: sparkPts(0.72, 3.4 / 12, 0), fill: true, stroke: true },
+  ],
+  // 三阶：三星品字（上 0/−3.8，下 ±3.9/+2.8，scale 0.62）
+  star3: [
+    { k: 'poly', pts: sparkPts(0.62, 0, -3.8 / 12), fill: true, stroke: true },
+    { k: 'poly', pts: sparkPts(0.62, -3.9 / 12, 2.8 / 12), fill: true, stroke: true },
+    { k: 'poly', pts: sparkPts(0.62, 3.9 / 12, 2.8 / 12), fill: true, stroke: true },
+  ],
+
+  // 冰砖：六边晶（24 视图 `M6 5 L19 7.5 …`，`MARKS` 里没有冰 —— 冰是"地形"不是"标"，
+  // 所以照 `ICONS.ice` 的外轮廓缩到 24 视图）
+  ice: [
+    { k: 'poly', pts: m24([[12, 2.5], [20, 7.5], [20, 16.5], [12, 21.5], [4, 16.5], [4, 7.5]]), fill: true, stroke: true },
+    { k: 'line', pts: m24([[12, 2.5], [12, 21.5]]) },
+    { k: 'line', pts: m24([[4, 7.5], [20, 16.5]]) },
+    { k: 'line', pts: m24([[20, 7.5], [4, 16.5]]) },
+  ],
+
+  // 传送门 A（入口）：**同心**三环 + 芯点（`MARKS['portal-a']`）
+  //
+  // 同心是刻意的：它说的是"这是一个口"，不是"两个环"。
+  // 48 视图的 `ICONS.portal` 才是错开的一对 —— 上一版就是照那个画的，
+  // 贴进 36px 的格心会读成"两个相扣的圈"（甚至像眼镜）。
+  portalA: [
+    { k: 'circle', cx: 0, cy: 0, r: 7.6 / 24, stroke: true },
+    { k: 'circle', cx: 0, cy: 0, r: 3.6 / 24, stroke: true },
+    { k: 'circle', cx: 0, cy: 0, r: 1.3 / 24, fill: true },
+  ],
+  // 传送门 B（出口）：同结构但**虚线**（dash 3.2/2.6），内环虚、中缝一道竖线
+  portalB: [
+    { k: 'circle', cx: 0, cy: 0, r: 7.6 / 24, stroke: true, dash: [3.2 / 24, 2.6 / 24] },
+    { k: 'circle', cx: 0, cy: 0, r: 3.6 / 24, stroke: true, dash: [2 / 24, 1.8 / 24] },
+    { k: 'line', pts: [[0, -3.6 / 24], [0, 3.6 / 24]] },
+  ],
+
+  // 钥匙：朱印钥坯（`MARKS.key`）—— 环 r=3.7 + 内孔 1.15 + 柄 + 双齿
+  //
+  // 24 视图的环只有 r=3.7（48 视图是 8.2）。环要**镂空**：
+  // 实心圆会被 porcelain 填成一团红饼（读作放大镜镜片）。
+  key: [
+    { k: 'circle', cx: (8.4 - 12) / 24, cy: (8.4 - 12) / 24, r: 3.7 / 24, stroke: true },
+    { k: 'circle', cx: (8.4 - 12) / 24, cy: (8.4 - 12) / 24, r: 1.15 / 24, fill: true },
+    { k: 'line', pts: m24([[11.1, 11.1], [18.4, 18.4]]) },
+    { k: 'line', pts: m24([[15.2, 15.2], [13.2, 17.2]]) },
+    { k: 'line', pts: m24([[17.2, 17.2], [15.2, 19.2]]) },
+  ],
+
+  // 门 · 闭：圆拱 + 门板（`MARKS.door`：`M5.2 20 L5.2 9 A6.8 6.8 0 0 1 18.8 9 L18.8 20 Z`）
+  //
+  // 拱必须是**一条闭合路径**：拆成"弧 + 竖线"会被每段描边，读作栅栏。
+  // 门缝的金线与门环在 `MISE_DECOR` 里补（几何里放会被描成粗线，把门切成两条）。
+  gate: [
+    {
+      k: 'poly',
+      pts: [
+        ...m24([[5.2, 20], [5.2, 9]]),
+        ...arcPts(5.2, 9, 18.8, 9, 6.8, 0, 1, 10).slice(1).map(([x, y]) => U24(x, y)),
+        ...m24([[18.8, 9], [18.8, 20]]),
+      ],
+      fill: true,
+      stroke: true,
+    },
+  ],
+  // 门 · 开：两片洞开 + 中间透光（`MARKS['door-open']`）
+  //
+  // `sweep=0` 才是**向外鼓**（圆弧外缘）。给 sweep=1 会内凹，
+  // 两片合成"关着的双开门"。
+  gateOpen: [
+    {
+      k: 'poly',
+      pts: [
+        ...m24([[2.2, 20], [2.2, 9.6]]),
+        ...arcPts(2.2, 9.6, 8.2, 4.7, 6.8, 0, 0, 8).slice(1).map(([x, y]) => U24(x, y)),
+        ...m24([[8.2, 4.7], [8.2, 20]]),
+      ],
+      fill: true,
+      stroke: true,
+      tone: 'deep',
+    },
+    {
+      k: 'poly',
+      pts: [
+        ...m24([[21.8, 20], [21.8, 9.6]]),
+        ...arcPts(21.8, 9.6, 15.8, 4.7, 6.8, 0, 1, 8).slice(1).map(([x, y]) => U24(x, y)),
+        ...m24([[15.8, 4.7], [15.8, 20]]),
+      ],
+      fill: true,
+      stroke: true,
+      tone: 'deep',
+    },
+    // 门内涌出的天青光
+    { k: 'poly', pts: m24([[8.2, 20], [8.2, 5.4], [15.8, 5.4], [15.8, 20]]), fill: true, tone: 'accent' },
+  ],
+};
+
+
+/**
+ * 星阶：`cellGroup` 就是"第几颗星"。
+ *
+ * 设计稿的三阶不是"星多画几颗当装饰"，是**规则**：星屑必须按 1→2→3
+ * 顺序经过。所以阶数必须能一眼看出来 —— 数字角标被明令禁止
+ * （「格内永远不落字」），只能靠**星数**递进。
+ *
+ * `group` 从 0 起，取模 3 防脏数据越界。
+ */
+function starVariant(group: number): string {
+  return ['star', 'star2', 'star3'][((group % 3) + 3) % 3];
+}
+
+/**
+ * 五枚器物的细节层（设计稿 SVG 里那些"多出来的两笔"）。
+ *
+ * 设计稿每一枚都有三层结构 —— **本体 / 亮边 / 暗边**，加上一道材质线。
+ * 少了这三层，实心箭坯就是一块黄方块、冰晶就是一块蓝六边：
+ * 「一器一光」的全部内容都在错开的那 1.3px 上。
+ */
+export const MISE_DECOR: GlyphDecor = (ctx, kind, parts, half) => {
+  const trace = (pts: Array<[number, number]>) => {
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath();
+  };
+
+  if (kind === 'arrow') {
+    // 箭坯的厚度（`MARKS.arrow`）：
+    // ① `translate(0.35,0.55)` 的暗影，② `#F2DCA8` 亮边错位，③ 錾刻暗线。
+    //
+    // 偏移量按 **24 视图**：`half` 对应 24 视图的 12 单位，
+    // 所以 1 个单位 = `half/12`。上一版按 `/24` 写（48 视图），
+    // 错位只有应有的**一半**，箭几乎看不出厚度。
+    const u = half / 12;
+    // ① 暗影：整块往右下错 0.35/0.55（`MARKS.arrow` 第一层）
+    trace(parts[0].k === 'poly' ? (parts[0].pts as Array<[number, number]>) : []);
+    ctx.save();
+    ctx.translate(u * 0.35, u * 0.55);
+    ctx.globalAlpha *= 0.50;
+    ctx.fillStyle = '#785824';
+    ctx.fill();
+    ctx.restore();
+    // ② 亮边：往左上错 0.55（受光面在左上）
+    trace(parts[0].k === 'poly' ? (parts[0].pts as Array<[number, number]>) : []);
+    ctx.save();
+    ctx.translate(-u * 0.55, -u * 0.55);
+    ctx.globalAlpha *= 0.45;
+    ctx.fillStyle = '#F2DCA8';
+    ctx.fill();
+    ctx.restore();
+    // ③ 錾刻暗线：坯身上一道痕（`M12 9 L12 17` 的竖痕，24 视图）
+    ctx.beginPath();
+    ctx.moveTo(0, u * (9 - 12));
+    ctx.lineTo(0, u * (17 - 12));
+    ctx.strokeStyle = 'rgba(90,66,30,0.50)';
+    ctx.lineWidth = Math.max(0.8, u * 0.8);
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    return;
+  }
+
+  if (kind === 'star') {
+    // 金星的折光（`MARKS.star1` 的 `M11.5 9.5 L12.6 13 L12 14.6`，24 视图）。
+    // 有一笔就"亮"，没有就只是一块黄漆。
+    const u = half / 12;
+    ctx.beginPath();
+    ctx.moveTo(u * -0.5, u * -2.5);
+    ctx.lineTo(u * 0.6, u * 1);
+    ctx.lineTo(0, u * 2.6);
+    ctx.strokeStyle = '#FFF3D6';
+    ctx.globalAlpha *= 0.85;
+    ctx.lineWidth = Math.max(0.9, u * 0.65);
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    return;
+  }
+
+  if (kind === 'ice') {
+    // 顶面受光：左上那一小片更亮的白（24 视图 `M12 2.5 L20 7.5 L12 12 Z`）
+    const u = half / 12;
+    ctx.beginPath();
+    ctx.moveTo(0, u * -9.5);
+    ctx.lineTo(u * 8, u * -4.5);
+    ctx.lineTo(0, 0);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.fill();
+    return;
+  }
+
+  if (kind === 'portalA' || kind === 'portalB' || kind === 'portal') {
+    // 传送门（`MARKS['portal-a']` / `portal-b`）—— **同心**三环。
+    //
+    // 上一版照 48 视图的 `ICONS.portal` 画了错开的一对环：那是"器物大图"，
+    // 贴进 36px 格心会读成"两个相扣的圈"。格心只有那么大，同心才有"一个口"的整体感。
+    const u = half / 12;
+    const dash = kind === 'portalB';
+
+    // ① 外环亮边：`stroke #C9BEE8 / width 0.7 / translate(-0.3,-0.4) / opacity .7`
+    ctx.save();
+    ctx.beginPath();
+    if (typeof ctx.setLineDash === 'function') {
+      if (dash) ctx.setLineDash([u * 3.2, u * 2.6]);
+      else ctx.setLineDash([]);
+    }
+    ctx.arc(u * -0.3, u * -0.4, u * 7.6, 0, Math.PI * 2);
+    ctx.strokeStyle = '#C9BEE8';
+    ctx.globalAlpha = 0.70;
+    ctx.lineWidth = Math.max(0.7, u * 0.7);
+    ctx.stroke();
+    ctx.restore();
+
+    // ② 内环（r=3.6）：A 实线、B 虚线（dash 2/1.8）
+    ctx.save();
+    ctx.beginPath();
+    if (typeof ctx.setLineDash === 'function') {
+      if (dash) ctx.setLineDash([u * 2, u * 1.8]);
+      else ctx.setLineDash([]);
+    }
+    ctx.arc(0, 0, u * 3.6, 0, Math.PI * 2);
+    ctx.strokeStyle = '#C9BEE8';
+    ctx.globalAlpha = dash ? 0.80 : 0.85;
+    ctx.lineWidth = Math.max(0.8, u);
+    ctx.stroke();
+    ctx.restore();
+
+    // ③ 出口的中缝一道竖线（`M12 8.4 L12 15.6`，opacity .5）
+    if (dash) {
+      ctx.beginPath();
+      ctx.moveTo(0, u * -3.6);
+      ctx.lineTo(0, u * 3.6);
+      ctx.strokeStyle = '#C9BEE8';
+      ctx.globalAlpha = 0.50;
+      ctx.lineWidth = Math.max(0.8, u);
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+    return;
+  }
+
+  if (kind === 'key') {
+    // 朱印钥的细节（`MARKS.key`，**24 视图**）。
+    //
+    // 上一版用的是 48 视图的坐标（环 r=8.2、中心 17），而几何已改 24 视图
+    // （环 r=3.7、中心 8.4）—— 两套混用会让这几笔全飘到图形外。
+    const u = half / 12;
+    const KX = 8.4;
+    const KY = 8.4;
+
+    // ① 环的亮边：`stroke #D9614A / width 0.7 / translate(-0.3,-0.35) / opacity .6`
+    ctx.beginPath();
+    ctx.arc(u * (KX - 12 - 0.3), u * (KY - 12 - 0.35), u * 3.7, 0, Math.PI * 2);
+    ctx.strokeStyle = '#D9614A';
+    ctx.globalAlpha = 0.60;
+    ctx.lineWidth = Math.max(0.7, u * 0.7);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // ② 钥孔：`circle r=1.15 fill #C4574A`
+    ctx.beginPath();
+    ctx.arc(u * (KX - 12), u * (KY - 12), u * 1.15, 0, Math.PI * 2);
+    ctx.fillStyle = '#C4574A';
+    ctx.fill();
+    return;
+  }
+
+  if (kind === 'gateOpen') {
+    // 门内透光（`MARKS['door-open']`，24 视图）：
+    // 中缝 `M12 5.8 L12 19.4` 宽 1.3，两侧 `M10.2/13.8 6.4 L19` 宽 0.8。
+    //
+    // 三条线不放几何：porcelain 会按 0.14 half 描它们（≈3.4 单位），
+    // 三道那么粗的竖线挤在门洞里，整扇门糊成一块浅色板。
+    const u = half / 12;
+    ctx.save();
+    ctx.lineCap = 'round';
+    const line = (x: number, y0: number, y1: number, w: number, a: number) => {
+      ctx.beginPath();
+      ctx.moveTo(u * (x - 12), u * (y0 - 12));
+      ctx.lineTo(u * (x - 12), u * (y1 - 12));
+      ctx.strokeStyle = `rgba(205,238,224,${a})`;
+      ctx.lineWidth = Math.max(0.8, u * w);
+      ctx.stroke();
+    };
+    line(12, 5.8, 19.4, 1.3, 0.85);
+    line(10.2, 6.4, 19, 0.8, 0.40);
+    line(13.8, 6.4, 19, 0.8, 0.40);
+    ctx.restore();
+    return;
+  }
+
+  if (kind === 'gate') {
+    // 门的细节（`MARKS.door`，24 视图）：
+    // 门缝 `M12 6.8 L12 20` 宽 0.9，门环 `circle 14.7 13.4 r=0.95`，
+    // 两条门板侧线 `M7.4 20 L7.4 10.2` / `M16.6 20 L16.6 10.2` 宽 0.8。
+    //
+    // 门缝不放几何：porcelain 会描成 0.14 half（≈3.4 单位）—— 一根粗中线
+    // 把门板切成左右两条，整扇门读作"栅栏"。
+    const u = half / 12;
+    const P = (x: number, y: number): [number, number] => [u * (x - 12), u * (y - 12)];
+
+    // ① 门缝：鎏金细线
+    const a = P(12, 6.8);
+    const b = P(12, 20);
+    ctx.beginPath();
+    ctx.moveTo(a[0], a[1]);
+    ctx.lineTo(b[0], b[1]);
+    ctx.strokeStyle = '#C9A45C';
+    ctx.globalAlpha *= 0.85;
+    ctx.lineWidth = Math.max(0.8, u * 0.9);
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.globalAlpha /= 0.85;
+
+    // ② 门环
+    const h = P(14.7, 13.4);
+    ctx.beginPath();
+    ctx.arc(h[0], h[1], u * 0.95, 0, Math.PI * 2);
+    ctx.fillStyle = '#C9A45C';
+    ctx.fill();
+
+    // ③ 门板侧线（两条很淡的白，读作"板缝"）
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = Math.max(0.8, u * 0.8);
+    for (const x of [7.4, 16.6]) {
+      const p0 = P(x, 20);
+      const p1 = P(x, 10.2);
+      ctx.beginPath();
+      ctx.moveTo(p0[0], p0[1]);
+      ctx.lineTo(p1[0], p1[1]);
+      ctx.stroke();
+    }
+    return;
+  }
+
+  if (kind === 'gate') {
+    // 门缝：一道**细**鎏金线（设计稿 `M24 12 L24 42`，宽 1.6/48）。
+    //
+    // 放进几何会被 porcelain 描成 0.14 half（6.7 单位）—— 一根粗中线
+    // 把门板切成左右两条，整扇门读作"栅栏"。缺的正是这 4 倍宽度差。
+    ctx.beginPath();
+    ctx.moveTo(0, half * (-12 / 24));
+    ctx.lineTo(0, half * (18 / 24));
+    ctx.strokeStyle = '#C9A45C';
+    ctx.lineWidth = Math.max(0.8, half * (1.6 / 48));
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    // 地面横线
+    ctx.beginPath();
+    ctx.moveTo(half * (-15 / 24), half * (18 / 24));
+    ctx.lineTo(half * (15 / 24), half * (18 / 24));
+    ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+    ctx.lineWidth = Math.max(0.9, half * (1.2 / 48));
+    ctx.stroke();
+    return;
+  }
+};
 
 // ────────────────────────────── 背景 ──────────────────────────────
 
@@ -134,10 +661,41 @@ function hash(n: number): number {
  * 没有渐变、没有光斑、没有颗粒。以前这里有一束「展柜灯」+ 60 粒石屑，
  * 但把设计稿的 03 屏放大到 1:1 就能看到：页面是纯色，所有纵深都由
  * **卡片自己**给（卡比页亮一档 + 内影 + 金线）。页面一花，卡片就退成一块贴图。
+ *
+ * ## 唯一允许它动的东西：6s 呼吸
+ *
+ * 设计稿 TOKEN 表最后一行：「背景常驻 · 6s 呼吸 · 釉面亮度 0.98–1.02 缓慢呼吸；
+ * 可连格金缘 1.8s 明暗交替；**无浮尘、无粒子**」。
+ *
+ * 所以这里只有一层**整屏极淡的暖光**在缓慢起伏，**没有任何粒子和噪点**。
+ * 幅度必须压到 ±2%：这层每帧都在动，多一个百分点就变成"画面在闪"，
+ * 而设计稿要的是"这面墙在呼吸"—— 你盯着看十秒才会察觉它在动。
  */
-function drawBackdrop(ctx: CanvasRenderingContext2D, box: DesignBox): void {
+function drawBackdrop(
+  ctx: CanvasRenderingContext2D,
+  box: DesignBox,
+  now = 0,
+): void {
   ctx.fillStyle = K.page;
   ctx.fillRect(box.x, box.y, box.w, box.h);
+
+  // 6s 一个来回（设计稿 `6s linear`）。这里给 6000ms 周期，
+  // 但用 sin 而不是 linear —— CSS 的 linear 在 infinite 循环里
+  // 到端点会"折"一下，肉眼能看见一次顿；sin 是连续可导的。
+  const b = Math.sin((now / 6000) * Math.PI * 2) * 0.02; // −0.02 .. +0.02
+  // 亮度 1 附近 ↔ 一层极淡的暖金（正半周）或极淡的墨（负半周）。
+  // 只叠一层半透明，不插值页面底色 —— 插值会把 #0E1815 抬灰，
+  // 那是"蒙了层雾"，不是"呼吸"。
+  if (b > 0) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = `rgba(212,175,106,${b * 0.55})`;
+    ctx.fillRect(box.x, box.y, box.w, box.h);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = `rgba(0,0,0,${-b * 0.8})`;
+    ctx.fillRect(box.x, box.y, box.w, box.h);
+  }
 }
 
 // ────────────────────────────── 展柜卡片 ──────────────────────────────
@@ -230,24 +788,243 @@ function drawPlate(ctx: CanvasRenderingContext2D, layout: BoardLayout): void {
  * 这个方向是设计稿定的（`.pc` = 已铺 / `.pc.pale` = 未铺）。
  * 反过来的话，满盘开局就是一片亮绿，金色光迹就没地方发光了。
  */
-const TINT = {
-  pale: ['#2E4740', '#22362F', '#1B2B25'],
-  lit: ['#4D7A74', '#35574F', '#26423C'],
-  dark: ['#3A4A52', '#26333B', '#1B252C'],
-  violet: ['#7C70B8', '#5C5192', '#443A72'],
-  frost: ['#9FC4BC', '#7FA8A0', '#628A82'],
-  star: ['#D9B86A', '#B89045', '#8A6B3C'],
-  key: ['#C8A45E', '#A07E3C', '#7A5E2C'],
-} as const;
+/**
+ * 一片釉的配方 —— 逐条对齐 `2026-11-15-秘色天青-质感音效Demo.html` 的
+ * `.piece.pale` / `.piece.deep`。
+ *
+ * ## 为什么推倒重来
+ *
+ * 上一版是照「定稿 Demo」的 `.pc` 量的：暗青格 + 一条横向光带。
+ * 一起摆到质感 Demo 旁边就露馅了 —— 那边的棋子是**亮青釉**，而我们的是
+ * 一片暗绿方格：整盘没有一处比盘底亮得起来，读作"格子纸"而不是"瓷器"。
+ *
+ * ## 一颗棋子的四层（缺一层就不是瓷）
+ *
+ * 1. **147° 五停渐变**：左上 #D5E3D8 → 右下 #4F7A66。
+ *    方向性是"弧面"的全部 —— 纯色/径向渐变都读成平片。
+ * 2. **27%/19% 的径向白光**（118% 尺寸，46% 处收干净）：
+ *    光源只有一个，且落点偏左上。
+ * 3. **118° 的整片 glint**：左上 0.22 白 → 34% 透明 → 右下 0.10 黑。
+ *    这不是"高光"，是**釉面的反光层**——描的是整块曲面，不是一滴光。
+ * 4. **开片**：三根折线，每根画两遍（深绿 0.30 / 白 0.34 错位 0.5,0.6）。
+ *    双线才有"刻痕两侧一明一暗"的立体感，单线只是一道划痕。
+ */
+interface Glaze {
+  /** 147° 五停：0 / 30 / 58 / 82 / 100 */
+  ramp: readonly [string, string, string, string, string];
+  /** 左上径向白光的峰值 alpha */
+  sheen: number;
+  /** 下唇内影：[高度比例, 颜色] */
+  foot: readonly [number, string];
+  /**
+   * 缘光强度（0 = 没有）。
+   *
+   * 设计稿给每类机制格都配了一圈**同色系的外缘**：
+   * 已铺格金 `rgba(212,175,106,.22)`、钥匙格朱 `rgba(196,87,74,.26)`、
+   * 门格玄墨 `rgba(35,41,37,.40)`、开着的门天青 `rgba(150,205,185,.32)`、
+   * 传送门暮紫 `rgba(139,126,200,.32)`、星屑金 `rgba(212,175,106,.30)`。
+   * 它是"这颗棋子在盘上是什么身份"的最低成本的标记 —— 远看一圈色，
+   * 不必等看清图标就知道那儿有东西。
+   */
+  edge: number;
+  /** 缘光的颜色；省略用金色 */
+  edgeColor?: string;
+  /** 开片线的浓度倍率 */
+  crack: number;
+}
 
-type Tint = readonly [string, string, string];
+/** 未铺：生釉。亮、哑一点点的金边都没有 —— 它是"还没烧过"的那一面 */
+const GLAZE_PALE: Glaze = {
+  ramp: ['#D5E3D8', '#B8CFC0', '#93B3A2', '#6E9180', '#4F7A66'],
+  sheen: 0.50,
+  foot: [0.122, 'rgba(46,84,68,0.32)'],
+  edge: 0,
+  crack: 0.42,
+};
+
+/** 已铺：深釉 + 金边 + 金外发光。点过的格是"烧成了"的那一颗 */
+const GLAZE_DEEP: Glaze = {
+  ramp: ['#4F7A66', '#416858', '#2E5444', '#254537', '#1D3A2E'],
+  sheen: 0.26,
+  foot: [0.15, 'rgba(0,0,0,0.38)'],
+  edge: 1,
+  crack: 0.34,
+};
+
+/** 机制格的色相：各自一套五停，但都保持"亮釉"的明度带 */
+const GLAZE_DARK: Glaze = {
+  ramp: ['#8E9BA0', '#7B8A90', '#68777E', '#55646B', '#3F4E55'],
+  sheen: 0.34, foot: [0.14, 'rgba(0,0,0,0.34)'],
+  edge: 0.55, edgeColor: 'rgba(35,41,37,0.55)', crack: 0.85,
+};
+/**
+ * 门 · **开**：门洞里的天青漫到整颗棋子上。
+ *
+ * 设计稿 `door-open` 的缘光是 `0 0 22px rgba(150,205,185,.20)` ——
+ * 那是"光从门里涌出来照在格上"。所以这颗棋子的釉要比闭门**亮一档、偏青**，
+ * 而不是同一块暗石板上换一个图标。
+ */
+const GLAZE_OPEN: Glaze = {
+  ramp: ['#A9CFC2', '#93C0B0', '#7DAB9B', '#689585', '#547F71'],
+  sheen: 0.42, foot: [0.14, 'rgba(20,60,48,0.30)'],
+  edge: 0.62, edgeColor: 'rgba(150,205,185,0.42)', crack: 0.75,
+};
+const GLAZE_VIOLET: Glaze = {
+  ramp: ['#B4A7E0', '#9E90D2', '#8778BE', '#6F60A4', '#5A4C8A'],
+  sheen: 0.34, foot: [0.14, 'rgba(30,20,60,0.34)'],
+  edge: 0.50, edgeColor: 'rgba(139,126,200,0.32)', crack: 0.85,
+};
+const GLAZE_FROST: Glaze = {
+  ramp: ['#E6F2EF', '#CEE5E0', '#B0D3CC', '#93BCB4', '#739F97'],
+  sheen: 0.56, foot: [0.13, 'rgba(40,84,78,0.28)'],
+  edge: 0, crack: 1.15,
+};
+/**
+ * 星屑格：**深釉嵌金星**。
+ *
+ * 早先是"鎏金格 + 墨星"—— 把全盘唯一的高光格给了它，结果每颗星屑都是
+ * 盘上一个发亮的黄块，星在黄底上还得用深褐描线才看得见。
+ * 设计稿是反过来的：**釉是深的，星是金的**（`深釉嵌金星 · 金填阴刻`）。
+ * 深青底托一颗巴掌大的金星，那才是"嵌进去的一颗星"，
+ * 也才配得上"1→2→3 逐颗点亮"这件事 —— 点亮的应该是星，不是格。
+ */
+const GLAZE_STAR: Glaze = {
+  ramp: ['#3E6455', '#345849', '#2B4A3D', '#234033', '#1B342A'],
+  sheen: 0.30, foot: [0.14, 'rgba(0,0,0,0.34)'],
+  edge: 0.50, edgeColor: 'rgba(212,175,106,0.30)', crack: 0.5,
+};
+
+/** 星屑格上的款：**金色浮雕**。填金、描深金边，与"深釉嵌金"同一句话。 */
+const STAR_PAL: GlyphPalette = {
+  ink: 'rgba(138,107,60,0.92)',
+  accent: '#F2DCA8',
+  chip: '#FFF3D6',
+  deep: 'rgba(90,66,30,0.80)',
+};
+const GLAZE_KEY: Glaze = {
+  ramp: ['#F0D49A', '#DFC082', '#CBA96A', '#B08E4F', '#8E7038'],
+  sheen: 0.50, foot: [0.13, 'rgba(88,62,26,0.30)'],
+  edge: 0.44, edgeColor: 'rgba(196,87,74,0.26)', crack: 0.7,
+};
+
+// ────────────────────────── 釉片 ──────────────────────────
+
+/** 投影 / 外发光贴片缓存（键：边长 + 圆角 + 金边强度）。 */
+const spriteCache = new Map<string, HTMLCanvasElement>();
 
 /**
- * 一片釉：投影 → 穹顶 → 扫光 → 冰裂 → 倒角。
+ * 三层外投影（设计稿 `.piece.pale` 的 box-shadow）：
+ * `0 1px 2px .16` / `0 7px 15px .22` / `0 20px 38px .18`。
  *
- * 投影不用 `ctx.shadowBlur`：64 片 × 每帧一次高斯模糊在低端机上直接掉帧。
- * 这里用「下移一个圆角矩形 + 内部竖向渐变」——只在棋子下沿露一道暗边，
- * 和设计稿 `0 3px 7px rgba(0,0,0,.4)` 的观感一致，代价接近零。
+ * 为什么烘贴片而不是每帧 `ctx.shadowBlur`：一格三次高斯模糊，11×11 的盘
+ * 就是 300+ 次/帧，低端机直接掉到个位数帧率。棋子尺寸一关内恒定，
+ * 烘一张永远复用，每格只剩一次 drawImage。
+ *
+ * 每画完一层就用 `destination-out` 把本体挖掉：贴片里只留**露在棋子外面**
+ * 的那圈影子。不挖的话影子会糊在釉面上，整颗棋子发灰 —— 而釉面恰恰是亮的。
+ */
+function shadowSprite(s: number, r: number, edge: number, edgeColor?: string): HTMLCanvasElement {
+  const key = `${Math.round(s)}|${Math.round(r)}|${edge}|${edgeColor ?? ''}`;
+  const hit = spriteCache.get(key);
+  if (hit) return hit;
+
+  /**
+   * 换算基准：设计稿的棋子是 **64px**（`.pc { width: 64px }`）。
+   *
+   * 早先这里写 80 —— 那是"532 的盘、6×5、gap 10"倒推出来的约数，
+   * 而 CSS 里明写 64。差 25% 意味着**所有立体量都做薄了一档**：
+   * 侧壁 5px 变成 4px、环境影 52px 变成 41px，整盘读作"薄片"而不是"瓷片"。
+   */
+  const k = s / 64;
+  const pad = Math.ceil(s * 0.72);
+  const box = s + pad * 2;
+  const ssr = 2;
+  const cv = document.createElement('canvas');
+  cv.width = Math.ceil(box * ssr);
+  cv.height = Math.ceil(box * ssr);
+  const c = cv.getContext('2d');
+  if (c) {
+    c.scale(ssr, ssr);
+    if (edge > 0) {
+      // 缘光的外晕（`0 0 22px rgba(212,175,106,.13)`）：已铺格外面那圈暖光。
+      // 用 `edgeColor` 而不是写死金色 —— 钥匙的朱、传送门的紫都要这一圈
+      c.save();
+      c.shadowColor = edgeColor ?? `rgba(212,175,106,${0.13 * edge})`;
+      c.shadowBlur = 44 * k;
+      c.fillStyle = '#000';
+      c.beginPath();
+      roundRect(c, pad, pad, s, s, r);
+      c.fill();
+      c.restore();
+    }
+    /**
+     * **胎厚侧壁**：`0 3px 0 釉壁` + `0 5px 0 暗唇`。
+     *
+     * 这是整盘立体感的**根**。设计稿「立体读法」第一条就是它，
+     * 而这一层和下面那三级贴地影是两回事：
+     *
+     * - **侧壁是实色**（模糊 0）：像 CSS 的 `0 3px 0`，是一块**挤出体** ——
+     *   看得见"瓷片有多厚"。少了它，格子就只是一张贴在板上的色纸；
+     * - **贴地影是模糊的**：那是"落在台面上的影子"，说的是"离地多高"。
+     *
+     * 只有影子没有侧壁，格子会读成"一张飘着的卡片"。
+     */
+    const walls: Array<[number, string]> = [
+      // 先画远的（暗唇），再画近的（釉壁），后者盖住前者上沿
+      [5, 'rgba(10,26,19,0.95)'],
+      [3, 'rgba(22,52,40,0.92)'],
+    ];
+
+    /**
+     * 三级贴地影（设计稿 `0 2px 4px` / `0 12px 22px` / `0 28px 52px`）。
+     *
+     * 早先给的是 1/2、7/15、20/38 —— 偏移和模糊都偏小，
+     * 于是影子紧贴着侧壁，读不出"离台面有多高"。按设计稿的数值放大。
+     */
+    const layers: Array<[number, number, number]> = [
+      [2, 4, 0.50],
+      [12, 22, 0.38],
+      [28, 52, 0.30],
+    ];
+    for (const [dy, blur, a] of layers) {
+      c.save();
+      c.shadowColor = `rgba(0,0,0,${a})`;
+      c.shadowBlur = blur * k;
+      c.shadowOffsetY = dy * k;
+      c.fillStyle = '#000';
+      c.beginPath();
+      roundRect(c, pad, pad, s, s, r);
+      c.fill();
+      c.restore();
+      c.save();
+      c.globalCompositeOperation = 'destination-out';
+      c.beginPath();
+      roundRect(c, pad, pad, s, s, r);
+      c.fill();
+      c.restore();
+
+      // 每挖一次就重画一次侧壁：挖洞的目的是"只留影子"，
+      // 而侧壁是**实体**，被挖掉就没了立体感（实测：整盘变回平片）。
+      // 重画在最上层，也保证它不会被下一层的影子盖住。
+      for (const [wdy, wcolor] of walls) {
+        c.fillStyle = wcolor;
+        c.beginPath();
+        roundRect(c, pad, pad + wdy * k, s, s, r);
+        c.fill();
+      }
+    }
+
+  }
+  spriteCache.set(key, cv);
+  return cv;
+}
+
+/**
+ * 一片釉：投影 → 147° 釉色 → 左上白光 → 整片 glint → 开片 → 倒角 →（深釉）金边。
+ *
+ * 画序不能动。glint 必须在开片**之前**：反光是一层贴在弧面上的膜，
+ * 开片是釉下的裂（cool 的时候才裂开），把膜压在上面才是物理顺序；
+ * 反过来裂纹会被提亮成"金色的缝"，读作描边。
  */
 function drawTile(
   ctx: CanvasRenderingContext2D,
@@ -255,155 +1032,519 @@ function drawTile(
   y: number,
   s: number,
   r: number,
-  tint: Tint,
+  g: Glaze,
   seed: number,
   alpha = 1,
+  engrave?: (ctx: CanvasRenderingContext2D, x: number, y: number, s: number) => void,
+  /**
+   * 是否画**冰裂开片**。
+   *
+   * 使用说明「格纹纪律」：「**非普通格底部不叠任何暗纹** —— 冰裂细纹、划花刻纹
+   * 都不进，机制标是格内唯一读点；暗纹叠在标上会糊住标记」。
+   *
+   * 只有两类格该有开片：
+   * - 普通格（未铺 / 已铺）—— 走完整五层叠序；
+   * - **冰砖** —— 文档明写「冰砖是唯一例外：霜裂细纹是它的材质本体，不算装饰纹」。
+   *
+   * 其余机制格（星屑 / 钥匙 / 门 / 传送门 / 单向 / 始末点）一律净面。
+   * 默认 true，由调用方按格类型关掉。
+   */
+  showCrack = true,
 ): void {
+  const cx = x + s / 2;
+  const cy = y + s / 2;
+
   // ── 投影
-  const dy = s * 0.085;
-  ctx.save();
-  ctx.beginPath();
-  roundRect(ctx, x, y + dy, s, s, r);
-  ctx.clip();
-  const sh = ctx.createLinearGradient(0, y + dy, 0, y + dy + s * 0.5);
-  sh.addColorStop(0, `rgba(0,0,0,${0.38 * alpha})`);
-  sh.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = sh;
-  ctx.fillRect(x, y + dy, s, s * 0.5);
-  ctx.restore();
+  if (alpha > 0.02) {
+    const pad = Math.ceil(s * 0.72);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(shadowSprite(s, r, g.edge, g.edgeColor), x - pad, y - pad, s + pad * 2, s + pad * 2);
+    ctx.restore();
+  }
 
   ctx.save();
   if (alpha < 1) ctx.globalAlpha = alpha;
 
-  // ── 穹顶
-  const gcx = x + s * 0.30;
-  const gcy = y + s * 0.22;
-  const dome = ctx.createRadialGradient(gcx, gcy, 0, gcx, gcy, s * 1.15);
-  dome.addColorStop(0, tint[0]);
-  dome.addColorStop(0.48, tint[1]);
-  dome.addColorStop(1, tint[2]);
+  // ── 釉色：147° 五停。
+  //    CSS 的角度从 +y（to top）起顺时针量，所以方向向量是 (sin θ, −cos θ)。
+  const td = (147 * Math.PI) / 180;
+  const dx = Math.sin(td);
+  const dy = -Math.cos(td);
+  const L = (Math.abs(dx) + Math.abs(dy)) * s * 0.5;
+  const ramp = ctx.createLinearGradient(cx - dx * L, cy - dy * L, cx + dx * L, cy + dy * L);
+  ramp.addColorStop(0, g.ramp[0]);
+  ramp.addColorStop(0.3, g.ramp[1]);
+  ramp.addColorStop(0.58, g.ramp[2]);
+  ramp.addColorStop(0.82, g.ramp[3]);
+  ramp.addColorStop(1, g.ramp[4]);
   ctx.beginPath();
   roundRect(ctx, x, y, s, s, r);
-  ctx.fillStyle = dome;
+  ctx.fillStyle = ramp;
   ctx.fill();
 
   ctx.save();
   ctx.beginPath();
-  roundRect(ctx, x + 0.5, y + 0.5, s - 1, s - 1, Math.max(1, r - 0.5));
+  roundRect(ctx, x, y, s, s, r);
   ctx.clip();
 
-  // ── 高光：设计稿 `.pc .glint` 是**一枚椭圆**（宽 52% / 高 28%，
-  //    落在 12% / 8% 的位置、再 blur 2.5px），不是一层通铺白晕。
+  // ── 左上白光：`radial-gradient(118% 118% at 27% 19%, #fff .62, transparent 46%)`
   //
-  //    通铺白晕会把每颗棋子推成一颗玻璃糖（第一版就是这样，整盘像果冻）；
-  //    椭圆才是"一滴釉上凝的光" —— 有形状、有边、照在同一个方向。
-  //    亮心要压在 **10% 高**（椭圆上沿），不是椭圆的几何中心：
-  //    中心偏下会让最亮处落在 y≈16%，和设计稿比就"光掉了一格"
-  ctx.save();
-  ctx.translate(x + s * 0.38, y + s * 0.22);
-  ctx.scale(1, 0.54);
-  const glint = ctx.createRadialGradient(0, -s * 0.20, 0, 0, -s * 0.20, s * 0.32);
-  glint.addColorStop(0, `rgba(255,255,255,${0.48 * alpha})`);
-  glint.addColorStop(0.5, `rgba(255,255,255,${0.16 * alpha})`);
-  glint.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.beginPath();
-  ctx.arc(0, 0, s * 0.32, 0, Math.PI * 2);
-  ctx.fillStyle = glint;
-  ctx.fill();
-  ctx.restore();
-
-  // ── 冰裂：两根细纹，暗线 + 错位亮线（真实的裂缝两侧一明一暗）。
-  //    存在的意义是"近看有东西"，不是远看有花纹 —— 所以只给 0.5px 级的线
-  const cw = Math.max(0.6, s * 0.011);
-  for (let i = 0; i < 2; i++) {
-    let px = x + s * (0.18 + hash(seed * 9.7 + i * 3.1) * 0.6);
-    let py = y + s * (0.16 + hash(seed * 7.3 + i * 5.7) * 0.6);
+  //    118% 是半径（相对盒子），46% 是停点（相对那个半径）→ 实际半径 0.54s。
+  //    光源只有这一个，落点必须偏左上 —— 正中的光会把棋子读成球，
+  //    偏左上的光才读成"一片斜着受光的弧面"。
+  if (g.sheen > 0) {
+    const sx = x + s * 0.27;
+    const sy = y + s * 0.19;
+    const reach = s * 1.18 * 0.46;
+    const sheen = ctx.createRadialGradient(sx, sy, 0, sx, sy, reach);
+    sheen.addColorStop(0, `rgba(255,255,255,${g.sheen})`);
+    sheen.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.beginPath();
-    ctx.moveTo(px, py);
-    let a = hash(seed * 5.1 + i * 2.9) * Math.PI * 2;
-    const segs = i === 2 ? 1 : 2;
-    for (let j = 0; j < segs; j++) {
-      a += (hash(seed * 3.3 + i * 4.7 + j) - 0.5) * 1.4;
-      px += Math.cos(a) * s * 0.17;
-      py += Math.sin(a) * s * 0.14;
-      ctx.lineTo(px, py);
+    ctx.arc(sx, sy, reach, 0, Math.PI * 2);
+    ctx.fillStyle = sheen;
+    ctx.fill();
+  }
+
+  /**
+   * **远端转暗**：`radial-gradient(120% 120% at 85% 90%, rgba(0,0,0,.52), transparent 58%)`。
+   *
+   * 设计稿的釉面是**两层径向**，不是只有一层高光：
+   * 左上 23%/15% 一团亮（凸起的受光面），右下 85%/90% 一团暗（背光的远端）。
+   * 一凸一凹，釉面才"隆起"。
+   *
+   * 只有高光没有这团暗时，格子读作"左上打了光的一张纸"——平的。
+   * 线性 glint 也压不住它：glint 是沿 118° 的一条带，而这里要的是**球形的远端**。
+   */
+  if (g.sheen > 0) {
+    const dxp = x + s * 0.85;
+    const dyp = y + s * 0.90;
+    const dReach = s * 1.20 * 0.58;
+    const dim = ctx.createRadialGradient(dxp, dyp, 0, dxp, dyp, dReach);
+    // 0.52 是设计稿给的峰值；按 sheen 缩放，浅釉格（霜青）本来就不该太暗
+    dim.addColorStop(0, `rgba(0,0,0,${0.52 * (g.sheen / 0.34) * 0.62})`);
+    dim.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.beginPath();
+    ctx.arc(dxp, dyp, dReach, 0, Math.PI * 2);
+    ctx.fillStyle = dim;
+    ctx.fill();
+  }
+
+  // ── 整片 glint：`linear-gradient(118deg, #fff .22, #fff .06 18%,
+  //    transparent 34%, transparent 72%, #000 .10)`
+  //
+  //    这一层是"釉"和"塑料片"的分界：它描的是整个曲面（左上亮到右下暗），
+  //    而不是在顶部点一颗光斑。少它 → 棋子读作贴纸；多它（当高光用）→ 读作玻璃珠。
+  const gd = (118 * Math.PI) / 180;
+  const gx = Math.sin(gd);
+  const gy = -Math.cos(gd);
+  const GL = (Math.abs(gx) + Math.abs(gy)) * s * 0.5;
+  const gl = ctx.createLinearGradient(cx - gx * GL, cy - gy * GL, cx + gx * GL, cy + gy * GL);
+  gl.addColorStop(0, 'rgba(255,255,255,0.22)');
+  gl.addColorStop(0.18, 'rgba(255,255,255,0.06)');
+  gl.addColorStop(0.34, 'rgba(255,255,255,0)');
+  gl.addColorStop(0.72, 'rgba(255,255,255,0)');
+  gl.addColorStop(1, 'rgba(0,0,0,0.10)');
+  ctx.fillStyle = gl;
+  ctx.fillRect(x, y, s, s);
+
+  // ── 开片：三根折线 × 两遍。
+  //    深线压、白线提、错位 0.5/0.6 —— 裂缝两侧一明一暗才是"裂"，单线只是划痕。
+  //
+  //    `showCrack === false` 时整段跳过：机制格是净面（见参数说明）。
+  //    用 `if` 包住而不是把 `crack` 置 0 —— 置 0 仍会画三条 alpha=0 的路径，
+  //    每帧白白多六次 stroke（11×11 的盘上就是七百多次）。
+  const dark = 0.30 * g.crack;
+  const light = 0.34 * g.crack;
+  const cw = Math.max(0.5, s * 0.0069);
+  const hw = Math.max(0.4, s * 0.00475);
+  for (let i = 0; showCrack && i < 3; i++) {
+    let px = hash(seed * 11.3 + i * 7.7);
+    let py = hash(seed * 13.9 + i * 4.3);
+    ctx.beginPath();
+    ctx.moveTo(x + px * s, y + py * s);
+    for (let k = 0; k < 3; k++) {
+      px += (hash(seed * 3.7 + i * 5.1 + k * 1.7) - 0.5) * 0.46;
+      py += (hash(seed * 5.9 + i * 2.3 + k * 2.9) - 0.35) * 0.42;
+      ctx.lineTo(x + px * s, y + py * s);
     }
-    // 62px 的釉面上，裂纹只能是"凑近才看得见"的一丝：
-    // 0.34 的暗线在整盘上会连成一片划痕（第一版就是这样，像刮花了）
-    ctx.strokeStyle = 'rgba(8,20,15,0.13)';
+    ctx.strokeStyle = `rgba(46,84,68,${dark})`;
     ctx.lineWidth = cw;
+    ctx.lineCap = 'round';
     ctx.stroke();
     ctx.save();
-    ctx.translate(cw * 0.7, cw * 0.8);
-    ctx.strokeStyle = 'rgba(255,255,255,0.09)';
+    ctx.translate(s * 0.006, s * 0.0075);
+    ctx.strokeStyle = `rgba(255,255,255,${light})`;
+    ctx.lineWidth = hw;
     ctx.stroke();
     ctx.restore();
   }
 
-  // ── 倒角：设计稿的两道 inset shadow（上 `0 1px 2px` 白 .22、
-  //    下 `0 -3px 6px` 黑 .30）。用 4px / 12px 的软渐变还原，
-  //    不要用 1.2px 的硬直线 —— 硬线在暗釉上读成"描边"，软渐变才读成"厚度"
-  const topLip = ctx.createLinearGradient(0, y, 0, y + s * 0.075);
-  topLip.addColorStop(0, `rgba(255,255,255,${0.22 * alpha})`);
-  topLip.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = topLip;
-  ctx.fillRect(x, y, s, s * 0.075);
-  const botLip = ctx.createLinearGradient(0, y + s * 0.82, 0, y + s);
-  botLip.addColorStop(0, 'rgba(0,0,0,0)');
-  botLip.addColorStop(1, `rgba(0,0,0,${0.34 * alpha})`);
-  ctx.fillStyle = botLip;
-  ctx.fillRect(x, y + s * 0.82, s, s * 0.18);
+  // ── 划花刻纹
+  //
+  //    设计稿的五层叠序里它在**扫光之后、倒角之前**：纹样是"刻进釉里"的，
+  //    所以它要压在冰裂与扫光之上（刻痕比釉面高一层才看得见），
+  //    又要被最后那道倒角受光压住（否则刻痕会浮在片子外面）。
+  //    放早了会被 glint 洗掉一半，放晚了会盖过格子自己的边缘。
+  if (engrave) engrave(ctx, x, y, s);
+
+  // ── 倒角
+  //
+  //    上唇是 `inset 0 1px 0` —— 一根**硬线**，不是渐变。
+  //    用渐变会变成"顶上刷了一道白雾"，整盘读作软糖（老版栽在这里）。
+  /**
+   * **一圈 chamfer**：左上白棱 + 右下暗棱（设计稿 `inset 1.5px 1.5px 0` /
+   * `inset -1.5px -1.5px 0`）。
+   *
+   * 这是"瓷片被磨过的边"：光从左上来，朝左上的棱受光（白），朝右下的背光（暗）。
+   * 两者都**硬边、模糊 0** —— 用渐变会变成整圈发白，读作软糖。
+   *
+   * ## 为什么用"描边 + 线性渐变做 alpha"而不是切两个半区
+   *
+   * 第一版把上下半区各 `clip` 一次、分别描白 / 描暗。问题在圆角处：
+   * 矩形的裁剪边和圆角咬不上，左右两侧各留一道**竖直的接缝**
+   * （实测：每格左边一条亮线，像贴歪的纸）。
+   *
+   * 现在改成：描一整圈，颜色用**沿 135° 的线性渐变**从上到下由暗转透明，
+   * 于是同一条棱自然"上半白、下半暗"，没有任何裁剪边。
+   * 这比切半区更接近 CSS 的 `inset 1.5px 1.5px 0` 观感 ——
+   * CSS 的 inset 阴影本来就是"整圈 + 方向偏移"，不是"切一半"。
+   */
+  const bevel = Math.max(1.2, s * 0.023); // 1.5/64
+  const bdx = x + s * 0.5;
+  const bdy = y + s * 0.5;
+  // 渐变沿 135°（左上亮 → 右下暗），长度覆盖整格对角线
+  const bl = s * 0.75;
+  const bev = ctx.createLinearGradient(bdx - bl * 0.7, bdy - bl * 0.7, bdx + bl * 0.7, bdy + bl * 0.7);
+  const hiA = g.edge > 0 ? 0.26 : 0.42;
+  const loA = g.edge > 0 ? 0.45 : 0.60;
+  bev.addColorStop(0, `rgba(255,255,255,${hiA})`);
+  bev.addColorStop(0.42, 'rgba(255,255,255,0.06)');
+  bev.addColorStop(0.5, `rgba(20,52,40,${loA * 0.5})`);
+  bev.addColorStop(1, `rgba(20,52,40,${loA})`);
+  ctx.beginPath();
+  roundRect(ctx, x + bevel * 0.5, y + bevel * 0.5, s - bevel, s - bevel, Math.max(1, r - bevel * 0.5));
+  ctx.strokeStyle = bev;
+  ctx.lineWidth = bevel;
+  ctx.stroke();
+
+  // 上唇：一根**硬线**（`inset 0 1px 0`）。
+  // 用渐变会变成"顶上刷了一道白雾"，整盘读作软糖。
+  const lip = Math.max(1.4, s * 0.016);
+  ctx.fillStyle = `rgba(255,255,255,${g.edge > 0 ? 0.22 : 0.62})`;
+  ctx.fillRect(x, y, s, lip);
+  // 下唇：`inset 0 -3px 7px`，从 3px 处开始压
+  const [fh, fc] = g.foot;
+  const foot = ctx.createLinearGradient(0, y + s * (1 - fh), 0, y + s);
+  foot.addColorStop(0, 'rgba(0,0,0,0)');
+  foot.addColorStop(1, fc);
+  ctx.fillStyle = foot;
+  ctx.fillRect(x, y + s * (1 - fh), s, s * fh);
+  // 内圈一根 1px 白：`inset 0 0 0 1px rgba(255,255,255,.14)`
+  ctx.beginPath();
+  roundRect(ctx, x + 0.75, y + 0.75, s - 1.5, s - 1.5, Math.max(1, r - 0.75));
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
 
   ctx.restore(); // clip
+
+  // ── 金边（只在深釉上）：`0 0 0 1px rgba(212,175,106,.22)`
+  if (g.edge > 0) {
+    ctx.beginPath();
+    roundRect(ctx, x - 0.75, y - 0.75, s + 1.5, s + 1.5, r + 0.75);
+    ctx.strokeStyle = g.edgeColor ?? `rgba(212,175,106,${0.22 * g.edge})`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
   ctx.restore(); // alpha
 }
 
 /**
- * 墨石：不可走的死物。哑光、层理、不反光——
- * 它存在的意义是**反衬釉面**：盘上唯一没有光的东西，让釉更像釉。
+ * 墨石：不可走的死物。哑光、层理、只受一点点光。
+ *
+ * 它存在的意义是**反衬釉面**：盘上唯一没有穹顶的东西，让釉更像釉。
+ *
+ * 三件事让它成立（早先只画了一个十几像素的暗多边形，在底板上一片糊）：
+ *
+ * 1. **接触阴影**：石头是压进板里的，先给一层椭圆暗影，它才"落地"；
+ * 2. **两个面**：亮面（左上）与暗面（右下）用一条折线分开 ——
+ *    单色多边形读作"洞"，两色才读作"块"；
+ * 3. **棱线只在上缘**：光从左上来，受光的只有朝左上的那三条边。
  */
-function drawStone(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, idx: number): void {
-  const r = s * 0.40;
+// ────────────────────────── 抵达 · 爆闪 ──────────────────────────
 
-  // 石块：八边形带抖动（不是圆也不是方——自然的碎石）
+/**
+ * 抵达终点的爆闪（设计稿「抵达 · 爆闪 / ARRIVE BURST」）。
+ *
+ * ## 全盘最亮的一帧
+ *
+ * 设计稿的原话是「全盘最亮的一帧，1.2s 后归于安静」。它出现在**线头碰到终点**
+ * 的那一瞬 —— 之后才开始从终点反向点亮全路径，最后才是落印。
+ * 所以这一下的作用是"宣告到了"，不是"庆祝赢了"。两者的差别在于**长度**：
+ * 它只有 420ms 就退干净，中间不留任何余韵。
+ *
+ * ## 四件事叠在一起（设计稿 `MARKS.arrive`）
+ *
+ * 1. **八芒射线**：45° 一组，长 3.2、宽 1.3、圆头。**只有八根**——
+ *    十二根以上就变成"太阳"，八芒才是"迸发"。
+ * 2. **外实环** r=8.6（金）+ **内虚环** r=5.1（金，dash 2.6/2.2）+ **芯点** r=1.8。
+ *    和终点标记同一个几何 —— 爆闪是终点标记"炸开"的那一瞬，不是另一枚图形。
+ * 3. **格子的放大**：整颗棋子 scale 1.08（`transform: scale(1.08)`）。
+ *    1.08 是**上限**：再大就会盖住邻格，读作"这一格跳出来了"而不是"亮了"。
+ * 4. **辉光**：`0 0 42px` 的金，峰值 alpha 0.5。
+ */
+function drawArriveBurst(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  size: number,
+  elapsed: number,
+): void {
+  const MS = 420;
+  if (elapsed < 0 || elapsed >= MS) return;
+  const t = elapsed / MS;
+  // 起势 12%、余下 88% 退干净：迸发是"一瞬间"，不是"渐亮渐暗"
+  const k = t < 0.12 ? t / 0.12 : 1 - (t - 0.12) / 0.88;
+  const ease = k * k;
+  const r = size / 2;
+  /**
+   * 24 视图 → 像素的换算档。
+   *
+   * 终点标记（`endpoint`）里用的是 `cell * 0.30 / 8`，即半径 8 对应 0.30 格。
+   * 爆闪要盖住那枚标记，所以用同一档：`u = size * 0.30 / 8 / 12`。
+   * 早先按 `r / 12`（半径 12 = 半格）算，射线顶到 11u ≈ 0.46 格，
+   * 直接压到邻格上了 —— 而设计稿的 8 根芒是贴在环外的短芒，不出格。
+   */
+  const u = (size * 0.30) / 8 / 12;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  // ① 辉光：铺在一切之下的一团暖金。用径向渐变而不是 shadowBlur ——
+  //    这个函数每帧只在 420ms 内调一次，但盘上可能同时有几处（多终点？不会），
+  //    总之手绘渐变比改 shadow 状态便宜，也不会污染后续绘制
+  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 2.2);
+  glow.addColorStop(0, `rgba(242,220,168,${0.50 * k})`);
+  glow.addColorStop(0.42, `rgba(212,175,106,${0.20 * k})`);
+  glow.addColorStop(1, 'rgba(212,175,106,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 2.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // ② 八芒射线：**以格宽为基准**，不绕 24 视图。
+  //
+  // 设计稿里射线的位置是 r 7.8→11（24 视图，画布半径 12），
+  // 也就是占到格子半径的 0.65~0.92。换算到 `size/2`：0.325~0.46 个 size。
+  // 直接按这个比例画，芒尖落在格子边缘**内侧**，不出格。
+  const half = size / 2;
+  const RAY_IN = half * 0.62;
+  const RAY_OUT = half * (0.66 + 0.26 * Math.min(1, k * 2.2));
+  ctx.strokeStyle = `rgba(242,220,168,${0.92 * ease})`;
+  ctx.lineWidth = Math.max(1, size * 0.026);
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const c = Math.cos(a);
+    const si = Math.sin(a);
+    ctx.beginPath();
+    ctx.moveTo(c * RAY_IN, si * RAY_IN);
+    ctx.lineTo(c * RAY_OUT, si * RAY_OUT);
+    ctx.stroke();
+  }
+
+  // ③ 外环：**和终点标记同半径**（8.6 单位 = 0.30 格），但更亮更粗。
+  //
+  // 半径必须严格对齐终点自己那圈 —— 差一点就成了"双圈套双圈"，
+  // 实测读作一团糊金。同半径叠上去只是"让它亮起来"，那正是爆闪要的。
+  ctx.beginPath();
+  ctx.arc(0, 0, 8.6 * u, 0, Math.PI * 2);
+  ctx.strokeStyle = `rgba(242,220,168,${0.85 * k})`;
+  ctx.lineWidth = Math.max(1.6, 2.2 * u);
+  ctx.stroke();
+
+  // ④ **不再叠内虚环 + 芯点**。
+  //
+  // 设计稿的 `MARKS.arrive` 是"独立一枚标记"（用在展示页里，底下没有终点），
+  // 而盘上这一格**本来就有终点标记**（外实环 + 内虚环 + 芯点）。
+  // 两套叠在一起 = 双圈套双圈，实测读成一团糊金，而且会盖掉终点本来的款。
+  // 爆闪只出"多出来的部分"：一圈更亮的外环 + 八芒 + 辉光。
+  ctx.restore();
+}
+
+// ────────────────────────── 朱印落纸 ──────────────────────────
+
+/**
+ * 通关的印：一枚**圆形朱印**，从上方砸下来。
+ *
+ * ## 为什么是圆的，而鸣沙是方的
+ *
+ * 同一个动作，两种器物：鸣沙是**石章**（方、重、砸进墙里，墙跟着抖），
+ * 天青是**瓷印**（圆、轻、落在绢上，只有一层朱砂压痕）。
+ * 形状不是装饰 —— 方章说的是"盖住了这段路"，圆印说的是"落款"。
+ *
+ * ## 轨迹照设计稿 `sealDrop`
+ *
+ * `-70px / rot(-12°) / scale(1.14)` → `+3px / rot(-8.6°) / .97`（55% 触底）
+ * → `-3px / rot(-8.2°) / 1.015`（72% 回弹）→ `0 / rot(-8°) / 1`。
+ * 那 −8° 的微斜是**关键**：正着落的印是"排版元素"，歪 8° 才是"手盖的"。
+ */
+function drawSealStamp(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  size: number,
+  elapsed: number,
+): void {
+  const MS = 320;
+  if (elapsed < 0 || elapsed >= MS + 900) return;
+  const t = Math.min(1, Math.max(0, elapsed / MS));
+
+  // ── 姿态：三段（下落 / 触底 / 回弹）
+  let dy: number;
+  let rot: number;
+  let k: number;
+  let alpha: number;
+  if (t < 0.55) {
+    const u = t / 0.55;
+    const e = 1 - (1 - u) * (1 - u) * (1 - u); // 釉落：前段快
+    dy = -70 * (size / 132) * (1 - e) + 3 * (size / 132) * e;
+    rot = -12 + 3.4 * e;
+    k = 1.14 + (0.97 - 1.14) * e;
+    alpha = Math.min(1, u * 2.2);
+  } else if (t < 0.72) {
+    const u = (t - 0.55) / 0.17;
+    dy = 3 * (size / 132) * (1 - u) + -3 * (size / 132) * u;
+    rot = -8.6 - 0.4 * u;
+    k = 0.97 + 0.045 * u;
+    alpha = 1;
+  } else {
+    const u = (t - 0.72) / 0.28;
+    dy = -3 * (size / 132) * (1 - u);
+    rot = -8.2 + 0.2 * u;
+    k = 1.015 - 0.015 * u;
+    alpha = 1;
+  }
+
+  const r = size / 2;
+  ctx.save();
+  ctx.translate(cx, cy + dy);
+  ctx.rotate((rot * Math.PI) / 180);
+  ctx.scale(k, k);
+  ctx.globalAlpha = alpha;
+
+  // ── 印泥：三层（外晕 / 主体 / 内圈）。
+  //    外晕是"纸吸掉的一圈"，没有它，红圆就是贴上去的一块色
+  const halo = ctx.createRadialGradient(-r * 0.2, -r * 0.2, r * 0.5, 0, 0, r * 1.06);
+  halo.addColorStop(0, 'rgba(192,75,51,0.30)');
+  halo.addColorStop(1, 'rgba(192,75,51,0)');
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 1.06, 0, Math.PI * 2);
+  ctx.fillStyle = halo;
+  ctx.fill();
+
+  const body = ctx.createRadialGradient(-r * 0.34, -r * 0.36, r * 0.08, 0, 0, r);
+  body.addColorStop(0, '#D25B40');
+  body.addColorStop(0.55, K.seal);
+  body.addColorStop(1, K.sealDeep);
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fillStyle = body;
+  ctx.fill();
+
+  // 边：外圈一道更深的唇 —— 印是"压"下去的，边缘比中间吃墨更多
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.94, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(142,52,36,0.55)';
+  ctx.lineWidth = Math.max(1, r * 0.055);
+  ctx.stroke();
+
+  // 印文：一个「过」字。这是整个游戏唯一一次写出"结束"
+  ctx.fillStyle = 'rgba(255,236,224,0.94)';
+  ctx.font = `900 ${Math.round(r * 1.30)}px ${SEAL_FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('过', 0, r * 0.04);
+
+  ctx.restore();
+}
+
+/** 印文用的字族：宋体优先（篆意的骨），退到系统黑体 */
+const SEAL_FONT =
+  '"Songti SC","STSong","SimSun","Noto Serif CJK SC","Source Han Serif SC",serif';
+
+function drawStone(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, idx: number): void {
+  const r = s * 0.44;
+
+  // 八边形带抖动（不是圆也不是方 —— 自然的碎石）
   const pts: Array<[number, number]> = [];
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2 - Math.PI / 2 + hash(idx * 3.7) * 0.35;
-    const rr = r * (0.88 + hash(idx * 2.3 + i * 1.9) * 0.18);
+    const rr = r * (0.90 + hash(idx * 2.3 + i * 1.9) * 0.16);
     pts.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]);
   }
+  const trace = () => {
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath();
+  };
 
-  const g = ctx.createLinearGradient(cx - r, cy - r, cx + r * 0.7, cy + r);
-  g.addColorStop(0, '#1B2A22');
-  g.addColorStop(0.5, '#111C16');
-  g.addColorStop(1, '#080F0B');
+  // ① 接触阴影：压进板里的一圈
+  ctx.save();
   ctx.beginPath();
-  ctx.moveTo(pts[0][0], pts[0][1]);
-  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-  ctx.closePath();
+  ctx.ellipse(cx, cy + r * 0.22, r * 0.96, r * 0.62, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.42)';
+  ctx.fill();
+  ctx.restore();
+
+  // ② 石体：左上受光、右下背光
+  trace();
+  const g = ctx.createLinearGradient(cx - r * 0.8, cy - r * 0.9, cx + r * 0.7, cy + r);
+  g.addColorStop(0, '#31443A');
+  g.addColorStop(0.42, '#1D2C24');
+  g.addColorStop(1, '#0A120E');
   ctx.fillStyle = g;
   ctx.fill();
 
-  // 层理：两道平行短痕。石头是「压出来的」，不是「长出来的」
-  ctx.strokeStyle = 'rgba(3,7,5,0.6)';
-  ctx.lineWidth = Math.max(1, s * 0.022);
+  // ③ 亮面：左上一片（按顶点切一半，不是再画一个圆）
+  ctx.save();
+  trace();
+  ctx.clip();
   ctx.beginPath();
-  ctx.moveTo(cx - r * 0.55, cy - r * 0.18);
-  ctx.lineTo(cx + r * 0.15, cy - r * 0.02);
-  ctx.lineTo(cx + r * 0.55, cy - r * 0.22);
+  ctx.moveTo(cx - r * 1.1, cy - r * 1.1);
+  ctx.lineTo(cx + r * 1.1, cy - r * 1.1);
+  ctx.lineTo(cx + r * 1.1, cy - r * 0.10);
+  ctx.lineTo(cx - r * 1.1, cy - r * 0.55);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(150,178,160,0.10)';
+  ctx.fill();
+  ctx.restore();
+
+  // ④ 层理：两道短痕。石头是「压出来的」，不是「长出来的」
+  ctx.strokeStyle = 'rgba(3,7,5,0.55)';
+  ctx.lineWidth = Math.max(1, s * 0.020);
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.55, cy - r * 0.14);
+  ctx.lineTo(cx + r * 0.12, cy + r * 0.02);
+  ctx.lineTo(cx + r * 0.52, cy - r * 0.18);
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(cx - r * 0.35, cy + r * 0.28);
-  ctx.lineTo(cx + r * 0.3, cy + r * 0.4);
+  ctx.moveTo(cx - r * 0.34, cy + r * 0.30);
+  ctx.lineTo(cx + r * 0.28, cy + r * 0.42);
   ctx.stroke();
 
-  // 受光棱：只左上缘一线。死物也有光，只是光到棱为止
+  // ⑤ 受光棱：只左上三段。死物也有光，只是光到棱为止
   ctx.beginPath();
-  ctx.moveTo(pts[7][0], pts[7][1]);
+  ctx.moveTo(pts[6][0], pts[6][1]);
+  ctx.lineTo(pts[7][0], pts[7][1]);
   ctx.lineTo(pts[0][0], pts[0][1]);
   ctx.lineTo(pts[1][0], pts[1][1]);
-  ctx.strokeStyle = 'rgba(140,170,152,0.16)';
-  ctx.lineWidth = 1.4;
+  ctx.strokeStyle = 'rgba(158,186,168,0.22)';
+  ctx.lineWidth = Math.max(1.2, s * 0.016);
+  ctx.lineJoin = 'round';
   ctx.stroke();
 }
 
@@ -416,7 +1557,7 @@ function drawCell(g: CellGeom): void {
   const inset = BOARD_GAP / 2;
   const s = cell - inset * 2;
   // 圆角 10/31 ≈ 0.32 —— 比常见卡片圆得多，接近"瓷片"而不是"按钮"
-  const r = Math.max(6, s * 0.323);
+  const r = Math.max(6, s * 0.272);
   const seed = gx * 37.9 + gy * 21.3 + 1;
 
   if (type === CoverCell.BLOCK) {
@@ -424,38 +1565,389 @@ function drawCell(g: CellGeom): void {
     return;
   }
 
-  // 机制格有自己的面色（设计稿：门/单向=石板青，传送=暮紫，星=鎏金，钥=铜，冰=霜青）
+  // 机制格有自己的色相（设计稿：门/单向=石板青，传送=暮紫，星=鎏金，钥=铜，冰=霜青），
+  // 但明度带与"生釉"一致 —— 整盘得是同一批出窑的器物，不能有哪一格发暗
   switch (type) {
     case CoverCell.ICE:
-      drawTile(ctx, x + inset, y + inset, s, r, TINT.frost as Tint, seed, walk ? 0.92 : 1);
+      drawTile(ctx, x + inset, y + inset, s, r, GLAZE_FROST, seed, walk ? 0.94 : 1);
       return;
     case CoverCell.SHARD:
-      drawTile(ctx, x + inset, y + inset, s, r, TINT.star as Tint, seed);
+      // 星屑：**净面**（格纹纪律）—— 深釉 + 一枚金星，不叠冰裂
+      drawTile(ctx, x + inset, y + inset, s, r, GLAZE_STAR, seed, 1, undefined, false);
       return;
     case CoverCell.KEY:
-      drawTile(ctx, x + inset, y + inset, s, r, TINT.key as Tint, seed);
+      // 钥匙：**净面** —— 朱印色钥坯是唯一的读点
+      drawTile(ctx, x + inset, y + inset, s, r, GLAZE_KEY, seed, 1, undefined, false);
       return;
     case CoverCell.PORTAL:
-      drawTile(ctx, x + inset, y + inset, s, r, TINT.violet as Tint, seed);
+      // 传送门：**净面** —— 深靛漩底 + 同心环是主体，
+      // 冰裂是"瓷釉开片"，压在暮紫上会读成脏点
+      drawTile(ctx, x + inset, y + inset, s, r, GLAZE_VIOLET, seed, 1, undefined, false);
       return;
     case CoverCell.ONEWAY:
+      // 单向：**净面** —— 石板青 + 金箭坯，不叠冰裂
+      drawTile(ctx, x + inset, y + inset, s, r, GLAZE_DARK, seed, 1, undefined, false);
+      return;
     case CoverCell.GATE:
-      drawTile(ctx, x + inset, y + inset, s, r, TINT.dark as Tint, seed);
+      // 门：关着是石板青，**开着是天青透光**（设计稿 `door-open` 的
+      // `0 0 22px rgba(150,205,185,.20)` —— 整颗棋子比周围亮一档）。
+      // 只换图标不换格面色的话，开着的门在盘上还是一块暗石板，
+      // 玩家得凑近看图标才知道"这扇已经过了"。
+      drawTile(ctx, x + inset, y + inset, s, r, g.variant === 'gateOpen' ? GLAZE_OPEN : GLAZE_DARK, seed, 1, undefined, false);
       return;
     default:
       break;
   }
 
-  // 普通格：未铺是"生釉"（暗一档 + 0.82），已铺是"点过的釉"（亮一档）
-  drawTile(ctx, x + inset, y + inset, s, r, (walk ? TINT.lit : TINT.pale) as Tint, seed, walk ? 1 : 0.82);
+  // 普通格：没走过 = 生釉（亮青），走过 = 深釉 + 金边
+  //
+  // **走过变深**，不是变亮。设计稿的规矩是"铺格"：铺过的格是烧成了的那一颗，
+  // 更沉、更暗，边上一圈金 —— 金线正压在它上面，一深一亮才读得出路线。
+  // 反过来（走过变亮）会让整盘往白里推，金线在金格上就没处可去了。
+  //
+  // 划花刻纹**两态都刻**（设计稿的"同一纹·两态对照"）：
+  // 未铺是深青刻纹、已铺是浅青刻纹。只刻未铺的话，走过之后那一片会变得
+  // 完全平 —— 玩家会以为刻纹是"可走的标记"，而它其实只是格子的身份。
+  const glaze = walk ? GLAZE_DEEP : GLAZE_PALE;
+
+  // **刻纹只给普通格（BRICK）**。
+  //
+  // 使用说明「格纹纪律」：「非普通格（起点/终点/起手按下/线头/单向/星屑/钥匙/
+  // 门/传送门/石障等带机制标的格）底部不叠任何暗纹」。
+  //
+  // 起点 / 终点虽然也是"可走的普通格"（`CoverCell.START/END` 的注释就这么写），
+  // 但它们**带机制标**（金圈 + 菱 / 金双圈 + 芯点），所以属于"非普通格"。
+  // 早先这里无条件传了刻纹回调 —— 起点格的金环底下透出一枚月纹，
+  // 终点格的金环底下透出一枚浪纹，两层叠在一起读作"糊了"。
+  if (type === CoverCell.BRICK) {
+    drawTile(ctx, x + inset, y + inset, s, r, glaze, seed, 1, (c, tx, ty, ts) => {
+      drawEngrave(c, tx + ts / 2, ty + ts / 2, ts, gx, gy, glaze);
+    });
+  } else {
+    drawTile(ctx, x + inset, y + inset, s, r, glaze, seed);
+  }
+}
+
+// ────────────────────────── 划花九品 ──────────────────────────
+
+/**
+ * 格面刻纹（设计稿 壹·"划花九品"）。
+ *
+ * ## 为什么不是装饰，而是"读盘"的一部分
+ *
+ * 盘面 90% 的注视落在这里。没有刻纹时，一整片**同色的圆角方块**在灰度下
+ * 是一张网纹纸 —— 玩家分不出"这一格和那一格"；有了刻纹，每格才有"这一片
+ * 是月、那一片是浪"的身份，也才看得见自己走过哪几片。
+ *
+ * ## 三条纪律（设计稿原文）
+ *
+ * 1. **双线立体**：暗刻槽在下，受光边 `translate(0.5,0.6)` 在上 ——
+ *    单线只是一道划痕，双线才是"刻进去的槽"。
+ * 2. **只用 round cap / round join**，禁锐角飞白。
+ * 3. **纹样压在冰裂之上、扫光之下**（画序见 `drawTile` 的 `engrave` 参数）。
+ *
+ * 坐标取自设计稿的 24 视图，这里换算到格心为原点、`h = s/2` 的像素空间，
+ * 所以线宽按 `s` 走 —— 换格子大小时刻纹不会"变粗"。
+ */
+type Motif = (c: CanvasRenderingContext2D, h: number) => void;
+
+/** 24 视图 → 单位坐标（原点移到格心）。 */
+const U = (x: number, y: number): [number, number] => [(x - 12) / 12, (y - 12) / 12];
+
+/** 24 视图路径 → 单位坐标点列。 */
+function upath(pts: ReadonlyArray<readonly [number, number]>): Array<[number, number]> {
+  return pts.map(([x, y]) => U(x, y));
+}
+
+/** 折线（不闭合）。 */
+function poly(c: CanvasRenderingContext2D, h: number, pts: Array<[number, number]>, close = false): void {
+  c.beginPath();
+  c.moveTo(pts[0][0] * h, pts[0][1] * h);
+  for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0] * h, pts[i][1] * h);
+  if (close) c.closePath();
+  c.stroke();
+}
+
+/**
+ * SVG 的 `A r r 0 large sweep x y` → Canvas 的 `arc(圆心, 起止角)`。
+ *
+ * 为什么需要这一步：设计稿的纹样全是 SVG 路径，而 "A"（椭圆弧）给的是
+ * **终点**，不是圆心 —— Canvas 只认圆心。硬把角度凑成"看起来像"，
+ * 月的两段弧就会凑成两片同心圆（上一版就是这样，月牙变成了一道括号）。
+ *
+ * 换算取自 SVG 规范的「端点 → 圆心」一节（φ=0 的圆，不是椭圆）：
+ * 圆心落在弦的垂直平分线上，偏移量由半径与弦长决定。
+ * `large` / `sweep` 两个 flag 决定取哪一侧、往哪个方向画。
+ */
+function arcTo(
+  c: CanvasRenderingContext2D,
+  h: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  r: number,
+  large: 0 | 1,
+  sweep: 0 | 1,
+): void {
+  const p1x = U(x1, y1)[0] * h;
+  const p1y = U(x1, y1)[1] * h;
+  const p2x = U(x2, y2)[0] * h;
+  const p2y = U(x2, y2)[1] * h;
+  let rr = r * (h / 12);
+
+  // 弦半长
+  const hx = (p1x - p2x) / 2;
+  const hy = (p1y - p2y) / 2;
+  const d2 = hx * hx + hy * hy;
+  // 弦比直径还长时 SVG 会把半径撑大，否则无解
+  if (d2 > rr * rr) rr = Math.sqrt(d2);
+  const mid = Math.sqrt(Math.max(0, rr * rr - d2)) / Math.sqrt(Math.max(1e-9, d2));
+  // large XOR sweep → 圆心在弦的另一侧
+  const s = large !== sweep ? 1 : -1;
+  const cx = s * mid * hy + (p1x + p2x) / 2;
+  const cy = -s * mid * hx + (p1y + p2y) / 2;
+
+  const a0 = Math.atan2(p1y - cy, p1x - cx);
+  const a1 = Math.atan2(p2y - cy, p2x - cx);
+  c.arc(cx, cy, rr, a0, a1, sweep === 0);
+}
+
+/**
+ * 九品：月 / 梅 / 浪 / 山 / 云 / 鱼 / 竹 / 叶 / 星。
+ *
+ * 每格只刻**一主纹**，留白 ≥ 40% —— 三成到五成格面有东西就够，
+ * 满格画满会退成一张花纹布。
+ */
+const NINE: ReadonlyArray<{ key: string; draw: Motif }> = [
+  // 月：设计稿 `M15.5 5.2 A8 8 0 1 0 15.5 18.8 A6.4 6.4 0 1 1 15.5 5.2 Z`。
+  //
+  // 两段弧的圆心**不在同一点**上，月牙就是这么来的：
+  // 外弧大半径、缺口朝左；内弧回到起点，把中间那一块挖掉。
+  // 硬把角度凑成"看起来像"只会得到两片同心圆 —— 月牙就成了一道括号。
+  {
+    key: 'moon',
+    draw: (c, h) => {
+      c.beginPath();
+      c.moveTo(U(15.5, 5.2)[0] * h, U(15.5, 5.2)[1] * h);
+      arcTo(c, h, 15.5, 5.2, 15.5, 18.8, 8, 1, 0);
+      arcTo(c, h, 15.5, 18.8, 15.5, 5.2, 6.4, 1, 1);
+      c.closePath();
+      c.stroke();
+    },
+  },
+  // 梅：六瓣环 + 心。花瓣是"点"不是"圈"—— 五瓣梅花的花瓣小而圆
+  {
+    key: 'plum',
+    draw: (c, h) => {
+      const r = (2 / 12) * h;
+      for (const [x, y] of [[12, 12], [12, 5.6], [17.8, 9.6], [15.6, 16.6], [8.4, 16.6], [6.2, 9.6]] as const) {
+        const [ux, uy] = U(x, y);
+        c.beginPath();
+        c.arc(ux * h, uy * h, r, 0, Math.PI * 2);
+        c.stroke();
+      }
+    },
+  },
+  // 浪：两道反向叠浪
+  {
+    key: 'wave',
+    draw: (c, h) => {
+      for (const y of [10, 15.6]) {
+        const [x0, y0] = U(3, y);
+        const [c1x, c1y] = U(6, y - 2.6);
+        const [c2x, c2y] = U(9, y + 2.6);
+        const [x1, y1] = U(12, y);
+        const [c3x, c3y] = U(15, y - 2.6);
+        const [c4x, c4y] = U(18, y + 2.6);
+        const [x2, y2] = U(21, y);
+        c.beginPath();
+        c.moveTo(x0 * h, y0 * h);
+        c.bezierCurveTo(c1x * h, c1y * h, c2x * h, c2y * h, x1 * h, y1 * h);
+        c.bezierCurveTo(c3x * h, c3y * h, c4x * h, c4y * h, x2 * h, y2 * h);
+        c.stroke();
+      }
+    },
+  },
+  // 山：双峰 + 一轮日
+  {
+    key: 'mount',
+    draw: (c, h) => {
+      poly(c, h, upath([[2.5, 18.5], [9, 8], [13, 13.6], [15.6, 10], [21.5, 18.5]]), true);
+      const [sx, sy] = U(17.6, 6.4);
+      c.beginPath();
+      c.arc(sx * h, sy * h, (1.6 / 12) * h, 0, Math.PI * 2);
+      c.stroke();
+    },
+  },
+  // 云：设计稿 `M6.5 17.5 A4.2 4.2 0 1 1 7.2 9.2 A5.4 5.4 0 0 1 17.4 9.8
+  //        A3.9 3.9 0 1 1 17.8 17.5 Z` —— 三团弧接成的一朵。
+  // 每段都是"从上一段终点画到本段终点"的圆弧，**不是**在固定圆心上画角度，
+  // 所以必须走 `arcTo`；否则三团弧会各转各的，接不上。
+  {
+    key: 'cloud',
+    draw: (c, h) => {
+      c.beginPath();
+      c.moveTo(U(6.5, 17.5)[0] * h, U(6.5, 17.5)[1] * h);
+      arcTo(c, h, 6.5, 17.5, 7.2, 9.2, 4.2, 1, 1);
+      arcTo(c, h, 7.2, 9.2, 17.4, 9.8, 5.4, 0, 1);
+      arcTo(c, h, 17.4, 9.8, 17.8, 17.5, 3.9, 1, 1);
+      c.closePath();
+      c.stroke();
+    },
+  },
+  // 鱼：梭形身 + 三角尾。眼不画 —— 24 视图下 0.9px 的实心点会糊成一块脏
+  {
+    key: 'fish',
+    draw: (c, h) => {
+      const [x0, y0] = U(4, 12);
+      const [c1x, c1y] = U(7, 7);
+      const [c2x, c2y] = U(13, 7);
+      const [x1, y1] = U(17, 12);
+      const [c3x, c3y] = U(13, 17);
+      const [c4x, c4y] = U(7, 17);
+      c.beginPath();
+      c.moveTo(x0 * h, y0 * h);
+      c.bezierCurveTo(c1x * h, c1y * h, c2x * h, c2y * h, x1 * h, y1 * h);
+      c.bezierCurveTo(c3x * h, c3y * h, c4x * h, c4y * h, x0 * h, y0 * h);
+      c.stroke();
+      poly(c, h, upath([[17, 12], [21, 8.4], [21, 15.6]]), true);
+    },
+  },
+  // 竹：两竿 + 两道节
+  {
+    key: 'bamboo',
+    draw: (c, h) => {
+      poly(c, h, upath([[9, 3], [9, 21]]));
+      poly(c, h, upath([[15, 3], [15, 21]]));
+      poly(c, h, upath([[9, 8.4], [15, 8.4]]));
+      poly(c, h, upath([[9, 14], [15, 14]]));
+    },
+  },
+  // 叶：柳叶 + 一条中脉
+  {
+    key: 'leaf',
+    draw: (c, h) => {
+      const [x0, y0] = U(12, 3);
+      const [c1x, c1y] = U(18, 8);
+      const [c2x, c2y] = U(18, 16);
+      const [x1, y1] = U(12, 21);
+      const [c3x, c3y] = U(6, 16);
+      const [c4x, c4y] = U(6, 8);
+      c.beginPath();
+      c.moveTo(x0 * h, y0 * h);
+      c.bezierCurveTo(c1x * h, c1y * h, c2x * h, c2y * h, x1 * h, y1 * h);
+      c.bezierCurveTo(c3x * h, c3y * h, c4x * h, c4y * h, x0 * h, y0 * h);
+      c.stroke();
+      poly(c, h, upath([[12, 6.5], [12, 17.5]]));
+    },
+  },
+  // 星：五角。刻纹版的星比机制图标的星更瘦（内径 0.42 → 0.40 太接近，
+  // 这里放宽到 0.44 并缩小整体），否则空盘上会有一片"没点亮的星屑"
+  {
+    key: 'star',
+    draw: (c, h) => {
+      const pts: Array<[number, number]> = [];
+      for (let i = 0; i < 10; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 5;
+        const rr = i % 2 === 0 ? 8.4 : 3.7;
+        const [ux, uy] = U(12 + Math.cos(a) * rr, 12 + Math.sin(a) * rr);
+        pts.push([ux, uy]);
+      }
+      poly(c, h, pts, true);
+    },
+  },
+];
+
+/**
+ * 刻纹的墨色：**跟着底色走**。
+ *
+ * 设计稿只给了两极（未铺 `rgba(29,58,46,.62)` / 已铺 `rgba(212,227,216,.72)`），
+ * 但盘上还有鎏金、霜青、暮紫三种色相的格 —— 拿深青刻在金格上是"发绿的脏点"，
+ * 拿浅青刻在霜面上等于没画。所以按 `Glaze` 反查一档：暗釉用浅刻、浅釉用深刻。
+ */
+interface Enamel {
+  /** 暗刻槽（下） */
+  cut: string;
+  /** 受光边（上，`translate(.5,.6)`） */
+  lift: string;
+}
+
+function enamelFor(g: Glaze): Enamel {
+  // 用第一停的明度判"这片釉是浅是深"。170 是分界：
+  // 浅釉（>170）上的刻痕必须是暗的，深釉上必须是亮的
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(g.ramp[0]);
+  const lum = m
+    ? (Number.parseInt(m[1], 16) * 0.299 + Number.parseInt(m[2], 16) * 0.587 + Number.parseInt(m[3], 16) * 0.114)
+    : 128;
+  if (lum > 170) {
+    // 浅釉（霜青 / 鎏金 / 铜）：压一道暗刻，再在下方提一道极弱的高光 ——
+    // 高光在**下面**是因为浅底上的"凸起"读作反光，凹槽的受光边在槽的下沿
+    return { cut: 'rgba(29,58,46,0.62)', lift: 'rgba(255,255,255,0.40)' };
+  }
+  // 深釉（生青 / 深青 / 暮紫 / 石板）：浅刻 + 下方一道更深的槽
+  return { cut: 'rgba(212,227,216,0.72)', lift: 'rgba(12,26,20,0.42)' };
+}
+
+/** 一格该刻哪一品。按格坐标轮换 —— 相邻两格不同纹，整盘才不会成花纹布。 */
+function motifOf(gx: number, gy: number): Motif {
+  return NINE[(((gx * 2 + gy * 3) % NINE.length) + NINE.length) % NINE.length].draw;
+}
+
+/** 在格内刻一品：暗槽 + 受光边（双线立体）。 */
+function drawEngrave(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  s: number,
+  gx: number,
+  gy: number,
+  g: Glaze,
+): void {
+  const m = motifOf(gx, gy);
+  const enamel = enamelFor(g);
+  // 主纹占格面 ≤ 55%：设计稿是 64px 的格衬 34px 的纹（0.531），
+  // 这里 `h` 是半宽 → 0.26 恰好对上
+  const h = s * 0.26;
+  // 线宽：设计稿 `stroke-width:1.7` 是 24 视图里的数，而纹样在 64px 的格上
+  // 占 34px（scale 34/24）→ 实际落笔 1.7×34/24 = 2.41px，即 0.0376 格。
+  // 先前按 1.7/31 写，粗了一半多，刻纹在白釉上糊成了一道描边
+  const lw = Math.max(1, s * 0.0376);
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // ① 暗刻槽：主导线。纹样的"形"全靠这一道
+  ctx.strokeStyle = enamel.cut;
+  ctx.lineWidth = lw;
+  m(ctx, h);
+
+  // ② 受光边：错开 0.5/0.6（设计稿的 `translate(0.5,0.6)`，按 31 的格换算成比例）
+  ctx.save();
+  ctx.translate(s * 0.016, s * 0.019);
+  ctx.strokeStyle = enamel.lift;
+  ctx.lineWidth = Math.max(0.6, lw * 0.72);
+  m(ctx, h);
+  ctx.restore();
+
+  ctx.restore();
 }
 
 // ────────────────────────────── 金缮光迹 ──────────────────────────────
 
-function strokePath(ctx: CanvasRenderingContext2D, pts: Pt[], width: number, color: string): void {
+function strokePath(
+  ctx: CanvasRenderingContext2D,
+  pts: Pt[],
+  width: number,
+  color: string,
+  dx = 0,
+  dy = 0,
+): void {
   ctx.beginPath();
-  ctx.moveTo(pts[0].x, pts[0].y);
-  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.moveTo(pts[0].x + dx, pts[0].y + dy);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x + dx, pts[i].y + dy);
   ctx.strokeStyle = color;
   ctx.lineWidth = width;
   ctx.lineJoin = 'round';
@@ -464,52 +1956,221 @@ function strokePath(ctx: CanvasRenderingContext2D, pts: Pt[], width: number, col
 }
 
 /**
- * 金缮光迹：辉光 → 金体 → 亮金 → 高光线 → 转折糖珠。
+ * 金缮光迹：暗缝 → 辉光 → 金体 → 亮金 → 高光线 → 转折金珠。
  *
- * 五层是「光」和「一根黄线」的全部差别。路径是全屏唯一的发光体——
- * 它必须比任何一颗棋子都亮，但金色面积仍要克制（线宽吃到 0.30 格为止）。
+ * ## 设计稿的三条时序（TOKEN 表「连径 520ms · 缮线」）
+ *
+ * 1. **主线匀速生长**（`dashoffset` 460 → 0，`cubic-bezier(.4,0,.2,1)`）。
+ * 2. **高光线滞后 80ms 跟上** —— 高光不是"和主线一起长"，是描金笔
+ *    第二遍压上去的那一道。所以按 `grow` 落后一个固定量再截断。
+ * 3. **辉光在 30% 处脉冲「至 0.8，再衰减到 0.42」** ——
+ *    它是"描过去时笔尖一亮，然后落回去"，不是恒亮。恒亮的话，
+ *    金线会像一根灯管。
+ *
+ * ## 五层的分工
+ *
+ * 暗缝在下（描金的凹槽）、辉光一层、金体、亮金、最上面是高光线。
+ * **只给一层辉光**：老版叠了两层（0.29@.10 + 0.19@.22），中间那条比设计稿的
+ * 芯亮一倍，整条线就读成"金胶带"而不是"一道光"。
  */
-function drawTrail(ctx: CanvasRenderingContext2D, pts: Pt[], cell: number, now: number): void {
+function drawTrail(
+  ctx: CanvasRenderingContext2D,
+  pts: Pt[],
+  cell: number,
+  now: number,
+  grow = 1,
+): void {
   if (pts.length < 2) return;
 
-  // 线宽全部按设计稿的 4 层换算（槽位 38 CSS）：
-  // 11 / 5.5 / 2.2 / 0.8 CSS → 0.31 / 0.155 / 0.062 / 0.022 格。
+  // 线宽照设计稿的四个 SVG 值（`glow 11 / shadow 10 / line 6 / hi 1.6`，
+  // 画在 24 视图、最终铺到 64px 的棋子上）：
   //
-  // 辉光只能**一层**。老版叠了两层（0.29@.10 + 0.19@.22），
-  // 中间那条比设计稿的芯亮一倍，整条线就读成"金胶带"而不是"一道光"。
-  strokePath(ctx, pts, cell * 0.31, 'rgba(212,175,106,0.32)');
-  strokePath(ctx, pts, cell * 0.155, K.gold);
-  strokePath(ctx, pts, cell * 0.062, K.goldLit);
+  //   11 → 11/64 = 0.172 格
+  //   10 → 0.156 格
+  //    6 → 0.094 格   ← **主线只有这里**
+  //  1.6 → 0.025 格
+  //
+  // 早先按 0.31 / 0.155 / 0.062 写（那是"槽位 38 CSS"的换算），
+  // 按 64 的棋子算全部粗了近一倍 —— 主线 0.155 格 = 10px，读作"金管"而不是"一道光"。
+  const GLOW = cell * 0.172;
+  const CORE = cell * 0.094;
+  const HI = cell * 0.025;
 
-  // 高光：整条线往上偏半像素——光从左上打来，金脊在偏上那侧
-  ctx.save();
-  ctx.translate(0, -Math.max(0.5, cell * 0.010));
-  strokePath(ctx, pts, Math.max(1.2, cell * 0.021), 'rgba(255,246,220,0.58)');
-  ctx.restore();
+  // ── ① 暗缝：金线下面那道槽（设计稿 `shadow 10`，translate(0,1.5) 偏下）。
+  //    金线是**嵌进**釉面的 —— 没有这一道，它就成了浮在格子上的一条亮线
+  strokePath(ctx, pts, cell * 0.156, 'rgba(24,44,34,0.30)', 0, cell * 0.023);
 
-  // 转折糖珠：金在拐弯处积成小珠。位置固定（每帧随机会爬）
-  for (let i = 1; i < pts.length - 1; i++) {
+  // ── ② 辉光：30% 处脉冲到 0.8，之后衰减到 0.42（设计稿 `giltPulse`）
+  //
+  //    `grow` 是这一笔堆到哪了。用它当"描到哪儿"的进度：
+  //    辉光跟着笔尖走，峰值出现在 30%，然后落回 0.42 并保持。
+  const pulse =
+    grow < 0.3
+      ? (grow / 0.3) * 0.80 // 0 → 0.8（30% 处到顶）
+      : 0.80 - ((grow - 0.3) / 0.7) * (0.80 - 0.42); // 0.8 → 0.42
+  strokePath(ctx, pts, GLOW, `rgba(212,175,106,${(0.45 * pulse) / 0.8})`);
+
+  // ── ③ 金体 + ④ 亮金：主线 6，亮金是它的 40%（芯）
+  strokePath(ctx, pts, CORE, K.gold);
+  strokePath(ctx, pts, CORE * 0.40, K.goldLit);
+
+  // ── ⑤ 高光线：**滞后 80ms**。
+  //
+  //    80ms 换算成"生长进度"要看这一笔总长多久：一格 ≈ 1.2 格宽毫秒
+  //    （`motion.grow`），所以 80ms ≈ 80 / (1.2 × cell) 的进度。
+  //    这条线只画到 `grow - lag` 的位置 —— 主线已经推过去了，高光还在后面追。
+  const lag = Math.min(0.5, 80 / Math.max(120, cell * 1.2));
+  const hiT = Math.max(0, grow - lag);
+  if (hiT > 0.002) {
+    const hiPts = truncatePts(pts, hiT);
+    if (hiPts.length >= 2) {
+      ctx.save();
+      // 整条线往上偏半像素 —— 光从左上打来，金脊在偏上那侧
+      ctx.translate(0, -Math.max(0.5, cell * 0.010));
+      strokePath(ctx, hiPts, Math.max(1, HI), 'rgba(255,246,220,0.58)');
+      ctx.restore();
+    }
+  }
+
+  // ── ⑥ 转折金珠：**r=4.2**（设计稿明的数，按 64 的棋子 → 0.066 格）。
+  //
+  //    只在**已堆到**的拐角上出现：没堆到的地方先有珠子，就成了"路上的金点"，
+  //    读作"这一格已经走过"，而线还没到。
+  const reached = Math.max(1, Math.round(grow * (pts.length - 1)));
+  for (let i = 1; i < reached && i < pts.length - 1; i++) {
     if (hash(i * 7.3) < 0.40) continue;
     const p = pts[i];
     const off = (hash(i * 13.9) - 0.5) * cell * 0.14;
     ctx.beginPath();
-    ctx.arc(p.x + off, p.y - cell * 0.055, Math.max(0.9, cell * 0.022), 0, Math.PI * 2);
+    ctx.arc(p.x + off, p.y - cell * 0.055, Math.max(1.4, cell * 0.066), 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255,246,220,0.52)';
     ctx.fill();
   }
 
-  // 线头光晕：描金笔停处积起的一粒热金
+  // ── ⑦ 线头光晕：描金笔停处积起的一粒热金
   const head = pts[pts.length - 1];
-  const pulse = 0.72 + 0.28 * Math.sin(now / 560);
+  const beat = 0.72 + 0.28 * Math.sin(now / 560);
   const hg = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, cell * 0.30);
-  hg.addColorStop(0, `rgba(255,246,222,${0.38 * pulse})`);
-  hg.addColorStop(0.5, `rgba(233,204,138,${0.14 * pulse})`);
+  hg.addColorStop(0, `rgba(255,246,222,${0.38 * beat})`);
+  hg.addColorStop(0.5, `rgba(233,204,138,${0.14 * beat})`);
   hg.addColorStop(1, 'rgba(233,204,138,0)');
   ctx.beginPath();
   ctx.arc(head.x, head.y, cell * 0.30, 0, Math.PI * 2);
   ctx.fillStyle = hg;
   ctx.fill();
 }
+
+
+// ────────────────────── 图例记号（与盘面同形） ──────────────────────
+
+/**
+ * 图例上的七枚记号。
+ *
+ * ## 为什么必须自己画
+ *
+ * 图例是"这个世界有哪几种东西"的索引，记号必须**和盘面上那一枚同形状**。
+ * 用通用那套会出事：它的冰面是"一道斜坡"，压在天青的霜青片上是一块糊；
+ * 它的箭是"一根杆加折角"，而盘上的箭是实心箭坯 —— 图例和盘面对不上，
+ * 图例就等于没画。
+ *
+ * 坐标全在 **48 视图**（和 `MISE_SHAPES` 同一个空间），按 `sw / 48` 缩，
+ * 所以可以直接复用设计稿的路径数据。
+ */
+const mark48 =
+  (draw: (c: CanvasRenderingContext2D) => void): LegendMark =>
+  (c, cx, cy, sw, ink) => {
+    c.save();
+    c.translate(cx, cy);
+    c.scale(sw / 48, sw / 48);
+    c.translate(-24, -24);
+    c.strokeStyle = ink;
+    c.fillStyle = ink;
+    c.lineJoin = 'round';
+    c.lineCap = 'round';
+    draw(c);
+    c.restore();
+  };
+
+const path48 = (c: CanvasRenderingContext2D, pts: Array<[number, number]>, close = true) => {
+  c.beginPath();
+  c.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
+  if (close) c.closePath();
+};
+
+/** 48 视图的走廊，用来把单位坐标的几何搬进图例。 */
+const to48 = (pts: Array<[number, number]>): Array<[number, number]> =>
+  pts.map(([x, y]) => [24 + x * 24, 24 + y * 24] as [number, number]);
+
+const MISE_LEGEND: Partial<Record<LegendKind, LegendMark>> = {
+  // 单向：实心箭坯（与盘上同一块坯）
+  arrow: mark48((c) => {
+    path48(c, to48(ARROW_BODY));
+    c.fill();
+  }),
+  // 星屑：四芒火花
+  star: mark48((c) => {
+    path48(c, to48(sparkPts()));
+    c.fill();
+  }),
+  // 冰砖：六边晶 + 三条分水线
+  ice: mark48((c) => {
+    c.lineWidth = 2.2;
+    path48(c, to48(mpts([[24, 5], [40, 15], [40, 33], [24, 43], [8, 33], [8, 15]]).map(([x, y]) => [x * 24 + 24, y * 24 + 24])));
+    c.stroke();
+    c.lineWidth = 1.3;
+    c.beginPath();
+    c.moveTo(24, 5);
+    c.lineTo(24, 43);
+    c.moveTo(8, 15);
+    c.lineTo(40, 33);
+    c.moveTo(40, 15);
+    c.lineTo(8, 33);
+    c.stroke();
+  }),
+  // 石障：墨石八边（与盘上同一轮廓）
+  rock: mark48((c) => {
+    path48(c, [[7, 30], [11, 13], [23, 7], [39, 12], [43, 27], [35, 41], [15, 42], [7, 34]]);
+    c.fill();
+  }),
+  // 钥匙：朱印钥坯
+  key: mark48((c) => {
+    c.lineWidth = 3.4;
+    c.beginPath();
+    c.arc(16.8, 16.8, 7.4, 0, Math.PI * 2);
+    c.stroke();
+    c.beginPath();
+    c.moveTo(22.2, 22.2);
+    c.lineTo(36.8, 36.8);
+    c.moveTo(30.4, 30.4);
+    c.lineTo(26.4, 34.4);
+    c.moveTo(34.4, 34.4);
+    c.lineTo(30.4, 38.4);
+    c.stroke();
+  }),
+  // 门：玄墨门扉 + 鎏金门缝
+  gate: mark48((c) => {
+    path48(c, [[10.4, 40], [10.4, 18], [37.6, 18], [37.6, 40]]);
+    c.lineWidth = 2.2;
+    c.stroke();
+    c.beginPath();
+    c.moveTo(24, 13.6);
+    c.lineTo(24, 40);
+    c.lineWidth = 1.6;
+    c.stroke();
+  }),
+  // 传送门：双环（入口实环 —— 图例只给一枚，给"这一对"的入口）
+  portal: mark48((c) => {
+    c.lineWidth = 3;
+    c.beginPath();
+    c.arc(24, 24, 15.2, 0, Math.PI * 2);
+    c.stroke();
+    c.lineWidth = 1.6;
+    c.beginPath();
+    c.arc(24, 24, 7.2, 0, Math.PI * 2);
+    c.stroke();
+  }),
+};
 
 // ────────────────────────────── 主题 ──────────────────────────────
 
@@ -519,13 +2180,128 @@ export const MISE_THEME = composeTheme({
   tagline: '雨过天青云破处',
   unlock: { type: 'free', value: 0 },
   chrome: CHROME,
+  legendMarks: MISE_LEGEND,
+  /**
+   * 转场：**釉光抹开**（设计稿「页面/弹层不淡入，用『釉水抹开』揭示」）。
+   *
+   * 边是**直的**（`kind: 'glaze'`），因为釉面被刮过留下的是刀口，不是崩口；
+   * 一条 42px 的竖直高光带领先幕身 60ms 扫过去，幕身跟着退。
+   * 「永远不用纯 opacity 渐变 —— 那是玻璃的语言，不是釉的语言。」
+   */
+  wipe: { kind: 'glaze', ms: 520, from: '#1D3A2E', to: '#0F1915' },
+  /**
+   * 触感五档（设计稿 · 触感 · 试一试）。
+   *
+   * 和默认那组的差别都在"材质"上：瓷是**脆**的（落子 8 短促），
+   * 玉磬是**长**的（铺满三段 30ms 的停顿，手指能数出"叮——叮——"），
+   * 印落纸是**沉**的（45 一击到底）。统一成"震一下"就等于告诉手指
+   * 这五件事没有区别。
+   */
+  haptics: { step: 8, trail: 20, settle: [15, 30, 15, 30, 25], seal: 45, tap: 5 },
   kit: {
     backdrop: drawBackdrop,
     plate: drawPlate,
+    // 进场裁切：天青的格子是"原地弹"（settle），位移只有 0.1 格，
+    // 本来就不会飞出盘沿。但**放大**到 1.06 时四角会探出卡片圆角 ——
+    // 卡片的圆角是 36，四角那一块必须裁掉，否则会看到方形砖的尖角
+    clip(ctx, layout) {
+      const c = cardOf(layout);
+      roundRect(ctx, c.x, c.y, c.w, c.h, 36);
+      ctx.clip();
+    },
     cell: drawCell,
     trail: drawTrail,
     trailColors: { halo: 'rgba(212,175,106,0.20)', core: K.goldLit, hot: K.goldHot },
     hintColor: K.goldLit,
+    // 可连格的金缘 1.8s 明暗交替（设计稿「背景常驻」那行的第三条）
+    hintPulseMs: 1800,
+
+    /**
+     * 按压：**120ms** 沉到 94%，金环 500ms 扩到 1.85 倍（设计稿 TOKEN 表）。
+     *
+     * 120 是设计稿 `:active` 的 transition 时长 —— 按下去那一下必须**立刻**跟手，
+     * 200 以上就开始有"迟滞感"。环走 500ms 是另一回事：环是水痕，要有回味。
+     * 两者不同步是有意的（`rippleOut` 也是独立 500ms 的 keyframes）。
+     *
+     * 环从 0.62 起步 —— 比棋子**小**一圈，从棋子里面"透出来"。
+     * 从 0.92 起步（旧默认）读作"棋子被箍了一下"，那是弹性，不是涟漪。
+     */
+    press: {
+      down: 120,
+      ring: 500,
+      from: 0.62,
+      to: 1.85,
+      // 普通格：按进绒面
+      scale: 0.94,
+      width: 0.030,
+      // **起手格**：拿起来（设计稿「起手抬升」translateY(-3px) scale(1.1)）
+      liftScale: 1.1,
+      liftDy: -3 / 64,
+    },
+
+    /**
+     * 动效：一套「釉」应该怎么动。
+     *
+     * 天青的每个动作都比鸣沙**轻一档、快一档**（沙落 260ms / 天青 240ms）——
+     * 因为它的材质是釉：东西不是"落下来堆起"，而是"在釉面上掠过"。
+     */
+    motion: {
+      // 进场 —— 照「质感 Demo 的铺满全盘」：48ms 步进、每格 240ms 原地弹，
+      // 末格全盘金光 420ms + 玉磬。天青的釉不会从天上掉，它是渗进槽里的
+      /**
+       * 进场 · **开窑揭幕**（设计稿「伍·初始界面」）。
+       *
+       * 参数逐条照那一章：
+       * - 每格 **420ms**（"420ms 釉落缓动"）；
+       * - 行内左→右错峰 **45ms**；
+       * - 行与行之间停 **120ms**（"一行翻完落定，下一行才起"）；
+       * - 末行落地：整盘金光脉冲 **420ms** + 玉磬一记（同铺满收尾）。
+       *
+       * 早先的 240/48/0 是照 `settleGlaze` 抄的 —— 但那个 keyframes 是
+       * **铺满级联**用的（规格 240ms），而揭幕是**另一套动作**（420ms）。
+       * `row: 0` 更是直接没做行序：所有行同时起，读起来是"整片一起泛上来"，
+       * 而不是设计稿要的"像揭窑巾，一行行翻"。
+       *
+       * ## 与设计稿的**已知差异**（未实现）
+       *
+       * 设计稿的形态是**翻面**：每格绕横轴 `rotateX 180°`，背面是
+       * 「素坯暗面」（玄墨偏褐的陶土面 + 细颗粒 + 中心指压凹痕），
+       * 翻到 90° 时有一道 120ms 的翻面高光扫过。
+       *
+       * 这里用的是 `settle`（原地沉降弹一下）—— 因为 `EnterGate.form`
+       * 目前只有 `drop` / `settle` 两种，都不做透视翻转；而且"素坯盖面"
+       * 是一整套新资产（一件没画）。**这是缺的，不是对的。**
+       * 参数先按文档对齐，形态待补。
+       */
+      enter: {
+        form: 'settle',
+        ms: 420,
+        step: 45,
+        row: 120,
+        // 翻面的"落定"没有位移（它原地转），但 `settle` 形态需要一点下沉
+        // 才有"落"的读法；取 10/64 —— 与 `settleGlaze` 同量级
+        lift: 10 / 64,
+        swell: 1.06,
+        // 大盘（>12×8）封顶 2.4s（文档「保证整场揭幕 ≤2.4s」）
+        sweep: 2400,
+        pulse: { ms: 420, color: '#F2DCA8', alpha: 0.22 },
+      },
+      // 落子 240ms：-16px 起、胀 12%，55% 处过冲 2px 再收平（`dropIn`）
+      drop: { ms: 240, lift: 16 / 64, swell: 1.12, dust: 0 },
+      // 铺满：48ms 一粒、每格 240ms、末格全盘脉冲
+      settle: { ms: 240, dust: 0, lift: 10 / 64, swell: 1.06, pulse: { ms: 420, color: '#F2DCA8', alpha: 0.22 } },
+      // 沥金：描金笔走一格要约 1/3 格宽的时间（520ms 走完整条路径）
+      grow: 1.2,
+      // 末粒 → 玉磬：120ms（设计稿 `N*48 + 120`），比鸣沙的土埙早 48
+      winGap: 120,
+      // 盖印 320ms、175ms 触底、绢面抖 ±2px（设计稿 `silkShake` 的 2/54 格）
+      seal: { ms: 320, at: 175, shake: 2 / 54, size: 0.8 },
+    },
+
+    winSeal: drawSealStamp,
+    // 抵达那一帧：终点格爆闪（八芒 + 双环 + 芯点）。
+    // 它宣告「到了」，不是「赢了」—— 只亮 420ms 就退干净，不留余韵
+    arrive: drawArriveBurst,
 
     glyph: {
       style: 'porcelain',
@@ -533,10 +2309,14 @@ export const MISE_THEME = composeTheme({
       // 旧版的墨绿勾线在暗格上等于没画
       pal: LIGHT_PAL,
       // 亮格（鎏金星屑 / 铜钥匙 / 霜冰）上换墨色：浅线压浅底会整片消失
-      palFor: (type: number) => {
-        // 金格（星屑）/ 铜格（钥匙）上是暖褐刻痕；冰面才用冷墨
-        if (type === CoverCell.SHARD || type === CoverCell.KEY) return BROWN_PAL;
-        if (type === CoverCell.ICE) return DARK_PAL;
+      palFor: (type, state) => {
+        // 五色族分工（设计稿「颜色只从五色族里拿」）：
+        // 天青 = 盘面、玄墨 = 石与门、鎏金 = 箭与星、朱印 = 钥匙、
+        // 暮紫 = 传送门（全盘唯一的紫）
+        if (type === CoverCell.SHARD) return STAR_PAL;
+        if (type === CoverCell.KEY) return KEY_PAL;
+        if (type === CoverCell.GATE) return state?.wasOpen ? GATE_OPEN_PAL : GATE_PAL;
+        if (type === CoverCell.ICE) return FROST_PAL;
         // 石块上的记号只能是**刻痕**：浅色填面会在暗盘上变成一块奶油，
         // 读起来像"可以点的按钮"，而它恰恰是唯一不能走的地方
         if (type === CoverCell.BLOCK) return STONE_PAL;
@@ -548,10 +2328,72 @@ export const MISE_THEME = composeTheme({
       backEdge: 'transparent',
       backR: 0.26,
       terrainAccent: 'rgba(238,242,234,0.70)',
-      // 图标 = 格的 46%（设计稿 inset 22% → 56% 的棋子面，换算到槽位）
-      scale: 0.46,
-      // 五角星顶满画布，缩到 0.82 才和钥匙/门同重（设计稿的星只有棋子的 42%）
-      scaleFor: (type: number) => (type === CoverCell.SHARD ? 0.82 : 1),
+      /**
+       * 格内标尺寸 = **36/64 = 0.5625**。
+       *
+       * 使用说明写得很明确：「24px viewBox / **格内渲染 36px**」，棋格稿面 64px。
+       * 早先给 0.46（按"设计稿 inset 22% → 56% 的棋子面"推导），偏小一档。
+       */
+      scale: 36 / 64,
+      /**
+       * 各枚的**视觉重量**补偿。
+       *
+       * 改成 24 视图的 `MARKS` 之后，大部分形状本来就占满 24×24 的画布，
+       * 不再需要以前的补偿（上一版为 48 视图写过 SHARD 0.92 / KEY 1.30）。
+       * 现在只留两处真正偏的：
+       * - 星屑的四芒火花只占中间一圈（外径约 7.8 单位 / 12）；
+       * - 钥匙是斜 45° 的一条，包围盒只有方框的对角一半。
+       */
+      scaleFor: (type: number) => {
+        if (type === CoverCell.SHARD) return 1.10;
+        if (type === CoverCell.KEY) return 1.18;
+        return 1;
+      },
+      // 墨石已经由 `cell` 画成一整块有阴影、有两个面的石头了，别再叠一层线稿
+      /**
+       * 起终点由 `endpoint` 整块接管（那里是金单圈+菱 / 金双圈+芯点），
+       * 不能再让 `drawMarks` 叠一层通用线稿 —— 通用 `GLYPHS.end` 是
+       * **两个方框**（`rect`），压在金环上就是截图里那个"带方块的方框"。
+       * 早先漏了这两项，起终点一直是「金圈 + 方框」两层打架。
+       */
+      skip: [CoverCell.BLOCK, CoverCell.START, CoverCell.END],
+      shapes: MISE_SHAPES,
+      decor: MISE_DECOR,
+      // 「格内永远不落字」：星阶靠星数、传送门靠实虚，都不写数字角标
+      noCornerNumber: true,
+/**
+ * 状态变体：设计稿的 13 式里有 5 组是**同一机制的两个/三个形态**，
+ * 它们不能靠"按类型整条替换"区分（类型整关不变），只能按**运行时状态**选。
+ *
+ * | 设计稿 | 怎么选中 | 
+ * |---|---|---|
+ * | `star1` / `star2` / `star3` | `cellGroup` 就是第几颗星（1/2/3 阶） |
+ * | `door` / `door-open` | `keysHeld` 里有对应分组 = 已拿到钥匙 |
+ * | `portal-a` / `portal-b` | 同组里 `idx` 最小的是入口（A），另一个是出口（B） |
+ *
+ * 三条都不是"看这一格自己的字段"，而是看**整个盘面**：
+ * 星阶要看分组号、门要看钥匙持有、传送门要看同组的另一格在哪 ——
+ * 所以回调收到的是 `board` 和 `st`，而不只是一个 cell。
+ */
+      /**
+       * 状态变体（设计稿「格内标 · 全形态大图」13 式）。
+       *
+       * 三处会变：
+       * - **星屑阶数**：`group` 就是第几颗，1/2/3 阶画 1/2/3 颗火花；
+       * - **门开闭**：拿到对应钥匙之后 `keysHeld` 里有这个分组 —— 门从
+       *   "玄墨门扉"变成"两片洞开 + 中间的青光"；
+       * - **传送门进/出口**：同组里先出现的那个是入口（实环），后一个是出口（虚环）。
+       *   规则是"进 A 出 B"，所以必须先按 group 把整盘扫一遍才知道谁是 A。
+       */
+      variant: ({ type, group, idx, board, st }) => {
+        if (type === CoverCell.SHARD) return { key: starVariant(group) };
+        if (type === CoverCell.GATE) return { key: st.keysHeld.has(group) ? 'gateOpen' : 'gate' };
+        if (type === CoverCell.PORTAL) {
+          // 同组里 idx 最小的那个 = **入口**（查缓存表，O(1)）
+          return { key: portalEntrance(board.grid, group) === idx ? 'portalA' : 'portalB' };
+        }
+        return undefined;
+      },
     },
 
     hint(ctx, p, cell, i) {
@@ -592,65 +2434,108 @@ export const MISE_THEME = composeTheme({
 
     endpoint(ctx, kind, p, cell) {
       const r = cell * 0.30;
+      /**
+       * 起终点照设计稿「格内标 · 全形态大图」：
+       *
+       * - **起点·起手印**：鎏金单圈 r=8 + 实心菱（24 视图）。**不用三角** ——
+       *   三角在暗盘上读作"播放键"，而它要说的是"从这里起手"。
+       *   菱是寿山石印的起手纹，一圈一菱，钤在格心。
+       * - **终点·终点环**：外实环 r=8.6 + 内虚环 r=5.1 + 芯点。全盘唯一双圈。
+       *   早先是朱印 —— 但朱印已经用在"通关落款"上了，盘上再用一次，
+       *   两者就分不清"这是终点"还是"这局结束了"。
+       *
+       * 两者都是**鎏金**：金贵如缮，端点是这条金线的两端，只有它们配金色。
+       */
+      const gold = '#C9A45C';
+      const goldLit = '#F2DCA8';
+      const goldDeep = 'rgba(120,88,36,0.5)';
+      // 24 视图的 1 单位 = r / 8（因为起点的圈半径 8 对应这里的 r）
+      const u = r / 8;
+
       if (kind === 'start') {
-        // 起点·玉璧：双圈 + 好。青玉的款——展柜里器物的身份
-        const ring = 'rgba(110,158,130,';
+        // ① 外圈：暗边 + 金环 + 左上受光细线（三层才是"环"，一层只是"一个圆"）
         ctx.beginPath();
         ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-        const jade = ctx.createRadialGradient(p.x - r * 0.35, p.y - r * 0.35, r * 0.1, p.x, p.y, r);
-        jade.addColorStop(0, '#BFD8C6');
-        jade.addColorStop(0.7, '#7FA892');
-        jade.addColorStop(1, '#4A7260');
-        ctx.fillStyle = jade;
-        ctx.fill();
-        ctx.strokeStyle = ring + '0.60)';
-        ctx.lineWidth = Math.max(1.6, cell * 0.032);
+        ctx.strokeStyle = goldDeep;
+        ctx.lineWidth = 2.4 * u;
         ctx.stroke();
-
         ctx.beginPath();
-        ctx.arc(p.x, p.y, r * 0.62, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(29,51,42,0.42)';
-        ctx.lineWidth = 1;
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.strokeStyle = gold;
+        ctx.lineWidth = 1.8 * u;
         ctx.stroke();
-
-        // 好（璧心）：一点金
         ctx.beginPath();
-        ctx.arc(p.x, p.y, r * 0.16, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(184,144,69,0.92)';
+        ctx.arc(p.x - 0.3 * u, p.y - 0.4 * u, r, 0, Math.PI * 2);
+        ctx.strokeStyle = goldLit;
+        ctx.globalAlpha = 0.7;
+        ctx.lineWidth = 0.7 * u;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+
+        // ② 菱：暗影一枚 + 金面 + 上沿受光
+        const dia = (dy: number) => {
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y - 3.8 * u + dy);
+          ctx.lineTo(p.x + 3.8 * u, p.y + dy);
+          ctx.lineTo(p.x, p.y + 3.8 * u + dy);
+          ctx.lineTo(p.x - 3.8 * u, p.y + dy);
+          ctx.closePath();
+        };
+        dia(0.5 * u);
+        ctx.fillStyle = goldDeep;
         ctx.fill();
-      } else {
-        // 终点·朱印：全盘唯一一点红。篆意方印：外框 + 两横一竖的文
-        const half = r * 0.92;
+        dia(0);
+        ctx.fillStyle = gold;
+        ctx.fill();
         ctx.save();
-        ctx.translate(p.x, p.y);
-        // 印泥的不匀：底色带一点径向渐变
-        const sealG = ctx.createRadialGradient(-half * 0.3, -half * 0.3, half * 0.1, 0, 0, half * 1.25);
-        sealG.addColorStop(0, '#D25B40');
-        sealG.addColorStop(0.6, K.seal);
-        sealG.addColorStop(1, K.sealDeep);
-        ctx.beginPath();
-        roundRect(ctx, -half, -half, half * 2, half * 2, half * 0.22);
-        ctx.fillStyle = sealG;
+        ctx.globalAlpha = 0.45;
+        dia(-0.4 * u);
+        ctx.fillStyle = goldLit;
         ctx.fill();
-        // 印边：略微破口的框
-        ctx.strokeStyle = 'rgba(142,52,36,0.85)';
-        ctx.lineWidth = Math.max(1.4, cell * 0.028);
-        ctx.stroke();
-        // 印文：两横一竖（抽象的「工」，器物的款）
-        ctx.strokeStyle = 'rgba(255,236,224,0.88)';
-        ctx.lineWidth = Math.max(1.6, cell * 0.042);
-        ctx.lineCap = 'square';
-        const iw = half * 0.52;
-        ctx.beginPath();
-        ctx.moveTo(-iw, -half * 0.34);
-        ctx.lineTo(iw, -half * 0.34);
-        ctx.moveTo(-iw, half * 0.34);
-        ctx.lineTo(iw, half * 0.34);
-        ctx.moveTo(0, -half * 0.34);
-        ctx.lineTo(0, half * 0.34);
-        ctx.stroke();
         ctx.restore();
+        return;
       }
+
+      // 终点：双圈
+      const R = 8.6 * u;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
+      ctx.strokeStyle = goldDeep;
+      ctx.lineWidth = 2.8 * u;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
+      ctx.strokeStyle = gold;
+      ctx.lineWidth = 2 * u;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(p.x - 0.3 * u, p.y - 0.4 * u, R, 0, Math.PI * 2);
+      ctx.strokeStyle = goldLit;
+      ctx.globalAlpha = 0.7;
+      ctx.lineWidth = 0.7 * u;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      // 内虚环：虚线（`stroke-dasharray 2.6 2.2`）—— 内环是虚的，
+      // 双圈才读作"归处"，两个实环会读成"靶心"
+      ctx.save();
+      ctx.beginPath();
+      ctx.setLineDash([2.6 * u, 2.2 * u]);
+      // `lineCap` 必须显式设 `butt`：画实体环时设过 `round`，
+      // 而 `round` 让每段两端各鼓半个线宽 —— 段 9.9px + 线宽 4.2px 时，
+      // 视觉段长 14px、间隔只剩 8.3px，虚线圈糊成"一串分离的方块"。
+      ctx.lineCap = 'butt';
+      ctx.arc(p.x, p.y, 5.1 * u, 0, Math.PI * 2);
+      ctx.strokeStyle = gold;
+      ctx.lineWidth = 1.1 * u;
+      ctx.stroke();
+      ctx.restore();
+
+      // 芯点
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 1.7 * u, 0, Math.PI * 2);
+      ctx.fillStyle = goldLit;
+      ctx.fill();
     },
   },
 });
