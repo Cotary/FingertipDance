@@ -1,5 +1,5 @@
 /**
- * 松手宽限期（`CoverSession` 的 paused 态）。
+ * 松手后定住（`CoverSession` 的 paused 态）。
  *
  * ## 这条测试守的是什么
  *
@@ -7,12 +7,15 @@
  * `undos++` + 清空路径 —— 手指出汗、拇指滑出棋盘、想看看盘面，
  * 任何一次误抬都直接掉一颗星（3 星要零重来）。玩家体感是「莫名其妙被扣星」。
  *
- * 现在的契约：
+ * 中间版本给过 1.5 秒宽限，但那引入了新问题：玩家放下手机想想，
+ * 回来发现线自己没了，而且没有任何解释 —— 倒计时本身就是压力。
+ *
+ * 现在的契约（**松手即定住，保持原状**）：
  *
  * 1. 松手未通关 → `paused`，路径 / 钥匙 / 星星**全部保留**，`undos` 不变
- * 2. 宽限内按回**线头** → 接着拖，走完照样是 3 星
- * 3. 宽限内按**别处** → 视为要重新起一笔，立即作废（`undos + 1`）后照常起步
- * 4. 宽限到期 → 才真正作废（`undos + 1`、清空、回到 `idle`）
+ * 2. 松手后**永远不作废** —— 停多久都不掉星、不清线（没有倒计时）
+ * 3. 按回**线头**或**线头邻格** → 接着拖，走完照样是 3 星
+ * 4. 按**别处**（隔了两格以上）→ 视为要重新起一笔，作废（`undos + 1`）后照常起步
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
@@ -124,20 +127,65 @@ describe('松手宽限期', () => {
     expect(session.state!.path[0]).toBe(session.state!.runtime.rs.localOf[solFlat[solFlat.length - 1]]);
   });
 
-  it('宽限到期 → 才真正作废（undos + 1 且清空）', () => {
+  it('宽限内点线头的邻格 → 当作接着走一格，不作废也不扣星', () => {
+    // 触屏上一多半人是「点着走」而不是「拖」：点起点、点右边一格。
+    // 老实现把这一下判成"按别处"，整条线作废 —— 手没滑、步没错却被打断
+    const { session, solFlat } = setup();
+    dragTo(session, solFlat, 4);
+    session.pointerUp();
+
+    const next = screenOf(session, solFlat[4]);
+    session.pointerDown(next.x, next.y);
+
+    expect(session.state!.undos).toBe(0);            // 一颗星都不能掉
+    expect(session.state!.phase).toBe('dragging');   // 续上了，可以继续点/拖
+    expect(session.state!.path.length).toBe(5);      // 邻格真的被吃进去了
+
+    // 接着一路点到底，照样零重来通关
+    session.pointerUp();
+    for (let i = 5; i < solFlat.length; i++) {
+      const p = screenOf(session, solFlat[i]);
+      session.pointerDown(p.x, p.y);
+      session.pointerUp();
+    }
+    expect(session.state!.phase).toBe('won');
+    expect(session.state!.undos).toBe(0);
+  });
+
+  it('宽限内点隔了两格的地方 → 仍按「按别处」作废（单点不补齐远处）', () => {
+    // 放宽到邻格就够了：再放宽到"同行任意远"会让路径凭空长出两格，
+    // 玩家看不出中间是怎么填的。远距离是"拖"的语义
+    const { session, solFlat } = setup();
+    dragTo(session, solFlat, 4);
+    session.pointerUp();
+
+    const far = screenOf(session, solFlat[6]);
+    session.pointerDown(far.x, far.y);
+    expect(session.state!.undos).toBe(1);
+  });
+
+  it('松手后停多久都不作废（没有倒计时）', () => {
     const { session, solFlat } = setup();
     dragTo(session, solFlat, 4);
     session.pointerUp();
 
     const t0 = Date.now();
-    session.tick(t0 + GRACE_MS - 50);
-    expect(session.state!.phase).toBe('paused');  // 还没到点
-    expect(session.state!.undos).toBe(0);
+    // 连推 10 分钟的游戏时间：早先的 1.5 秒宽限早就该作废了
+    for (const dt of [50, 1000, 60_000, 600_000]) {
+      session.tick(t0 + dt);
+      expect(session.state!.phase).toBe('paused');
+      expect(session.state!.undos).toBe(0);
+      expect(session.state!.path.length).toBe(4);
+      expect(session.covered()).toBe(4);
+    }
+  });
 
-    session.tick(t0 + GRACE_MS + 1);
-    expect(session.state!.phase).toBe('idle');
-    expect(session.state!.undos).toBe(1);
-    expect(session.state!.path.length).toBe(0);
+  it('graceRemain 恒为 0（没有倒计时可显示）', () => {
+    const { session, solFlat } = setup();
+    dragTo(session, solFlat, 4);
+    session.pointerUp();
+    expect(session.graceRemain()).toBe(0);
+    expect(session.graceRemain(Date.now() + 60_000)).toBe(0);
   });
 
   it('宽限内指针移动不产生任何效果（手还在屏上滑过）', () => {
@@ -155,8 +203,7 @@ describe('松手宽限期', () => {
     expect(session.state!.phase).toBe('dragging');
   });
 
-  it('宽限期长度在 1~2 秒之间（体感窗口）', () => {
-    expect(GRACE_MS).toBeGreaterThanOrEqual(1000);
-    expect(GRACE_MS).toBeLessThanOrEqual(2000);
+  it('GRACE_MS 是「无限」—— 松手定住的显式声明', () => {
+    expect(GRACE_MS).toBe(Number.POSITIVE_INFINITY);
   });
 });
