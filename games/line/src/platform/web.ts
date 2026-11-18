@@ -108,9 +108,9 @@ export const webPlatform: Platform = {
     try { await navigator.clipboard.writeText(url); } catch { /* noop */ }
   },
 
-  vibrate() {
+  vibrate(pattern: number | number[] = 15) {
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-      navigator.vibrate(30);
+      navigator.vibrate(pattern);
     }
   },
 

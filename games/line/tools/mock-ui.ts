@@ -250,10 +250,11 @@ export const gameScreen = (ctx: Ctx): void => {
   drawHud(ctx, level.idx, '薄荷', 6, 16, { done: 52, total: 86, shardNext: 1 }, chrome);
   drawPlayFootnote(ctx, 0, chrome);
   // 盘底三层：金提示 → 图例 → 次级行动（和 main.ts 的 play 分支同版式）。
-  // 图例这里放**满编 6 枚**：这一屏是排版对照用的，设计稿也是 6 枚。
-  if (chrome) drawPlayTip(ctx, TIP_BTN, false, '首 提 示 · 看 视 频');
+  // 图例这里放**满编 7 枚**（含墨石）：这一屏是排版对照用的。
+  if (chrome) drawPlayTip(ctx, TIP_BTN, false);
   else drawButton(ctx, TIP_BTN, false, undefined, chrome);
   drawPlayLegend(ctx, [
+    { kind: 'rock', label: '墨石', bg: '#16211C', ink: 'rgba(158,186,168,0.92)' },
     { kind: 'arrow', label: '单向门', bg: '#26333B', ink: '#F2DCA8' },
     { kind: 'star', label: '星屑 序', bg: '#B89045', ink: '#2A2114' },
     { kind: 'key', label: '钥匙', bg: '#A07E3C', ink: '#2A2114' },

@@ -207,6 +207,10 @@ func buildCoverRuleSet(cells []int, g *CoverGrid) *CoverRuleSet {
 }
 
 // coverEnterable 某格能否进入（不考虑已走状态之外的一切）。
+//
+// **注意**：这里**不检查单向门箭头** —— 箭头的检查在两处，
+// 分别是「离开」时（coverStepMove 开头）和「滑行途中进入」时
+// （coverSlideBlocked）。合并到一处会漏掉其中一种。
 func coverEnterable(rs *CoverRuleSet, v int, visited []bool, keyMask int) bool {
 	if v < 0 || visited[v] {
 		return false
@@ -220,13 +224,46 @@ func coverEnterable(rs *CoverRuleSet, v int, visited []bool, keyMask int) bool {
 	return true
 }
 
+// coverSlideBlocked 滑行途中进入 v 是否被阻断（在进入之前判定）。
+//
+// **与 TS 侧 `slideBlocked` 逐行对应**。
+//
+// 两条阻断规则：
+//  1. 单向门箭头与滑行方向不一致 → 不能进入 → 停在门前；
+//  2. 星星编号不是下一个待收集的 → 不能进入 → 停在它前面。
+//
+// 钥匙**不阻断** —— 钥匙是行进中拿到的道具，捡到就生效。
+func coverSlideBlocked(rs *CoverRuleSet, v int, dir int, shardNext int) bool {
+	if v < 0 {
+		return true
+	}
+	if int(rs.TypeOf[v]) == CoverOneway && int(rs.DirOf[v]) != dir {
+		return true
+	}
+	if int(rs.TypeOf[v]) == CoverShard && int(rs.GroupOf[v]) != shardNext {
+		return true
+	}
+	return false
+}
+
 // coverStepMove 从 cur 沿 dir 移动一步；若是冰块则滑行到撞墙。
 //
 // 返回新消耗的局部编号序列；不可移动返回 nil。
 //
 // **与 TS 侧 `stepMove` 逐行对应** —— 冰块沿「进入方向」滑行，
 // 传送门是「可选边」（不算传送也能走进去）。
-func coverStepMove(rs *CoverRuleSet, cur, dir int, visited []bool, keyMask int) []int {
+//
+// 滑行途中每一格都按完整规则判定，遇到不满足的格就停在它前面：
+//   - 单向门箭头不一致 → 停在门前；
+//   - 星星编号不对 → 停在它前面；
+//   - 未开锁的门 / 已走过的格 / 障碍 → 停在它前面。
+//
+// **传送门例外**：传送门不是墙，它要被吃掉 —— 滑到传送门格就停
+// （打断滑行），玩家可以主动传送到搭档。
+//
+// 滑行途中捡到的钥匙**立刻生效**（同一段滑行后面的门可以被它打开），
+// 星星也沿滑行**逐格推进**顺序。
+func coverStepMove(rs *CoverRuleSet, cur, dir int, visited []bool, keyMask int, shardNext int) []int {
 	// 单向门：只能沿指定方向离开
 	if int(rs.TypeOf[cur]) == CoverOneway && int(rs.DirOf[cur]) != dir {
 		return nil
@@ -235,19 +272,42 @@ func coverStepMove(rs *CoverRuleSet, cur, dir int, visited []bool, keyMask int) 
 	if !coverEnterable(rs, first, visited, keyMask) {
 		return nil
 	}
+	// 目标格若是乱序的星星 → 一步都走不了（与滑行同一套判定）
+	if int(rs.TypeOf[first]) == CoverShard && int(rs.GroupOf[first]) != shardNext {
+		return nil
+	}
 	consumed := []int{first}
 	if int(rs.TypeOf[first]) != CoverIce {
 		return consumed
 	}
 	// 冰块：沿进入方向继续滑行，直到下一格不可进入
+	//
+	// 滑行途中钥匙/星星的摘取状态逐格推进。
 	curCell := first
+	simKeyMask := keyMask
+	simShardNext := shardNext
 	for {
 		nx := rs.Nbr[curCell*4+dir]
-		if !coverEnterable(rs, nx, visited, keyMask) {
+		if !coverEnterable(rs, nx, visited, simKeyMask) {
+			break
+		}
+		if coverSlideBlocked(rs, nx, dir, simShardNext) {
 			break
 		}
 		consumed = append(consumed, nx)
+		// 沿途的道具立刻生效
+		if int(rs.TypeOf[nx]) == CoverKey {
+			simKeyMask |= 1 << int(rs.GroupOf[nx])
+		}
+		if int(rs.TypeOf[nx]) == CoverShard {
+			simShardNext = int(rs.GroupOf[nx]) + 1
+		}
 		curCell = nx
+		// **传送门打断滑行**：滑到传送门格就停 —— 传送门被吃掉，
+		// 玩家站在它上面可以主动传送到搭档（不自动传送）。
+		if int(rs.TypeOf[nx]) == CoverPortal {
+			break
+		}
 	}
 	return consumed
 }
@@ -255,19 +315,24 @@ func coverStepMove(rs *CoverRuleSet, cur, dir int, visited []bool, keyMask int) 
 // coverCandidateMoves 枚举 cur 的所有候选移动。
 //
 // 除四邻接移动外，传送门格额外提供一条「跳到搭档」的边。
-func coverCandidateMoves(rs *CoverRuleSet, cur int, visited []bool, keyMask int) []coverMove {
+func coverCandidateMoves(rs *CoverRuleSet, cur int, visited []bool, keyMask int, shardNext int) []coverMove {
 	out := make([]coverMove, 0, 5)
 	for dir := 0; dir < 4; dir++ {
-		consumed := coverStepMove(rs, cur, dir, visited, keyMask)
+		consumed := coverStepMove(rs, cur, dir, visited, keyMask, shardNext)
 		if consumed == nil {
 			continue
 		}
-		out = append(out, coverMakeMove(rs, consumed))
+		out = append(out, coverMakeMove(rs, dir, consumed, keyMask, shardNext, false))
 	}
 	if int(rs.TypeOf[cur]) == CoverPortal {
 		partner := rs.PortalOf[cur]
-		if partner >= 0 && !visited[partner] {
-			out = append(out, coverMakeMove(rs, []int{partner}))
+		if partner >= 0 {
+			// 传送落点也要走完整规则：已走过 / 未开锁的门 → 不能传过去；
+			// 落点是乱序的星星 → 也不能传过去（否则可以白捡一颗乱序的星星）。
+			isShard := int(rs.TypeOf[partner]) == CoverShard && int(rs.GroupOf[partner]) != shardNext
+			if coverEnterable(rs, partner, visited, keyMask) && !isShard {
+				out = append(out, coverMakeMove(rs, -1, []int{partner}, keyMask, shardNext, true))
+			}
 		}
 	}
 	return out
@@ -281,6 +346,13 @@ type coverMove struct {
 	Shard     int // 拾取的星星分组（1 基）；0 = 无
 	Key       int // 拾取的钥匙分组（1 基）；0 = 无
 	ViaPortal bool
+	// KeyMask：本次移动结束后的钥匙掩码（含滑行途中捡到的钥匙）。
+	// ShardNext：本次移动结束后的下一个待收集星星分组（0 基）。
+	//
+	// 滑行是一次移动吃掉多格，中途捡到的钥匙必须立刻生效，
+	// 星星也必须逐格推进顺序 —— 所以状态随移动一起带出来。
+	KeyMask   int
+	ShardNext int
 }
 
 // coverMakeMove 组装一次移动（含星星/钥匙拾取信息）。
@@ -288,18 +360,25 @@ type coverMove struct {
 // **必须走这个函数** —— 直接构造 `coverMove` 会丢掉 Shard/Key 字段，
 // 于是回放时「星星顺序」永远看不到正确的编号，
 // 表现为「星星顺序错误：期望 0，实际 1」。
-func coverMakeMove(rs *CoverRuleSet, consumed []int) coverMove {
+//
+// **拾取状态沿消耗序列逐格推进** —— 与 TS 侧 `makeMove` 同一套语义。
+func coverMakeMove(rs *CoverRuleSet, dir int, consumed []int, keyMask int, shardNext int, viaPortal bool) coverMove {
 	mv := coverMove{
-		Dir:      -1,
-		Consumed: consumed,
-		Target:   consumed[len(consumed)-1],
+		Dir:       dir,
+		Consumed:  consumed,
+		Target:    consumed[len(consumed)-1],
+		ViaPortal: viaPortal,
+		KeyMask:   keyMask,
+		ShardNext: shardNext,
 	}
 	for _, c := range consumed {
 		switch int(rs.TypeOf[c]) {
 		case CoverShard:
 			mv.Shard = int(rs.GroupOf[c]) + 1
+			mv.ShardNext = int(rs.GroupOf[c]) + 1
 		case CoverKey:
 			mv.Key = int(rs.GroupOf[c]) + 1
+			mv.KeyMask |= 1 << int(rs.GroupOf[c])
 		}
 	}
 	return mv
@@ -374,7 +453,7 @@ func replayCoverPath(rs *CoverRuleSet, pathLocal []int) error {
 
 	p := 1
 	for p < len(pathLocal) {
-		moves := coverCandidateMoves(rs, cur, visited, keyMask)
+		moves := coverCandidateMoves(rs, cur, visited, keyMask, shardNext)
 		var matched *coverMove
 		for i := range moves {
 			mv := &moves[i]
@@ -396,21 +475,13 @@ func replayCoverPath(rs *CoverRuleSet, pathLocal []int) error {
 		if matched == nil {
 			return &PathValidationError{Reason: fmt.Sprintf("第 %d 步不是合法移动（当前 %d）", p, cur)}
 		}
-		// 星星顺序
-		for _, c := range matched.Consumed {
-			if int(rs.TypeOf[c]) == CoverShard && int(rs.GroupOf[c]) != shardNext {
-				return &PathValidationError{Reason: fmt.Sprintf("星星顺序错误：期望 %d，实际 %d", shardNext, int(rs.GroupOf[c]))}
-			}
-		}
+		// 星星顺序由 coverCandidateMoves 内部处理（乱序的星星会让移动走不成）。
 		for _, c := range matched.Consumed {
 			visited[c] = true
 		}
-		if matched.Key > 0 {
-			keyMask |= 1 << (matched.Key - 1)
-		}
-		if matched.Shard > 0 {
-			shardNext = matched.Shard
-		}
+		// 状态直接取移动里算好的结果（滑行途中逐格推进出来的）。
+		keyMask = matched.KeyMask
+		shardNext = matched.ShardNext
 		cur = matched.Target
 		p += len(matched.Consumed)
 	}

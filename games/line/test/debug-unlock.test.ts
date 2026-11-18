@@ -74,12 +74,14 @@ describe('调试模式：点击任意关卡', () => {
   });
 
   it('调试模式下，锁着的关依然能被点击命中（几何上画出来了就能点）', async () => {
-    const { createMapState, mapNodePos, pickMapNode, scrollToLevel } = await loadMapview(true);
+    const { createMapState, mapNodePos, pickMapNode, scrollToLevel, camXOf, screenXOf } = await loadMapview(true);
     const st = createMapState(1, 1000, {}, true);
     // 先滚到第 500 关 —— `pickMapNode` 只命中**可视区**内的节点
     st.scrollY = scrollToLevel(500);
     const p = mapNodePos(500);
-    expect(pickMapNode(p.x, p.y - st.scrollY, st)).toBe(500);
+    // 命中判定吃屏幕坐标：横向要先减掉相机偏移
+    const sx = screenXOf(p.x, camXOf(st.scrollY, st.levelCount));
+    expect(pickMapNode(sx, p.y - st.scrollY, st)).toBe(500);
   });
 
   it('调试开关只影响可玩性，不影响地图结构（关数 / 滚动范围）', async () => {

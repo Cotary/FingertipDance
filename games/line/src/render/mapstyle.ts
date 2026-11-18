@@ -209,6 +209,43 @@ const OVERRIDES: Record<string, Partial<MapPalette>> = {
     worldTo: '#C2D2C4',
     worldK: 0.42,
   },
+  // 鸣沙丹青：暮色沙原。
+  //
+  // 地图不能跟着棋盘一起变亮：地图是"夜空 + 路"，一页暖沙会把世界球和
+  // 未解锁球全洗没。所以只把**色相**搬过来 —— 天从蓝黑换成暖褐黑、
+  // 星从冷白换成土白、路是沥金，世界色往「壁土」混而不是往金混
+  // （和金缮同一条道理：金路旁边站一排脏球就毁了）。
+  mingsha: {
+    skyTop: '#0D0A07',
+    skyMid: '#1B1410',
+    skyBottom: '#2E2116',
+    nebulaA: 'rgba(181,71,46,0.13)',
+    nebulaB: 'rgba(201,155,63,0.11)',
+    star: '#F2E4C6',
+    starWarm: '#E8C87E',
+    // 远景行星：一颗赭石球
+    planet: '#7A5634',
+    planetDark: '#0D0A07',
+    planetRing: 'rgba(201,155,63,0.26)',
+    road: '#C99B3F',
+    roadEdge: '#F0C868',
+    roadGlow: 'rgba(240,200,104,0.18)',
+    roadDim: '#6B4C18',
+    rune: '#FFF0C8',
+    locked: '#1B1410',
+    lockedRim: 'rgba(201,155,63,0.26)',
+    current: '#E8C87E',
+    currentInk: '#2A1E10',
+    gate: '#4C6E56',
+    gateInk: '#F2E8D4',
+    gold: '#E2B558',
+    panel: 'rgba(24,17,11,0.87)',
+    panelEdge: 'rgba(201,155,63,0.32)',
+    ink: '#F2E8D4',
+    inkSoft: 'rgba(214,192,160,0.66)',
+    worldTo: '#D8C4A0',
+    worldK: 0.36,
+  },
   // 玻璃穹顶：极地夜空，星是冰蓝
   glass: {
     skyTop: '#04121C',

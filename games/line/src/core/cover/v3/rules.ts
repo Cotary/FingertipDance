@@ -88,6 +88,21 @@ export interface Move {
   key: number;
   /** 是否走了传送门额外边。 */
   viaPortal: boolean;
+  /**
+   * 本次移动**结束后**的钥匙掩码（含滑行途中捡到的钥匙）。
+   *
+   * 为什么要有它：滑行是一次移动吃掉多格，**中途捡到的钥匙必须立刻生效** ——
+   * 滑行途中的门就该被这枚刚捡到的钥匙打开。
+   * 「道具是行进中拿到的，不是障碍」，所以钥匙不能等到移动结束才结算。
+   */
+  keyMask: number;
+  /**
+   * 本次移动**结束后**的下一个待收集星星分组（0 基）。
+   *
+   * 同上：滑行途中按顺序捡到的星星要沿滑行逐格推进，
+   * 否则「滑行跨过了编号不符的星星」根本判不出来。
+   */
+  shardNext: number;
 }
 
 /**
@@ -186,7 +201,13 @@ export function withNoPortal(rs: RuleSet): RuleSet {
   return { ...rs, noPortal: true };
 }
 
-/** 某个格是否可以进入（不考虑已走状态）。 */
+/**
+ * 某个格是否可以进入（不考虑已走状态）。
+ *
+ * **注意**：这里**不检查单向门箭头** —— 箭头的检查在两处，
+ * 分别是「离开」时（`stepMove` 开头）和「滑行途中进入」时
+ * （`slideBlocked`）。合并到一处会漏掉其中一种。
+ */
 function enterable(
   rs: RuleSet,
   v: number,
@@ -203,6 +224,41 @@ function enterable(
 }
 
 /**
+ * 滑行途中进入 `v` 是否被阻断（**在进入之前**判定）。
+ *
+ * ## 为什么要有这个函数
+ *
+ * 滑行是一次移动吃掉多格，途中的每一格都要按**完整规则**判定。
+ * 之前只有 `enterable()`（已走 / 障碍 / 未开锁的门），
+ * **漏掉了单向门箭头** —— 于是滑行会从背面「穿过」单向门。
+ *
+ * ## 两条阻断规则
+ *
+ * 1. **单向门箭头**：门的箭头钉死了「允许的离开方向」。
+ *    滑行方向与箭头不一致 → 不能进入 → **停在门前**。
+ *    （箭头一致时可以从它上面滑过去，也可以停在它上面。）
+ * 2. **星星编号**：星星必须按编号顺序经过。滑行若要跨过
+ *    一颗编号不是「下一个待收集」的星星 → **停在它前面**
+ *    （不能跨过去白捡一颗乱序的星星）。
+ *
+ * 钥匙**不阻断** —— 钥匙是行进中拿到的道具，捡到就生效。
+ *
+ * ## 传送门为什么不在这里
+ *
+ * 传送门**不是墙** —— 它要**被吃掉**（滑行到它上面就停），
+ * 而不是「停在它前面」。所以它不进 `slideBlocked`，
+ * 而是在滑行循环里单独处理（见 `stepMove`）。
+ *
+ * @param shardNext 当前「下一个必须收集」的星星分组（0 基）
+ */
+function slideBlocked(rs: RuleSet, v: number, dir: number, shardNext: number): boolean {
+  if (v < 0) return true;
+  if (rs.typeOf[v] === CoverCell.ONEWAY && rs.dirOf[v] !== dir) return true;
+  if (rs.typeOf[v] === CoverCell.SHARD && rs.groupOf[v] !== shardNext) return true;
+  return false;
+}
+
+/**
  * 从 cur 出发，沿 dir 移动一步；若是冰块则滑行到撞墙。
  *
  * **传送门语义（可选式）**：传送门格可以像普通格一样走进去；
@@ -214,6 +270,20 @@ function enterable(
  *   可选传送保留了传送门带来的额外路线（更多解、更多拓扑变化），
  *   且参考解可以完全不使用传送边 —— 于是解法求解依然走完整剪枝，速度可控。
  *
+ * ## 滑行语义（2026-11-16 修复）
+ *
+ * 滑行途中每一格都要按完整规则判定，**遇到不满足的格就停在它前面**：
+ *   - 单向门箭头与滑行方向不一致 → 停在门前（**本次修复的核心**）；
+ *   - 星星编号不是下一个待收集的 → 停在它前面；
+ *   - 未开锁的门 / 已走过的格 / 障碍 → 停在它前面。
+ *
+ * **传送门例外**：传送门**不是墙**，它要被吃掉 ——
+ * 滑行到传送门格就停在那里（**打断滑行**），玩家可以主动传送到搭档。
+ *
+ * 滑行途中捡到的**钥匙立刻生效**（同一段滑行后面的门可以被
+ * 刚捡到的钥匙打开），星星也沿滑行**逐格推进**顺序。
+ * 「道具是行进中拿到的，不是障碍」—— 它们不该让滑行停下。
+ *
  * @returns 新消耗的局部编号序列；不可移动返回 null
  */
 export function stepMove(
@@ -222,24 +292,38 @@ export function stepMove(
   dir: number,
   visited: Uint8Array,
   keyMask: number,
+  shardNext = 0,
 ): number[] | null {
   // 单向门：该格只能沿指定方向离开
   if (rs.typeOf[cur] === CoverCell.ONEWAY && rs.dirOf[cur] !== dir) return null;
 
   const first = rs.nbr[cur * 4 + dir];
   if (!enterable(rs, first, visited, keyMask)) return null;
+  // 目标格若是乱序的星星 → 一步都走不了（与滑行同一套判定）
+  if (rs.typeOf[first] === CoverCell.SHARD && rs.groupOf[first] !== shardNext) return null;
 
   const consumed: number[] = [first];
   // 纯网格模式：冰块不滑行（当普通格走）
   if (rs.plain || rs.typeOf[first] !== CoverCell.ICE) return consumed;
 
-  // 冰块：沿进入方向继续滑行，直到下一格不可进入（已走 / 障碍 / 锁住的门 / 盘外）
+  // 冰块：沿进入方向继续滑行，直到下一格不可进入
+  //
+  // **滑行途中钥匙/星星的摘取状态逐格推进** —— 见 `slideBlocked` 的说明。
   let curCell = first;
+  let simKeyMask = keyMask;
+  let simShardNext = shardNext;
   for (;;) {
     const nx = rs.nbr[curCell * 4 + dir];
-    if (!enterable(rs, nx, visited, keyMask)) break;
+    if (!enterable(rs, nx, visited, simKeyMask)) break;
+    if (slideBlocked(rs, nx, dir, simShardNext)) break;
     consumed.push(nx);
+    // 沿途的道具立刻生效
+    if (rs.typeOf[nx] === CoverCell.KEY) simKeyMask |= 1 << rs.groupOf[nx];
+    if (rs.typeOf[nx] === CoverCell.SHARD) simShardNext = rs.groupOf[nx] + 1;
     curCell = nx;
+    // **传送门打断滑行**：滑到传送门格就停 —— 传送门被吃掉，
+    // 玩家站在它上面可以主动传送到搭档（不自动传送）。
+    if (rs.typeOf[nx] === CoverCell.PORTAL) break;
   }
   return consumed;
 }
@@ -255,46 +339,79 @@ export function candidateMoves(
   cur: number,
   visited: Uint8Array,
   keyMask: number,
+  shardNext = 0,
 ): Move[] {
   const out: Move[] = [];
   for (let dir = 0; dir < 4; dir++) {
-    const consumed = stepMove(rs, cur, dir, visited, keyMask);
+    const consumed = stepMove(rs, cur, dir, visited, keyMask, shardNext);
     if (!consumed) continue;
-    out.push(makeMove(rs, dir, consumed, false));
+    out.push(makeMove(rs, dir, consumed, false, keyMask, shardNext));
   }
   // 传送门额外边：站在传送门上可以传送到搭档
   // 纯网格模式下禁用（保持剪枝有效，且参考解不需要传送）
   // `noPortal` 模式同样禁用 —— 保留冰块滑行，但要保住四邻接链的结构。
   if (!rs.plain && !rs.noPortal && rs.typeOf[cur] === CoverCell.PORTAL) {
     const partner = rs.portalOf[cur];
-    if (partner >= 0 && !visited[partner]) {
-      out.push(makeMove(rs, -1, [partner], true));
+    // 传送落点也要走完整规则：已走过 / 未开锁的门 → 不能传过去；
+    // 落点是乱序的星星 → 也不能传过去（否则可以白捡一颗乱序的星星）。
+    if (
+      partner >= 0 &&
+      enterable(rs, partner, visited, keyMask) &&
+      !(rs.typeOf[partner] === CoverCell.SHARD && rs.groupOf[partner] !== shardNext)
+    ) {
+      out.push(makeMove(rs, -1, [partner], true, keyMask, shardNext));
     }
   }
   return out;
 }
 
-/** 组装一次移动（含星星/钥匙拾取信息）。 */
-function makeMove(rs: RuleSet, dir: number, consumed: number[], viaPortal: boolean): Move {
+/**
+ * 组装一次移动（含星星/钥匙拾取信息）。
+ *
+ * **拾取状态沿消耗序列逐格推进** —— 滑行会一次吃掉多格，
+ * 中途捡到的钥匙必须立刻生效（同一段滑行后面的门能被它打开），
+ * 星星也必须逐格校验顺序。
+ */
+function makeMove(
+  rs: RuleSet,
+  dir: number,
+  consumed: number[],
+  viaPortal: boolean,
+  keyMask: number,
+  shardNext: number,
+): Move {
   const target = consumed[consumed.length - 1];
   let shard = 0;
   let key = 0;
+  let nextKeyMask = keyMask;
+  let nextShardNext = shardNext;
   for (const c of consumed) {
-    if (rs.typeOf[c] === CoverCell.SHARD) shard = rs.groupOf[c] + 1;
-    if (rs.typeOf[c] === CoverCell.KEY) key = rs.groupOf[c] + 1;
+    if (rs.typeOf[c] === CoverCell.SHARD) {
+      shard = rs.groupOf[c] + 1;
+      nextShardNext = rs.groupOf[c] + 1;
+    }
+    if (rs.typeOf[c] === CoverCell.KEY) {
+      key = rs.groupOf[c] + 1;
+      nextKeyMask |= 1 << rs.groupOf[c];
+    }
   }
-  return { dir, consumed, target, shard, key, viaPortal };
+  return { dir, consumed, target, shard, key, viaPortal, keyMask: nextKeyMask, shardNext: nextShardNext };
 }
 
-/** 应用一次移动：更新 visited / keyMask。 */
+/**
+ * 应用一次移动：更新 visited / keyMask / shardNext。
+ *
+ * **状态直接取 `mv` 里算好的结果**（`mv.keyMask` / `mv.shardNext`）——
+ * 它们是滑行途中逐格推进出来的，不能在这里用「最后一次拾取」重算。
+ */
 export function applyMove(
   mv: Move,
   visited: Uint8Array,
   state: { keyMask: number; shardNext: number },
 ): void {
   for (const c of mv.consumed) visited[c] = 1;
-  if (mv.key > 0) state.keyMask |= 1 << (mv.key - 1);
-  if (mv.shard > 0) state.shardNext = mv.shard;
+  state.keyMask = mv.keyMask;
+  state.shardNext = mv.shardNext;
 }
 
 /** 星星顺序校验：shardNext 表示下一个必须收集的星星分组（0 基）。 */
@@ -356,7 +473,7 @@ export function replayRemaining(
 
   let p = 1;
   while (p < path.length) {
-    const moves = candidateMoves(rs, cur, visited, state.keyMask);
+    const moves = candidateMoves(rs, cur, visited, state.keyMask, state.shardNext);
     let matched: Move | null = null;
     for (const mv of moves) {
       if (p + mv.consumed.length > path.length) continue;
@@ -374,12 +491,6 @@ export function replayRemaining(
     }
     if (!matched) {
       return { ok: false, error: `第 ${p} 步不是合法移动（当前 ${cur}）` };
-    }
-    // 星星顺序
-    for (const c of matched.consumed) {
-      if (rs.typeOf[c] === CoverCell.SHARD && rs.groupOf[c] !== state.shardNext) {
-        return { ok: false, error: `星星顺序错误：期望 ${state.shardNext}，实际 ${rs.groupOf[c]}` };
-      }
     }
     applyMove(matched, visited, state);
     cur = matched.target;
@@ -424,7 +535,7 @@ export function replay(
 
   let p = 1;
   while (p < path.length) {
-    const moves = candidateMoves(rs, cur, visited, state.keyMask);
+    const moves = candidateMoves(rs, cur, visited, state.keyMask, state.shardNext);
     let matched: Move | null = null;
     for (const mv of moves) {
       if (p + mv.consumed.length > path.length) continue;
@@ -442,12 +553,6 @@ export function replay(
     }
     if (!matched) {
       return { ok: false, error: `第 ${p} 步不是合法移动（当前 ${cur}）` };
-    }
-    // 星星顺序
-    for (const c of matched.consumed) {
-      if (rs.typeOf[c] === CoverCell.SHARD && rs.groupOf[c] !== state.shardNext) {
-        return { ok: false, error: `星星顺序错误：期望 ${state.shardNext}，实际 ${rs.groupOf[c]}` };
-      }
     }
     applyMove(matched, visited, state);
     cur = matched.target;

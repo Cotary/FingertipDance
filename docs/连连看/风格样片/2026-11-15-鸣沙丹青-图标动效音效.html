@@ -79,6 +79,32 @@ body {
 .sil-item .gs { filter: grayscale(1) contrast(1.1); }
 .sil-item .cap { margin-top: 8px; font-size: 9px; letter-spacing: .18em; color: var(--dim2); }
 
+/* 标记全形态大图 */
+.mark-group { margin-bottom: 28px; }
+.mark-group:last-child { margin-bottom: 0; }
+.mark-group h4 { font-family: var(--serif); font-size: 13px; letter-spacing: .3em; margin-bottom: 5px; font-weight: 700; }
+.mark-group .hint { font-size: 10.5px; color: var(--dim2); letter-spacing: .1em; margin-bottom: 14px; }
+.mark-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 12px; }
+.mark-card {
+  background: var(--ink2); border: 1px solid rgba(201,155,63,.12);
+  border-radius: 14px; padding: 18px 10px 14px; text-align: center;
+}
+.mark-stage {
+  width: 84px; height: 84px; margin: 0 auto 12px; border-radius: 16px;
+  display: flex; align-items: center; justify-content: center;
+  position: relative; overflow: hidden;
+}
+.mark-stage.stage-wall {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.32'/%3E%3C/svg%3E"),
+    radial-gradient(130% 110% at 30% 20%, #EFE0C2, #DCC79E 55%, #CBB087 100%);
+  background-blend-mode: overlay, normal;
+}
+.mark-stage svg { width: 58px; height: 58px; }
+.mark-card .nm { font-family: var(--serif); font-size: 12px; letter-spacing: .22em; margin-bottom: 4px; font-weight: 700; }
+.mark-card .en { font-size: 8.5px; letter-spacing: .26em; color: var(--gold); text-transform: uppercase; margin-bottom: 8px; }
+.mark-card .ds { font-size: 9.5px; line-height: 1.85; color: var(--dim); letter-spacing: .05em; }
+
 .glyph-row { display: flex; gap: 12px; flex-wrap: wrap; }
 .glyph-cell {
   width: 84px; padding: 16px 8px 12px; border-radius: 13px;
@@ -139,6 +165,151 @@ body {
     linear-gradient(148deg, #E8D6B0, #D2BC8E 55%, #BFA176);
   box-shadow: 0 3px 6px rgba(110,70,30,.22), inset 0 1px 1px rgba(255,250,235,.4), inset 0 -3px 7px rgba(120,80,30,.22);
 }
+
+/* ============ 棋盘格子 · 全格态 20 式 ============ */
+.state-group { margin-bottom: 26px; }
+.state-group h3 { font-family: var(--serif); font-size: 14px; letter-spacing: .3em; margin-bottom: 4px; font-weight: 700; }
+.state-group .hint { font-size: 10.5px; color: var(--dim2); letter-spacing: .1em; margin-bottom: 16px; }
+.state-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+.state-card {
+  flex: 1; min-width: 150px;
+  background: var(--ink2); border: 1px solid rgba(201,155,63,.12);
+  border-radius: 16px; padding: 22px 16px 18px; text-align: center;
+}
+.state-card .tile-wrap { height: 82px; display: flex; align-items: center; justify-content: center; }
+.state-card .tile-wrap .mp { width: 64px; height: 64px; border-radius: 12px; }
+.state-card .nm { font-family: var(--serif); font-size: 13px; letter-spacing: .24em; margin-top: 12px; font-weight: 700; }
+.state-card .en { font-size: 8.5px; letter-spacing: .26em; color: var(--gold); text-transform: uppercase; margin: 5px 0 8px; }
+.state-card .ds { font-size: 9.5px; line-height: 1.85; color: var(--dim); letter-spacing: .05em; }
+
+/* 机制标（朱砂/沥金/石绿/土红——剥蚀笔触） */
+.mp .mark {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.mp .mark svg { width: 36px; height: 36px; overflow: visible; }
+.mp.m-trail .mark svg { width: 100%; height: 100%; }
+
+/* 路径端点 / 机关 · 色标辉光（沙土影，不用瓷的胎厚语言） */
+.mp.m-start {
+  box-shadow: 0 3px 6px rgba(110,70,30,.3), inset 0 1px 1px rgba(255,245,220,.35), inset 0 -3px 7px rgba(60,35,10,.3),
+    0 0 0 1px rgba(181,71,46,.55), 0 0 14px rgba(181,71,46,.28);
+}
+.mp.m-end {
+  box-shadow: 0 3px 6px rgba(110,70,30,.3), inset 0 1px 1px rgba(255,245,220,.35), inset 0 -3px 7px rgba(60,35,10,.3),
+    0 0 0 1px rgba(201,155,63,.65), 0 0 18px rgba(201,155,63,.32);
+}
+.mp.m-pressed {
+  transform: translateY(-3px) scale(1.1);
+  box-shadow: 0 8px 16px rgba(110,70,30,.4), inset 0 1px 1px rgba(255,245,220,.4), inset 0 -3px 7px rgba(60,35,10,.3),
+    0 0 0 2px rgba(181,71,46,.85), 0 0 26px rgba(181,71,46,.4);
+}
+.mp.m-trail {
+  box-shadow: 0 3px 6px rgba(110,70,30,.3), inset 0 1px 1px rgba(255,245,220,.35), inset 0 -3px 7px rgba(60,35,10,.3),
+    0 0 0 1px rgba(201,155,63,.4);
+}
+.mp.m-oneway {
+  box-shadow: 0 3px 6px rgba(110,70,30,.3), inset 0 1px 1px rgba(255,245,220,.35), inset 0 -3px 7px rgba(60,35,10,.3),
+    0 0 0 1px rgba(181,71,46,.35);
+}
+.mp.m-star {
+  box-shadow: 0 3px 6px rgba(80,25,10,.35), inset 0 1px 1px rgba(255,230,200,.3), inset 0 -3px 7px rgba(60,20,8,.35),
+    0 0 0 1px rgba(201,155,63,.5), 0 0 14px rgba(201,155,63,.22);
+}
+.mp.m-key {
+  box-shadow: 0 3px 6px rgba(110,70,30,.3), inset 0 1px 1px rgba(255,245,220,.35), inset 0 -3px 7px rgba(60,35,10,.3),
+    0 0 0 1px rgba(156,74,47,.4);
+}
+.mp.m-door {
+  box-shadow: 0 3px 6px rgba(110,70,30,.3), inset 0 1px 1px rgba(255,245,220,.35), inset 0 -3px 7px rgba(60,35,10,.3),
+    0 0 0 1px rgba(110,70,35,.4);
+}
+.mp.m-door-open {
+  box-shadow: 0 3px 6px rgba(110,70,30,.3), inset 0 1px 1px rgba(255,245,220,.35), inset 0 -3px 7px rgba(60,35,10,.3),
+    0 0 0 1px rgba(201,155,63,.55), 0 0 20px rgba(226,181,88,.35);
+}
+/* 传送门 · 深靛漩底 + 石青双环（全盘唯一的深色漩涡，与石绿格/亮石青冰砖都拉开） */
+.mp.m-portal {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2'/%3E%3C/filter%3E%3Crect width='80' height='80' filter='url(%23n)' opacity='0.38'/%3E%3C/svg%3E"),
+    radial-gradient(72% 72% at 50% 46%, #2E4166 0%, #22334F 56%, #16233A 100%);
+  background-blend-mode: overlay, normal;
+  box-shadow: 0 3px 6px rgba(12,20,38,.45), inset 0 1px 1px rgba(180,210,235,.28), inset 0 -3px 8px rgba(8,14,28,.5),
+    0 0 0 1px rgba(130,172,210,.5), 0 0 17px rgba(110,158,204,.3);
+}
+/* 提示高亮 · 沥金内辉 */
+.mp.m-hintglow { animation: hintGlowDq 1.8s ease-in-out infinite; }
+@keyframes hintGlowDq {
+  0%, 100% {
+    box-shadow: 0 3px 6px rgba(110,70,30,.3), inset 0 1px 1px rgba(255,245,220,.35), inset 0 -3px 7px rgba(60,35,10,.3),
+      inset 0 0 12px rgba(201,155,63,.18), 0 0 0 1px rgba(201,155,63,.35);
+  }
+  50% {
+    box-shadow: 0 6px 12px rgba(110,70,30,.38), inset 0 1px 1px rgba(255,245,220,.4), inset 0 -3px 7px rgba(60,35,10,.3),
+      inset 0 0 26px rgba(226,181,88,.42), 0 0 0 1.5px rgba(226,181,88,.6), 0 0 20px rgba(226,181,88,.3);
+  }
+}
+/* 可连呼吸 · 金缘 */
+.mp.m-hint { animation: hintBreathDq 1.8s ease-in-out infinite; }
+@keyframes hintBreathDq {
+  0%, 100% {
+    transform: translateY(0);
+    box-shadow: 0 3px 6px rgba(110,70,30,.3), inset 0 1px 1px rgba(255,245,220,.35), inset 0 -3px 7px rgba(60,35,10,.3),
+      0 0 0 1px rgba(201,155,63,.35), 0 0 10px rgba(201,155,63,.15);
+  }
+  50% {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(110,70,30,.38), inset 0 1px 1px rgba(255,245,220,.4), inset 0 -3px 7px rgba(60,35,10,.3),
+      0 0 0 2px rgba(226,181,88,.7), 0 0 20px rgba(226,181,88,.32);
+  }
+}
+/* 抵达 · 爆闪 */
+.mp.m-arrive {
+  transform: scale(1.08);
+  box-shadow: 0 6px 14px rgba(110,70,30,.4), inset 0 1px 1px rgba(255,245,220,.4), inset 0 -3px 7px rgba(60,35,10,.3),
+    0 0 0 2px rgba(240,200,104,.85), 0 0 36px rgba(240,200,104,.5), 0 0 70px rgba(201,155,63,.3);
+}
+/* 已铺金缘 */
+.mp.m-walked {
+  box-shadow: 0 3px 6px rgba(80,25,10,.35), inset 0 1px 1px rgba(255,230,200,.3), inset 0 -3px 7px rgba(60,20,8,.35),
+    0 0 0 1px rgba(201,155,63,.35), 0 0 12px rgba(201,155,63,.14);
+}
+/* 石障 · 赭石岩 */
+.mp.m-stone {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2'/%3E%3C/filter%3E%3Crect width='80' height='80' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E"),
+    linear-gradient(148deg, #A2664A, #8A5236 55%, #6B4526);
+  background-blend-mode: overlay, normal;
+  box-shadow: 0 4px 8px rgba(60,30,10,.4), inset 0 1px 1px rgba(240,215,180,.28), inset 0 -3px 8px rgba(45,22,5,.42);
+}
+/* 冰砖 · 石青晶 */
+.mp.m-ice {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2'/%3E%3C/filter%3E%3Crect width='80' height='80' filter='url(%23n)' opacity='0.32'/%3E%3C/svg%3E"),
+    linear-gradient(148deg, #6E93AE, #4A6E8A 55%, #3A5A74);
+  background-blend-mode: overlay, normal;
+  box-shadow: 0 3px 6px rgba(20,45,65,.35), inset 0 1px 1px rgba(230,245,255,.5), inset 0 -3px 7px rgba(20,45,65,.35),
+    0 0 12px rgba(110,147,174,.3);
+}
+
+/* 盘面速览 */
+.board-strip {
+  background: var(--ink2); border: 1px solid rgba(201,155,63,.12);
+  border-radius: 16px; padding: 24px 28px; margin-top: 26px;
+}
+.board-strip h3 { font-family: var(--serif); font-size: 13px; letter-spacing: .3em; margin-bottom: 4px; font-weight: 700; }
+.board-strip .hint { font-size: 10.5px; color: var(--dim2); letter-spacing: .1em; margin-bottom: 18px; }
+.mini-board {
+  display: grid; grid-template-columns: repeat(4, 56px); gap: 11px;
+  padding: 18px; border-radius: 12px; width: fit-content; margin: 0 auto;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.32'/%3E%3C/svg%3E"),
+    radial-gradient(130% 110% at 30% 20%, #EFE0C2, #DCC79E 55%, #CBB087);
+  background-blend-mode: overlay, normal;
+  box-shadow: 0 14px 32px rgba(60,35,10,.35), inset 0 2px 8px rgba(120,80,30,.18);
+}
+.mini-board .mp { width: 56px; height: 56px; border-radius: 11px; }
 
 /* 尘粒 */
 .dust {
@@ -209,13 +380,57 @@ body {
   animation: ringOut 380ms cubic-bezier(.22,1,.36,1) forwards;
 }
 
+/* ============ 初始界面 · 落壁入场 ============ */
+.in-stage {
+  height: 520px; border-radius: 18px; position: relative; overflow: hidden;
+  cursor: pointer; margin-bottom: 22px;
+  box-shadow: 0 18px 44px rgba(60,35,10,.32), inset 0 2px 10px rgba(120,80,30,.16);
+}
+.in-board {
+  position: absolute; left: 50%; bottom: 36px; transform: translateX(-50%);
+  display: grid; grid-template-columns: repeat(8, 54px); gap: 11px;
+}
+.in-cell {
+  width: 54px; height: 54px; position: relative;
+}
+/* 空格槽：凹进壁面的凹槽，等着色块落进来 */
+.in-cell::before {
+  content: ''; position: absolute; inset: 0; border-radius: 11px;
+  background: rgba(120,80,30,.10);
+  box-shadow: inset 0 2px 5px rgba(90,55,20,.30), inset 0 -1px 2px rgba(255,245,220,.18);
+  clip-path: polygon(3% 0, 97% 2%, 100% 96%, 4% 100%, 0 8%);
+}
+.in-cell .mp { position: absolute; inset: 0; width: 54px; height: 54px; }
+/* 落壁：重力段加速下坠 → 触底压扁 → 沉回归位（压扁是沉降，不是石顿回弹） */
+@keyframes chipFall {
+  0%   { transform: translateY(-470px) scale(.94); opacity: 0; animation-timing-function: cubic-bezier(.45,0,.8,.35); }
+  10%  { opacity: 1; animation-timing-function: cubic-bezier(.45,0,.8,.35); }
+  62%  { transform: translateY(0) scaleY(.9) scaleX(1.07); opacity: 1; animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  82%  { transform: translateY(0) scaleY(1.03) scaleX(.98); animation-timing-function: cubic-bezier(.22,1,.36,1); }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+.in-flash {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0; z-index: 4;
+  background: radial-gradient(120% 92% at 50% 82%, rgba(232,206,150,.36), rgba(232,206,150,0) 72%);
+}
+.in-flash.go { animation: sandPulse 420ms ease-out; }
+@keyframes sandPulse { 0% { opacity: 0; } 35% { opacity: 1; } 100% { opacity: 0; } }
+.in-specs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 30px; }
+.in-card {
+  background: rgba(201,155,63,.05); border: 1px solid rgba(201,155,63,.12);
+  border-radius: 14px; padding: 18px 20px;
+}
+.in-card .t { font-family: var(--serif); font-size: 13px; letter-spacing: .22em; font-weight: 700; margin-bottom: 3px; }
+.in-card .en { font-size: 8.5px; letter-spacing: .26em; color: var(--gold); text-transform: uppercase; margin-bottom: 9px; }
+.in-card .d { font-size: 10.5px; line-height: 1.95; color: var(--dim); letter-spacing: .05em; }
+
 /* 印章 */
 .seal {
-  width: 64px; height: 64px; border-radius: 10px;
+  width: 92px; height: 92px; border-radius: 14px;
   background: linear-gradient(155deg, #C24A30, #A93A24 55%, #8F3220);
   box-shadow: 0 6px 14px rgba(80,30,10,.45), inset 0 2px 3px rgba(255,220,190,.35), inset 0 -4px 8px rgba(70,25,8,.4);
   display: flex; align-items: center; justify-content: center;
-  font-family: var(--serif); font-size: 30px; font-weight: 900; color: rgba(255,240,225,.92);
+  font-family: var(--serif); font-size: 44px; font-weight: 900; color: rgba(255,240,225,.92);
   letter-spacing: 0;
 }
 .seal .chao { transform: rotate(-2deg); }
@@ -284,6 +499,53 @@ body {
 }
 .vibe-btn.goldish { border-color: rgba(201,155,63,.5); background: rgba(201,155,63,.1); }
 
+/* 使用说明 */
+.use-tier { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 26px; }
+.tier-card {
+  background: var(--ink2); border: 1px solid rgba(201,155,63,.12);
+  border-radius: 14px; padding: 16px 12px; text-align: center;
+}
+.tier-card .lv { font-family: monospace; font-size: 9px; letter-spacing: .22em; color: var(--gold); margin-bottom: 8px; }
+.tier-card .nm { font-family: var(--serif); font-size: 12.5px; letter-spacing: .2em; font-weight: 700; margin-bottom: 8px; }
+.tier-card .where { font-size: 9.5px; line-height: 1.85; color: var(--dim); letter-spacing: .05em; }
+.use-table { width: 100%; border-collapse: collapse; margin-bottom: 26px; }
+.use-table th {
+  text-align: left; font-family: var(--serif); font-size: 10.5px; letter-spacing: .26em;
+  color: var(--gold); font-weight: 700; padding: 10px 12px;
+  border-bottom: 1px solid rgba(201,155,63,.25);
+}
+.use-table td {
+  font-size: 10px; line-height: 1.95; color: var(--dim); padding: 12px;
+  border-bottom: 1px solid rgba(255,255,255,.05); vertical-align: top; letter-spacing: .05em;
+}
+.use-table td b { color: var(--paper); }
+.use-table .no { color: #D97A5E; }
+.use-compare { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 26px; }
+.cmp-card {
+  background: var(--ink2); border: 1px solid rgba(201,155,63,.12);
+  border-radius: 14px; padding: 18px 12px; text-align: center;
+}
+.cmp-card .row { display: flex; align-items: center; justify-content: center; gap: 12px; height: 76px; }
+.cmp-card .big { width: 50px; height: 50px; }
+.cmp-card .big svg { width: 100%; height: 100%; overflow: visible; }
+.cmp-card .mp { width: 56px; height: 56px; border-radius: 11px; }
+.cmp-card .vs { font-size: 8.5px; letter-spacing: .22em; color: var(--dim2); }
+.cmp-card .cap { margin-top: 12px; font-size: 9.5px; line-height: 1.85; color: var(--dim); letter-spacing: .05em; }
+.cmp-card .cap b { display: block; color: var(--paper); margin-bottom: 4px; font-family: var(--serif); letter-spacing: .22em; font-size: 11px; }
+.misuse { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 22px; }
+.misuse .m-card { border-radius: 12px; padding: 18px 20px; font-size: 10.5px; line-height: 2.15; letter-spacing: .05em; color: var(--dim); }
+.misuse .m-card b { letter-spacing: .14em; display: block; margin-bottom: 6px; }
+.misuse .bad { background: rgba(155,60,35,.08); border: 1px solid rgba(155,60,35,.25); }
+.misuse .bad b { color: #D97A5E; }
+.misuse .good { background: rgba(201,155,63,.05); border: 1px solid rgba(201,155,63,.18); }
+.misuse .good b { color: var(--gold-hi); }
+.use-note {
+  font-size: 10.5px; line-height: 2.15; color: var(--dim); letter-spacing: .05em;
+  padding: 18px 22px; border-radius: 12px;
+  background: rgba(201,155,63,.05); border: 1px solid rgba(201,155,63,.14);
+}
+.use-note b { color: var(--gold-hi); letter-spacing: .18em; margin-right: 8px; }
+
 .foot {
   margin-top: 66px; padding-top: 26px; border-top: 1px solid rgba(255,255,255,.06);
   display: flex; justify-content: space-between; align-items: center;
@@ -298,8 +560,8 @@ body {
     <div class="kicker">MINGSHA &middot; MINERAL FRESCO</div>
     <h1>鸣沙 · 丹青　<em>图标 / 动效 / 音效</em>　细化</h1>
     <div class="sub">
-      主题 03 三通道规格稿 · 可点可听可看<br>
-      矿物颗粒 + 壁画剥蚀的语法轴，贯穿每一个图标、每一帧动效、每一声响
+      主题 03 四通道规格稿 · 可点可听可看<br>
+      矿物颗粒 + 壁画剥蚀的语法轴，贯穿每一个图标、每一格刻纹、每一帧动效、每一声响
     </div>
     <div class="rule"></div>
   </header>
@@ -327,16 +589,44 @@ body {
     </div>
 
     <div class="sil-test">
+      <h3>格内标 · 全形态大图</h3>
+      <div class="hint">凡落在棋格里的标记都在此给出 58px 定稿大图——路径标 / 方向与星屑 / 机关标 / 反馈标，共 13 式（单向含四向）。标记与机制器物同源：同一朱砂、同一沥金、同一石绿，只是落款尺寸不同</div>
+      <div id="mark-groups"></div>
+    </div>
+
+    <div class="sil-test">
       <h3>棋面纹样 · 六字纹</h3>
       <div class="hint">格面刻纹（已铺格内），魏碑感钝笔线刻 + 颗粒；线宽 1.6 不许细过发丝</div>
       <div class="glyph-row" id="glyph-row"></div>
     </div>
   </section>
 
-  <!-- ================= 贰 · 动效系统 ================= -->
+  <!-- ================= 贰 · 棋盘格子 ================= -->
   <section class="sec">
     <div class="sec-head">
       <span class="no">贰</span>
+      <h2>棋盘格子</h2>
+      <span class="en">Cell States</span>
+    </div>
+    <div class="sec-lead">
+      格子是<b>从壁面上剥下来的一片片色块</b>——歪斜、带缺口、有颗粒，绝不是完美圆角矩形。
+      全格态共 <b>20 式</b>，分三组：<b>路径格</b>（未铺/已铺/起点/终点/起手按下/线头）→
+      <b>机关格</b>（石障/单向/星屑三阶/冰砖/钥匙/门开闭/传送门对）→ <b>反馈态</b>（可连呼吸/提示高亮/抵达爆闪）。
+      起点用<b>朱砂印</b>，终点与路径用<b>沥金</b>，机关色只从矿物色族里拿。
+    </div>
+    <div id="state-groups"></div>
+
+    <div class="board-strip">
+      <h3>盘面速览 · 全格态混排</h3>
+      <div class="hint">一张 4×3 的小盘，把起点→线头→单向→星屑→钥匙→门→终点摆在一起，一眼看清盘面长什么样</div>
+      <div class="mini-board" id="mini-board"></div>
+    </div>
+  </section>
+
+  <!-- ================= 叁 · 动效系统 ================= -->
+  <section class="sec">
+    <div class="sec-head">
+      <span class="no">叁</span>
       <h2>动效系统</h2>
       <span class="en">Motion Language</span>
     </div>
@@ -448,6 +738,7 @@ body {
       <div class="col-label" style="font-family:var(--serif);font-size:11px;letter-spacing:.38em;color:var(--gold);margin-bottom:18px;font-weight:700">动效 TOKEN 表</div>
       <table class="token-table">
         <tr><th>动效</th><th>时长</th><th>缓动族</th><th>关键参数</th></tr>
+        <tr><td>入场落壁</td><td><b>420ms/格<br>220ms 行间</b></td><td>沙落<br>（重力段+沉降段）</td><td>行序自上而下、行内 30ms 错峰；重力段 cubic-bezier(.45,0,.8,.35) 加速坠落，触底压扁 8% 沉回 + 3 粒尘右下 35°；末行全盘沙光脉冲 420ms + 土埙一记</td></tr>
         <tr><td>按压</td><td><b>120 / 220ms</b></td><td>沙落</td><td>scale 0.93；尘环 380ms 扩散至 1.9 倍；禁 blur 光晕</td></tr>
         <tr><td>落子</td><td><b>260ms</b></td><td>沙落</td><td>前 55% 下落带 14% 胀大，触底 4 粒尘向右下 35° 扬出（与光源同向）</td></tr>
         <tr><td>连径</td><td><b>420ms</b></td><td>沥线</td><td>主线匀速生长；高光线 +60ms 滞后；辉光在 30% 处脉冲至 0.85 再衰减到 0.45</td></tr>
@@ -459,10 +750,10 @@ body {
     </div>
   </section>
 
-  <!-- ================= 叁 · 音效系统 ================= -->
+  <!-- ================= 肆 · 音效系统 ================= -->
   <section class="sec">
     <div class="sec-head">
-      <span class="no">叁</span>
+      <span class="no">肆</span>
       <h2>音效系统</h2>
       <span class="en">Sound &amp; Haptics</span>
     </div>
@@ -486,8 +777,181 @@ body {
     </div>
   </section>
 
+  <!-- ================= 伍 · 初始界面 ================= -->
+  <section class="sec">
+    <div class="sec-head">
+      <span class="no">伍</span>
+      <h2>初始界面</h2>
+      <span class="en">Opening Entrance</span>
+    </div>
+    <div class="sec-lead">
+      开局不是淡入，是<b>落壁</b>：棋盘先空着，壁面上只留一排排凹进去的格槽。
+      色块像从壁面剥下又贴回去的残片，<b>一行一行从上落到棋盘上</b>——行序自上而下，行内左→右 30ms 错峰，
+      触底压扁沉回、沙尘向右下扬出、泥点落一记。最后一行落定，全盘沙光脉冲 + 土埙一记，转入可操作态。
+      <b>载入自动播一遍；点舞台重播；动画中再点 = 跳过（全部直接落定）。</b>
+    </div>
+
+    <div class="in-stage stage-wall" id="in-stage" onclick="playEntrance()">
+      <div class="play-hint">点击重播入场</div>
+      <div class="in-board" id="in-board"></div>
+      <div class="in-flash" id="in-flash"></div>
+    </div>
+
+    <div class="in-specs">
+      <div class="in-card">
+        <div class="t">落 · 行序落壁</div>
+        <div class="en">Rows Drop In</div>
+        <div class="d">
+          行序<b>自上而下</b>（上行先落，像残片从壁顶贴下来），行内左→右 30ms 错峰。<br>
+          每格坠落 <b>420ms</b>（重力段加速 cubic-bezier(.45,0,.8,.35)，触底段沙落沉降），行间 <b>220ms</b>，整盘 ≤ 1.7s。<br>
+          入场是仪式不是等待：大盘 &gt;12×8 时错峰压到 18ms，总时长封顶 2.4s。
+        </div>
+      </div>
+      <div class="in-card">
+        <div class="t">尘 · 触底扬尘</div>
+        <div class="en">Dust On Landing</div>
+        <div class="d">
+          触底帧块体压扁 8% 再沉回原位——<b>压扁是沉降，不是石顿回弹</b>（回弹只属于盖印）。<br>
+          每 3 格一撮：3 粒沙尘向右下 35° 扬出（与光源同向，复用落子的扬尘语言）。<br>
+          每格触底一记泥点落（vol 0.22 低语量），行落定有 6ms 轻震。
+        </div>
+      </div>
+      <div class="in-card">
+        <div class="t">亮 · 沙光收尾</div>
+        <div class="en">Sand-Glow Finish</div>
+        <div class="d">
+          末行落定，全盘沙光脉冲 <b>420ms</b>（暖金从盘底漫起）+ 土埙一记，转入可操作态。<br>
+          动画中点击舞台 = 跳过：所有格直接落定、沙光照播，不回放过程。<br>
+          <b>prefers-reduced-motion</b> 降级：不做坠落，逐行淡亮 180ms + 60ms 行间，保留行序节奏。
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 陆 · 使用说明 ================= -->
+  <section class="sec">
+    <div class="sec-head">
+      <span class="no">陆</span>
+      <h2>使用说明</h2>
+      <span class="en">Asset Usage Guide</span>
+    </div>
+    <div class="sec-lead">
+      这套稿子里的东西分<b>五层</b>，各有各的岗位。最容易拿错的是「图标」和「格内标」——
+      <b>图标是器物大图，给界面看的；格内标是格心小印，给棋盘用的</b>。两者同源同貌，但尺寸、线宽、用途完全不同。
+      下面逐层钉死「用在哪 / 多大 / 什么时候用 / 绝不用在哪」。
+    </div>
+
+    <div class="use-tier">
+      <div class="tier-card">
+        <div class="lv">L1</div>
+        <div class="nm">机制图标</div>
+        <div class="where">ICONS 48px 器物大图<br>图鉴 · 教程 · HUD</div>
+      </div>
+      <div class="tier-card">
+        <div class="lv">L2</div>
+        <div class="nm">格内标</div>
+        <div class="where">MARKS 24px 格心小印<br>只落棋盘格内</div>
+      </div>
+      <div class="tier-card">
+        <div class="lv">L3</div>
+        <div class="nm">棋格</div>
+        <div class="where">格态 20 式 64px<br>棋盘本体</div>
+      </div>
+      <div class="tier-card">
+        <div class="lv">L4</div>
+        <div class="nm">动效</div>
+        <div class="where">六幕 + 落壁入场<br>交互反馈</div>
+      </div>
+      <div class="tier-card">
+        <div class="lv">L5</div>
+        <div class="nm">音效</div>
+        <div class="where">五声 + 触感<br>交互反馈</div>
+      </div>
+    </div>
+
+    <table class="use-table">
+      <tr><th>资产</th><th>用在哪</th><th>尺寸 / 形态</th><th>什么时候用</th><th>绝不用在哪</th></tr>
+      <tr>
+        <td><b>机制图标</b><br>ICONS</td>
+        <td>关卡图鉴、开局教程、HUD 机制提示弹层、设置页「机关说明」</td>
+        <td>48px 稿面<br>28px 灰度可辨</td>
+        <td>玩家需要「认识一件机关」的任何界面场合</td>
+        <td class="no">❌ 不做棋盘格内标记（格内用格内标）<br>❌ 不做按钮装饰、不做水印</td>
+      </tr>
+      <tr>
+        <td><b>格内标</b><br>MARKS</td>
+        <td>棋盘格子格心；格态卡演示；全形态大图区（仅展示）</td>
+        <td>24px viewBox<br>格内渲染 36px</td>
+        <td>棋盘运行时，标记「这一格是什么」</td>
+        <td class="no">❌ 不放大当图标（24px 线稿放大即糙）<br>❌ 不出棋盘、不进 UI 弹层</td>
+      </tr>
+      <tr>
+        <td><b>棋格</b><br>格态 20 式</td>
+        <td>棋盘本体；格态卡；盘面速览</td>
+        <td>64px 稿面<br>游戏内随盘缩放</td>
+        <td>一切「盘面上的格子」</td>
+        <td class="no">❌ 不当 UI 卡片底、不当头像框<br>❌ 纹样格 ≠ 机关格（六字纯装饰）</td>
+      </tr>
+      <tr>
+        <td><b>六字纹样</b><br>GLYPHS</td>
+        <td>格内底层纹样（opacity .5）；只落未铺/已铺普通格</td>
+        <td>24px 线稿<br>剥蚀笔触</td>
+        <td>给普通格色块添「壁画手工感」，不传达任何机制</td>
+        <td class="no">❌ 不当机关标识（有月纹≠月机关）<br>❌ 不进机制格 / 石障（非普通格净面）<br>❌ 不单独做图标、不沥金</td>
+      </tr>
+      <tr>
+        <td><b>动效</b><br>六幕 + 入场</td>
+        <td>落子 / 连径 / 铺满 / 盖印 / 按压 / 转场 / 入场落壁</td>
+        <td>见叁、伍章 TOKEN 表</td>
+        <td>对应交互事件触发，一事件一动效</td>
+        <td class="no">❌ 不叠加混播<br>❌ 石顿缓动只给盖印，别处禁回弹</td>
+      </tr>
+      <tr>
+        <td><b>音效</b><br>五声 + 触感</td>
+        <td>泥点落 / 沥金引 / 土埙吟 / 石章落壁 / 轻拨</td>
+        <td>Web Audio 合成<br>零音频文件</td>
+        <td>与动效接触帧对齐（错开 50ms 即散）</td>
+        <td class="no">❌ 不整排连响（留白是设计）<br>❌ 不加欢呼尾音</td>
+      </tr>
+    </table>
+
+    <div class="use-note">
+      <b>格纹纪律</b>　<b>非普通格（起点/终点/起手按下/线头/单向/星屑/钥匙/门/传送门/石障等带机制标的格）底部不叠任何装饰纹</b>——
+      六字纹样不进机制格，机制标是格内唯一读点；纹样叠在标上会糊住标记，格子就读不清了。
+      <b>材质纹理例外</b>：矿物颗粒、冰砖的石青晶面、传送门的深靛漩底是材质本体，不算装饰纹。
+      六字纹样只活在普通格（未铺/已铺）的色块上。
+    </div>
+
+    <div style="font-family:var(--serif);font-size:11px;letter-spacing:.38em;color:var(--gold);margin-bottom:14px;font-weight:700">同源双尺寸 · 图标 vs 格内标</div>
+    <div class="use-compare" id="use-compare"></div>
+
+    <div class="misuse">
+      <div class="m-card bad">
+        <b>常见误用</b>
+        把 48px 机制图标直接贴进棋格当机关 → 图标细节按 28px 灰度校过，贴格里比例失衡、抢纹样。<br>
+        把格内标放大当图鉴插图 → 24px 线稿放大后笔触发虚、经不起细看。<br>
+        看到格里有月纹就以为是机关格 → 纹样是装饰层，机关只认格内标。<br>
+        在机制格底下垫六字纹样 → 叠纹糊标，格子读不清；非普通格一律净面（材质纹理除外）。<br>
+        传送门做成石绿 → 和石绿格融为一体（此病已治：深靛漩底 + 石青环 + 沥金芯）。
+      </div>
+      <div class="m-card good">
+        <b>正确用法</b>
+        图鉴里用 ICONS 48px 大图 + 名称 + 规则文字；棋盘里用 MARKS 24px 小印。<br>
+        机制格只放一件读点：净色块 + 一枚格内标；六字纹样只活在普通格上。<br>
+        拿不准时问一句：「玩家现在是在看说明书，还是在看棋盘？」——看说明书给图标，看棋盘给格内标。<br>
+        新机关入场走三步：先画 48px 图标（过 28px 灰度测试）→ 再出 24px 格内标 → 最后配格态卡。<br>
+        机关色只从矿物色族拿；新纹样须报备，保持剥蚀缺口、不做完美几何形。
+      </div>
+    </div>
+
+    <div class="use-note">
+      <b>取用顺序</b>　先定 L3 棋格（玩家看得最久）→ 再出 L2 格内标（跟格走）→ 再放大出 L1 图标（跟标走）→ L4/L5 按交互事件挂接。
+      新增任何资产，先回答「它是哪一层」，再回答「它绝不用在哪」。
+    </div>
+  </section>
+
   <div class="foot">
-    <span>主题 03 鸣沙 · 丹青 · 三通道细化</span>
+    <span>主题 03 鸣沙 · 丹青 · 四通道细化</span>
     <span>SAND &middot; MINERAL &middot; RELIEF GOLD</span>
   </div>
 </div>
@@ -549,11 +1013,58 @@ const ICONS = {
   </svg>`,
 
   portal: `<svg viewBox="0 0 48 48">${GRAIN}
-    <circle cx="19" cy="24" r="12.5" fill="none" stroke="#5E8C6E" stroke-width="3.4"/>
-    <circle cx="30" cy="24" r="12.5" fill="none" stroke="#5E8C6E" stroke-width="3.4"/>
-    <circle cx="19" cy="24" r="12.5" fill="none" stroke="#7FA88C" stroke-width="1.4" stroke-dasharray="3 4" opacity=".8"/>
-    <circle cx="30" cy="24" r="12.5" fill="none" stroke="#7FA88C" stroke-width="1.4" stroke-dasharray="3 4" opacity=".8"/>
-    <path d="M19 11.5 A12.5 12.5 0 0 1 31 11.5" stroke="#A8C9A0" stroke-width="1.6" fill="none" stroke-linecap="round" opacity=".7"/>
+    <circle cx="19" cy="24" r="12.5" fill="none" stroke="#22334F" stroke-width="3.6"/>
+    <circle cx="30" cy="24" r="12.5" fill="none" stroke="#22334F" stroke-width="3.6"/>
+    <circle cx="19" cy="24" r="12.5" fill="none" stroke="#7FA8C4" stroke-width="3"/>
+    <circle cx="30" cy="24" r="12.5" fill="none" stroke="#7FA8C4" stroke-width="3"/>
+    <circle cx="19" cy="24" r="12.5" fill="none" stroke="#B8D8EC" stroke-width="1.2" stroke-dasharray="3 4" opacity=".75"/>
+    <circle cx="30" cy="24" r="12.5" fill="none" stroke="#B8D8EC" stroke-width="1.2" stroke-dasharray="3 4" opacity=".75"/>
+    <path d="M19 11.5 A12.5 12.5 0 0 1 31 11.5" stroke="#F0C868" stroke-width="1.5" fill="none" stroke-linecap="round" opacity=".85"/>
+    <circle cx="19" cy="24" r="1.6" fill="#F0C868"/>
+    <circle cx="30" cy="24" r="1.6" fill="#D9A745" opacity=".8"/>
+  </svg>`,
+
+  key: `<svg viewBox="0 0 48 48">${GRAIN}
+    <circle cx="17" cy="17" r="8.2" fill="#9C4A2F"/>
+    <circle cx="17" cy="17" r="8.2" fill="#B5472E" opacity="0.5" transform="translate(0,-1.4)"/>
+    <circle cx="17" cy="17" r="8.2" fill="#000" filter="url(#gr)"/>
+    <circle cx="17" cy="17" r="3.1" fill="#2A1208"/>
+    <path d="M22.8 22.8 L38 38" stroke="#9C4A2F" stroke-width="5" stroke-linecap="round"/>
+    <path d="M22.8 22.8 L38 38" stroke="#B5472E" stroke-width="2.4" stroke-linecap="round" opacity=".55" transform="translate(0,-1.1)"/>
+    <path d="M22.8 22.8 L38 38" stroke="#000" filter="url(#gr)" stroke-width="5" stroke-linecap="round"/>
+    <path d="M31 31 L27.4 34.6" stroke="#9C4A2F" stroke-width="3.6" stroke-linecap="round"/>
+    <path d="M34.6 34.6 L31 38.2" stroke="#9C4A2F" stroke-width="3.6" stroke-linecap="round"/>
+    <circle cx="13.2" cy="13.6" r="1.3" fill="#E3D2B4" opacity=".6"/>
+    <path d="M22.8 22.8 L38 38" fill="none" stroke="rgba(240,215,180,0.16)" stroke-width="1"/>
+  </svg>`,
+
+  door: `<svg viewBox="0 0 48 48">${GRAIN}
+    <path d="M9 42 L9 18 A15 15 0 0 1 39 18 L39 42 Z" fill="#7A4A2E"/>
+    <path d="M9 42 L9 18 A15 15 0 0 1 39 18 L39 42 Z" fill="#A2664A" opacity="0.5" transform="translate(0,-1.6)"/>
+    <path d="M9 42 L9 18 A15 15 0 0 1 39 18 L39 42 Z" fill="#000" filter="url(#gr)"/>
+    <path d="M24 12 L24 42" stroke="#C99B3F" stroke-width="1.6" opacity=".9"/>
+    <circle cx="30.4" cy="28" r="1.9" fill="#C99B3F"/>
+    <path d="M14.5 42 L14.5 20.5" stroke="rgba(60,35,10,.4)" stroke-width="1.3"/>
+    <path d="M33.5 42 L33.5 20.5" stroke="rgba(60,35,10,.4)" stroke-width="1.3"/>
+    <path d="M9 42 L9 18 A15 15 0 0 1 39 18 L39 42 Z" fill="none" stroke="rgba(50,28,8,.5)" stroke-width="1.1"/>
+    <path d="M11 40 L13.5 36.5" stroke="rgba(240,215,180,.22)" stroke-width="1" stroke-linecap="round"/>
+    <path d="M9 42 L39 42" stroke="rgba(240,215,180,.18)" stroke-width="1.2"/>
+  </svg>`,
+
+  doorOpen: `<svg viewBox="0 0 48 48">${GRAIN}
+    <path d="M3.5 42 L3.5 17.5 A13.5 13.5 0 0 1 13.5 6.5 L13.5 42 Z" fill="#7A4A2E"/>
+    <path d="M44.5 42 L44.5 17.5 A13.5 13.5 0 0 0 34.5 6.5 L34.5 42 Z" fill="#7A4A2E"/>
+    <path d="M3.5 42 L3.5 17.5 A13.5 13.5 0 0 1 13.5 6.5 L13.5 42 Z" fill="#A2664A" opacity="0.5" transform="translate(1.2,-1.4)"/>
+    <path d="M44.5 42 L44.5 17.5 A13.5 13.5 0 0 0 34.5 6.5 L34.5 42 Z" fill="#A2664A" opacity="0.5" transform="translate(-1.2,-1.4)"/>
+    <path d="M3.5 42 L3.5 17.5 A13.5 13.5 0 0 1 13.5 6.5 L13.5 42 Z" fill="#000" filter="url(#gr)"/>
+    <path d="M44.5 42 L44.5 17.5 A13.5 13.5 0 0 0 34.5 6.5 L34.5 42 Z" fill="#000" filter="url(#gr)"/>
+    <path d="M13.5 42 L13.5 8.8 L34.5 8.8 L34.5 42 Z" fill="rgba(226,181,88,0.42)"/>
+    <path d="M24 10.2 L24 40.5" stroke="rgba(246,231,184,0.92)" stroke-width="1.8"/>
+    <path d="M19.2 11.6 L19.2 39.2" stroke="rgba(246,231,184,0.45)" stroke-width="1.1"/>
+    <path d="M28.8 11.6 L28.8 39.2" stroke="rgba(246,231,184,0.45)" stroke-width="1.1"/>
+    <path d="M3.5 42 L3.5 17.5 A13.5 13.5 0 0 1 13.5 6.5 L13.5 42 Z" fill="none" stroke="rgba(50,28,8,.5)" stroke-width="1.1"/>
+    <path d="M44.5 42 L44.5 17.5 A13.5 13.5 0 0 0 34.5 6.5 L34.5 42 Z" fill="none" stroke="rgba(50,28,8,.5)" stroke-width="1.1"/>
+    <path d="M3.5 42 L44.5 42" stroke="rgba(240,215,180,.18)" stroke-width="1.2"/>
   </svg>`
 };
 
@@ -562,7 +1073,10 @@ const MECH_META = [
   ['arrow', '单向', 'ONE WAY', '朱砂厚笔箭 · 干笔缺口<br>指向即规则，无字'],
   ['star', '星屑', 'STAR DUST', '贴金箔星 · 撕边不齐<br>1→2→3 星递进'],
   ['ice', '冰砖', 'ICE BRICK', '石青六边晶 · 冷 8°<br>比普通格亮，占「更亮」'],
-  ['portal', '传送门', 'PORTAL', '石绿双环 · 前实后虚<br>两枚一组，成对出现']
+  ['key', '钥匙', 'EARTH KEY', '土红钥坯 · 颗粒哑光<br>矿物色族里的暖红'],
+  ['door', '门 · 闭', 'DOOR SHUT', '赭石门扉 · 沥金门缝<br>持钥可开，无钥挡路'],
+  ['doorOpen', '门 · 开', 'DOOR OPEN', '门扉洞开 · 沥金暖光涌出<br>开门一声金石短音'],
+  ['portal', '传送门', 'PORTAL', '深靛漩底 · 石青双环<br>沥金芯点，全盘唯一的深色漩涡']
 ];
 
 const mechHost = document.getElementById('mech-icons');
@@ -596,6 +1110,213 @@ const GLYPHS = {
 const GLYPH_META = [['moon','月'],['plum','梅'],['wave','浪'],['mount','山'],['cloud','云'],['star','星']];
 document.getElementById('glyph-row').innerHTML = GLYPH_META.map(([k, nm]) =>
   `<div class="glyph-cell">${GLYPHS[k]}<div class="cap">${nm}</div></div>`).join('');
+
+/* ================= 机制标 SVG（朱砂/沥金/石绿/土红——剥蚀笔触） ================= */
+const TORN_STAR = 'M12 2.3 L14.1 8.4 L20.5 8.6 L15.5 12.7 L17.2 18.9 L12 15.2 L6.6 19 L8.5 12.8 L3.6 8.7 L9.9 8.4 Z';
+/* 撕边金箔星 · 统一单元：金箔填充 + 高光 + 暗线描边（三层缺一不可）。
+   translate(cx cy) scale(s) translate(-12 -12) —— 绕星心缩放，摆放位置显式给定。 */
+function tornStarAt(cx, cy, s) {
+  return `<g transform="translate(${cx} ${cy}) scale(${s}) translate(-12 -12)">` +
+    `<path d="${TORN_STAR}" fill="#D9A745"/>` +
+    `<path d="${TORN_STAR}" fill="#F0C868" opacity=".55" transform="translate(-0.35,-0.5)"/>` +
+    `<path d="${TORN_STAR}" fill="none" stroke="rgba(120,80,20,.5)" stroke-width="${(0.7 / s).toFixed(2)}"/>` +
+    `</g>`;
+}
+const MARKS = {
+  start: `
+    <circle cx="12" cy="12" r="8" fill="none" stroke="#B5472E" stroke-width="2.3" stroke-dasharray="9.5 1.6" stroke-linecap="round"/>
+    <circle cx="12" cy="12" r="8" fill="none" stroke="#D4643F" stroke-width="0.8" stroke-dasharray="7 3.4" transform="translate(-0.3,-0.4)" opacity=".55"/>
+    <path d="M12 8.1 L15.9 12 L12 15.9 L8.1 12 Z" fill="#B5472E"/>
+    <path d="M12 8.1 L15.9 12 L12 15.9 L8.1 12 Z" fill="#D4643F" opacity=".5" transform="translate(0,-0.45)"/>
+    <path d="M12 8.1 L15.9 12 L12 15.9 L8.1 12 Z" fill="none" stroke="rgba(90,30,15,.5)" stroke-width="0.7"/>`,
+  end: `
+    <circle cx="12" cy="12" r="8.6" fill="none" stroke="#C99B3F" stroke-width="2.1" stroke-dasharray="10 1.8" stroke-linecap="round"/>
+    <circle cx="12" cy="12" r="8.6" fill="none" stroke="#E2B558" stroke-width="0.75" stroke-dasharray="8 3.4" transform="translate(-0.3,-0.4)" opacity=".6"/>
+    <circle cx="12" cy="12" r="5.1" fill="none" stroke="#C99B3F" stroke-width="1.15" stroke-dasharray="2.8 2.1"/>
+    <circle cx="12" cy="12" r="1.75" fill="#E8CE96"/>`,
+  trail: `
+    <path d="M-2 12.4 L10.2 11.7" stroke="rgba(90,55,15,.55)" stroke-width="3.8" stroke-linecap="round"/>
+    <path d="M-2 12 L10.4 11.9" stroke="#C99B3F" stroke-width="2.3" stroke-linecap="round"/>
+    <path d="M-2 11.1 L9.8 11" stroke="#E8CE96" stroke-width="0.85" opacity=".85"/>
+    <circle cx="13" cy="11.9" r="2.5" fill="#D9A745"/>
+    <circle cx="13" cy="11.9" r="2.5" fill="none" stroke="rgba(120,80,20,.5)" stroke-width="0.8"/>
+    <circle cx="12.4" cy="11.3" r="0.85" fill="#F6E7B8"/>`,
+  arrow: `
+    <path d="M12 3.8 L19 12 L15.4 12 L15.4 20 L8.6 20 L8.6 12 L5 12 Z" fill="#B5472E"/>
+    <path d="M12 3.8 L19 12 L15.4 12 L15.4 20 L8.6 20 L8.6 12 L5 12 Z" fill="#D4643F" opacity=".45" transform="translate(0,-0.55)"/>
+    <path d="M12 3.8 L19 12 L15.4 12 L15.4 20 L8.6 20 L8.6 12 L5 12 Z" fill="none" stroke="rgba(90,30,15,.55)" stroke-width="0.85"/>
+    <circle cx="10.4" cy="14.6" r="0.75" fill="#E3D2B4" opacity=".65"/>
+    <circle cx="13.6" cy="16.8" r="0.6" fill="#E3D2B4" opacity=".5"/>
+    <circle cx="12" cy="9.4" r="0.65" fill="#E3D2B4" opacity=".55"/>`,
+  star1: tornStarAt(12, 12, 1.02),
+  star2: tornStarAt(6.6, 12.1, 0.52) + tornStarAt(17.4, 12.1, 0.52),
+  star3: tornStarAt(12, 7, 0.46) + tornStarAt(6.9, 15.8, 0.46) + tornStarAt(17.1, 15.8, 0.46),
+  key: `
+    <circle cx="8.4" cy="8.4" r="3.7" fill="none" stroke="#9C4A2F" stroke-width="2.3" stroke-dasharray="5.2 1.1" stroke-linecap="round"/>
+    <circle cx="8.4" cy="8.4" r="1.15" fill="#9C4A2F"/>
+    <path d="M11.1 11.1 L18.4 18.4" stroke="#9C4A2F" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M15.2 15.2 L13.2 17.2" stroke="#9C4A2F" stroke-width="1.9" stroke-linecap="round"/>
+    <path d="M17.2 17.2 L15.2 19.2" stroke="#9C4A2F" stroke-width="1.9" stroke-linecap="round"/>
+    <circle cx="8.4" cy="8.4" r="3.7" fill="none" stroke="#B5472E" stroke-width="0.7" transform="translate(-0.3,-0.35)" opacity=".5"/>`,
+  door: `
+    <path d="M5.2 20 L5.2 9 A6.8 6.8 0 0 1 18.8 9 L18.8 20 Z" fill="#6B4526" stroke="rgba(60,35,10,.5)" stroke-width="0.8"/>
+    <path d="M5.2 20 L5.2 9 A6.8 6.8 0 0 1 18.8 9 L18.8 20 Z" fill="#8A5236" opacity=".5" transform="translate(0,-1)"/>
+    <path d="M12 6.8 L12 20" stroke="#C99B3F" stroke-width="0.95" stroke-dasharray="6 1.4" opacity=".9"/>
+    <circle cx="14.7" cy="13.4" r="0.95" fill="#C99B3F"/>
+    <path d="M7.6 19 L9.2 16.2" stroke="rgba(240,215,180,.22)" stroke-width="0.9" stroke-linecap="round"/>`,
+  'door-open': `
+    <path d="M2.2 20 L2.2 9.6 A6.8 6.8 0 0 1 8.2 4.7 L8.2 20 Z" fill="#6B4526" stroke="rgba(60,35,10,.5)" stroke-width="0.8"/>
+    <path d="M21.8 20 L21.8 9.6 A6.8 6.8 0 0 0 15.8 4.7 L15.8 20 Z" fill="#6B4526" stroke="rgba(60,35,10,.5)" stroke-width="0.8"/>
+    <path d="M8.2 20 L8.2 5.4 L15.8 5.4 L15.8 20 Z" fill="rgba(226,181,88,.4)"/>
+    <path d="M12 5.8 L12 19.4" stroke="rgba(246,231,184,.9)" stroke-width="1.35"/>
+    <path d="M10.2 6.4 L10.2 19" stroke="rgba(246,231,184,.4)" stroke-width="0.8"/>
+    <path d="M13.8 6.4 L13.8 19" stroke="rgba(246,231,184,.4)" stroke-width="0.8"/>`,
+  'portal-a': `
+    <circle cx="12" cy="12" r="7.6" fill="none" stroke="#22334F" stroke-width="2.9"/>
+    <circle cx="12" cy="12" r="7.6" fill="none" stroke="#7FA8C4" stroke-width="2.1"/>
+    <circle cx="12" cy="12" r="7.6" fill="none" stroke="#B8D8EC" stroke-width="0.7" transform="translate(-0.3,-0.4)" opacity=".7"/>
+    <circle cx="12" cy="12" r="3.6" fill="none" stroke="#D9A745" stroke-width="1"/>
+    <circle cx="12" cy="12" r="1.3" fill="#F0C868"/>`,
+  'portal-b': `
+    <circle cx="12" cy="12" r="7.6" fill="none" stroke="#22334F" stroke-width="2.6" stroke-dasharray="3.2 2.6"/>
+    <circle cx="12" cy="12" r="7.6" fill="none" stroke="#7FA8C4" stroke-width="1.9" stroke-dasharray="3.2 2.6"/>
+    <circle cx="12" cy="12" r="3.6" fill="none" stroke="#D9A745" stroke-width="1" stroke-dasharray="2 1.8" opacity=".85"/>
+    <path d="M12 8.4 L12 15.6" stroke="#F0C868" stroke-width="1" stroke-linecap="round" opacity=".55"/>`,
+  arrive: `
+    <g stroke="#F0C868" stroke-width="1.35" stroke-linecap="round" opacity=".92">
+      <path d="M12 1 L12 4.2"/><path d="M12 19.8 L12 23"/><path d="M1 12 L4.2 12"/><path d="M19.8 12 L23 12"/>
+      <path d="M4.2 4.2 L6.5 6.5"/><path d="M17.5 17.5 L19.8 19.8"/><path d="M19.8 4.2 L17.5 6.5"/><path d="M6.5 17.5 L4.2 19.8"/>
+    </g>
+    <circle cx="12" cy="12" r="8.6" fill="none" stroke="#C99B3F" stroke-width="2" stroke-dasharray="10 1.8" stroke-linecap="round"/>
+    <circle cx="12" cy="12" r="5.1" fill="none" stroke="#C99B3F" stroke-width="1.15" stroke-dasharray="2.8 2.1"/>
+    <circle cx="12" cy="12" r="1.85" fill="#F6E7B8"/>`
+};
+function markSVG(name) {
+  return '<svg viewBox="0 0 24 24">' + (MARKS[name] || '') + '</svg>';
+}
+
+/* ================= 格内标 · 全形态大图 ================= */
+const MARK_GROUPS = [
+  {
+    title: '路径标 · PATH MARKS',
+    hint: '起点到终点的走线落款。沥金线与朱砂钤印，矿物颗粒同源，与「连径·沥金」同一材质',
+    items: [
+      ['start', '起点 · 朱砂印', 'START', '朱砂厚笔双圈（dash 9.5/1.6 干笔缺口）+ 实心菱印。钤在起点格中央'],
+      ['end', '终点 · 沥金环', 'END', '沥金双圈：外实环（干笔 dash）+ 内虚环 + 芯点。全盘唯一双圈'],
+      ['trail', '线头 · 金珠', 'TRAIL HEAD', '沥金线头：金珠 r=2.5 + 亮顶 0.85 + 干笔拖尾。线下压 2px 暗缝']
+    ]
+  },
+  {
+    title: '方向与星屑 · ARROW & STARS',
+    hint: '单向四向各一版（同坯旋转）· 星屑 1→2→3 撕边金箔递进，不写数字角标——格内永远不落字',
+    items: [
+      ['arrow', '单向 · 上', 'ONE WAY ↑', '朱砂厚笔箭 + 干笔缺口三粒，指向即规则。示例上向；四向同坯旋转 90° 各一版'],
+      ['arrowR', '单向 · 右', 'ONE WAY →', '同坯右向版。离开方向被钉死，无字'],
+      ['arrowD', '单向 · 下', 'ONE WAY ↓', '同坯下向版'],
+      ['arrowL', '单向 · 左', 'ONE WAY ←', '同坯左向版'],
+      ['star1', '星屑 · 一阶', 'STAR 1', '贴金箔星单颗，撕边不齐。必经格，须按 1→2→3 顺序经过'],
+      ['star2', '星屑 · 二阶', 'STAR 2', '双星并列读作二阶，走过逐颗点亮'],
+      ['star3', '星屑 · 三阶', 'STAR 3', '三星品字读作三阶。星数递进即阶数，无角标']
+    ]
+  },
+  {
+    title: '机关标 · MECHANISM MARKS',
+    hint: '钥匙走土红、门走赭石+沥金、传送门走深靛底+石青环+沥金芯。机关标只落格心，一格一件',
+    items: [
+      ['key', '钥匙 · 土红钥', 'EARTH KEY', '土红钥坯（环 dash 5.2/1.1 + 柄 + 双齿），颗粒哑光'],
+      ['door', '门 · 闭', 'DOOR SHUT', '赭石门扉 + 沥金门缝（dash 6/1.4）+ 门环。圆拱门洞，读作「此路不通」'],
+      ['door-open', '门 · 开', 'DOOR OPEN', '门扉左右洞开，沥金暖光涌出（中缝 1.35 + 两侧 0.8 光柱）。持钥开启后透光'],
+      ['portal-a', '传送门 · A', 'PORTAL A', '石青实环 + 沥金内环芯点，坐在深靛漩底上。实为入口，成对出现'],
+      ['portal-b', '传送门 · B', 'PORTAL B', '石青虚环（dash 3.2/2.6）+ 中缝虚线，深靛漩底。虚为出口，一眼分清进出口']
+    ]
+  },
+  {
+    title: '反馈标 · FEEDBACK MARKS',
+    hint: '只在触发瞬间出现的落款。抵达爆闪是全盘最亮的一帧，八芒射线 + 双环合一',
+    items: [
+      ['arrive', '抵达 · 爆闪', 'ARRIVE BURST', '八芒射线（1.35 圆头）+ 沥金外实环（干笔）+ 内虚环 + 芯点。终点块放大爆闪时叠此标']
+    ]
+  }
+];
+document.getElementById('mark-groups').innerHTML = MARK_GROUPS.map(g => `
+  <div class="mark-group">
+    <h4>${g.title}</h4>
+    <div class="hint">${g.hint}</div>
+    <div class="mark-grid">${g.items.map(([k, nm, en, ds]) => `
+      <div class="mark-card">
+        <div class="mark-stage stage-wall">${k === 'arrowR' || k === 'arrowD' || k === 'arrowL'
+          ? `<svg viewBox="0 0 24 24"><g transform="rotate(${{arrowR:90, arrowD:180, arrowL:270}[k]} 12 12)">${MARKS.arrow}</g></svg>`
+          : markSVG(k)}</div>
+        <div class="nm">${nm}</div>
+        <div class="en">${en}</div>
+        <div class="ds">${ds}</div>
+      </div>`).join('')}</div>
+  </div>`).join('');
+function makeMP(cls, mark, glyph) {
+  return `<div class="mp ${cls}">
+    ${glyph && GLYPHS[glyph] ? `<div class="mark" style="opacity:.5">${GLYPHS[glyph]}</div>` : ''}
+    ${mark ? `<div class="mark">${markSVG(mark)}</div>` : ''}
+  </div>`;
+}
+
+/* ================= 格态 · 全 20 式 ================= */
+const GROUPS = [
+  {
+    title: '路径格 · PATH CELLS', hint: '起点到终点的走线语义 · 起点是「朱砂钤印」，终点与路径是「沥金」· 已走过的格罩一层朱砂',
+    items: [
+      ['未铺 · 石绿格', 'PALE CHIP', makeMP('', null, 'moon'), '矿物石绿厚涂，边缘剥蚀带缺口。玩家视线的默认落点，占盘面大多数。'],
+      ['已铺 · 朱砂格', 'WALKED', makeMP('red m-walked', null, 'moon'), '沥金线走过，整格罩一层朱砂 + 沥金缘 1px——「这条路已经描过」。'],
+      ['起点 · 朱砂印', 'START', makeMP('pale m-start', 'start'), '朱砂厚笔双圈 + 实心菱印（干笔缺口）。起点是钤印，不是几何符号。'],
+      ['终点 · 沥金环', 'END', makeMP('pale m-end', 'end'), '沥金双圈（外实内虚）+ 芯点。与沥金走线同一材质——线的归处。'],
+      ['起手按下 · 抬升', 'PRESSED', makeMP('pale m-pressed', 'start'), '按下 80ms 放大 1.1× + 朱砂缘 2px + 抬起。全屏同时只有 1 格。'],
+      ['线头 · 拖径', 'TRAIL HEAD', makeMP('pale m-trail', 'trail'), '沥金线头（金珠）+ 线下暗缝。跟手走，松手未到终点则整条熄灭。']
+    ]
+  },
+  {
+    title: '机关格 · MECHANISM CELLS', hint: '机关色只从矿物色族拿：赭石/朱砂/石绿/石青/土红/沥金 · 每格只许一件机关 · 到处都是剥蚀缺口，不做完美几何形',
+    items: [
+      ['石障 · 赭石岩', 'STONE BLOCK', makeMP('m-stone'), '赭石岩块三道层理，不透明死物。全屏唯一无颗粒反光的格，反衬彩绘格。'],
+      ['单向 · 朱砂箭', 'ONE WAY', makeMP('m-oneway', 'arrow'), '朱砂厚笔箭，笔上三个干笔缺口。指向即规则，无字；四向各一版，此为上向。'],
+      ['星屑 · 一阶', 'STAR 1', makeMP('red m-star', 'star1'), '朱砂底嵌贴金箔星，撕边不齐。星屑是必需格，必须按 1→2→3 顺序经过。'],
+      ['星屑 · 二阶', 'STAR 2', makeMP('red m-star', 'star2'), '双星并列读作二阶。星递进不用数字角标——格内永远不写字。'],
+      ['星屑 · 三阶', 'STAR 3', makeMP('red m-star', 'star3'), '三星品字读作三阶。走过即逐颗点亮，金箔亮起。'],
+      ['冰砖 · 石青晶', 'ICE BRICK', makeMP('m-ice'), '石青六边晶，比普通格亮一档、冷 8°。踩上沿进入方向滑到撞墙。'],
+      ['钥匙 · 土红钥', 'EARTH KEY', makeMP('pale m-key', 'key'), '土红钥坯，颗粒哑光。开启对应门后消失——不用沥金，金贵如线。'],
+      ['门 · 闭', 'DOOR SHUT', makeMP('pale m-door', 'door'), '赭石门扉，门缝一道沥金细线。持钥可开，无钥挡路。'],
+      ['门 · 开', 'DOOR OPEN', makeMP('pale m-door-open', 'door-open'), '门扉洞开，沥金暖光从门内涌出。开门瞬间一记土埙轻点。'],
+      ['传送门 · A', 'PORTAL A', makeMP('m-portal', 'portal-a'), '深靛漩底上的石青实环（前）——全盘唯一深色格。成对出现，进 A 立刻出 B，传送段画虚线弧。'],
+      ['传送门 · B', 'PORTAL B', makeMP('m-portal', 'portal-b'), '深靛漩底上的石青虚环（后）。实虚分进出口——实为入口，虚为出口；与石绿格、亮石青冰砖都拉得开。']
+    ]
+  },
+  {
+    title: '反馈态 · FEEDBACK', hint: '提示只指路、不代打 · 沥金高亮是一次性窗口 · 抵达爆闪是全盘最亮的一帧，随后从终点反向波次点亮',
+    items: [
+      ['可连 · 呼吸', 'HINT PULSE', makeMP('m-hint'), '沥金缘 1.8s 明暗呼吸 + 轻浮 2px。只提示可走，不替玩家走线。'],
+      ['提示高亮', 'HINT GLOW', makeMP('m-hintglow'), '沥金内辉窗口，一次性错峰点亮，不是常亮。壁面底色上要压得住。'],
+      ['抵达 · 爆闪', 'ARRIVE FLASH', makeMP('m-arrive', 'arrive'), '终点块放大 + 沥金辉光 + 八芒迸发 + 墙屑粒子。随后反向波次点亮全路径。']
+    ]
+  }
+];
+document.getElementById('state-groups').innerHTML = GROUPS.map(g => `
+  <div class="state-group">
+    <h3>${g.title}</h3>
+    <div class="hint">${g.hint}</div>
+    <div class="state-row">${g.items.map(([nm, en, tile, ds]) => `
+      <div class="state-card">
+        <div class="tile-wrap">${tile}</div>
+        <div class="nm">${nm}</div>
+        <div class="en">${en}</div>
+        <div class="ds">${ds}</div>
+      </div>`).join('')}</div>
+  </div>`).join('');
+
+/* ================= 盘面速览 · 全格态混排 ================= */
+const MB = [
+  makeMP('pale m-start', 'start'),        makeMP('', null, 'wave'),      makeMP('pale m-trail', 'trail'),       makeMP('m-oneway', 'arrow'),
+  makeMP('red m-walked'),                 makeMP('red m-star', 'star2'), makeMP('', null, 'cloud'),             makeMP('pale m-key', 'key'),
+  makeMP('m-stone'),                      makeMP('pale m-door', 'door'), makeMP('m-ice'),                       makeMP('pale m-end', 'end')
+];
+document.getElementById('mini-board').innerHTML = MB.join('');
 
 /* ================= 动效 ================= */
 function spawnDust(parent, x, y, n) {
@@ -877,6 +1598,109 @@ function waveBars(kind) {
     return `<rect x="${x}" y="${22 - h / 2}" width="3.6" height="${h}" rx="1.6" fill="#C99B3F" opacity="${0.45 + (i % 3) * 0.2}"/>`;
   }).join('');
 }
+
+/* ================= 使用说明 · 同源双尺寸对照 ================= */
+const USE_PAIRS = [
+  ['key',     'key',      '钥匙',    '土红钥坯同源：左 48px 图标给图鉴，右格内标只落格心'],
+  ['stone',   null,       '石障',    '图标有三道层理；格内标即整块赭石，不另设小印'],
+  ['doorOpen','door-open','门 · 开', '左图标看门扉全貌，右格内标看沥金光涌出'],
+  ['portal',  'portal-a', '传送门',  '左图标双环器物化；右格内标实环+沥金芯，坐在深靛漩底上']
+];
+document.getElementById('use-compare').innerHTML = USE_PAIRS.map(([ic, mk, nm, ds]) => `
+  <div class="cmp-card">
+    <div class="row">
+      <div class="big">${ICONS[ic]}</div>
+      <div class="vs">VS</div>
+      ${mk ? makeMP('pale', mk) : makeMP('m-stone')}
+    </div>
+    <div class="cap"><b>${nm}</b>${ds}</div>
+  </div>`).join('');
+
+/* ================= 初始界面 · 落壁入场 ================= */
+const IN_ROWS = 5, IN_COLS = 8, FALL = 420, IMPACT = 260, ROW_GAP = 220, CHIP_STAGGER = 30;
+const IN_MIX = [
+  /* 行 0 */ makeMP('pale m-start', 'start'), makeMP('', null, 'wave'),   makeMP('red m-walked'),        makeMP('', null, 'moon'),
+             makeMP('m-oneway', 'arrow'),     makeMP('', null, 'cloud'),  makeMP('red m-star', 'star1'), makeMP('pale m-key', 'key'),
+  /* 行 1 */ makeMP('', null, 'mount'),       makeMP('red m-walked'),     makeMP('pale m-trail', 'trail'), makeMP('', null, 'star'),
+             makeMP('m-stone'),               makeMP('red m-star', 'star2'), makeMP('', null, 'plum'),  makeMP('pale m-door', 'door'),
+  /* 行 2 */ makeMP('', null, 'plum'),        makeMP('m-ice'),            makeMP('red m-walked'),        makeMP('', null, 'wave'),
+             makeMP('pale m-key', 'key'),     makeMP('', null, 'cloud'),  makeMP('m-portal', 'portal-a'), makeMP('', null, 'moon'),
+  /* 行 3 */ makeMP('red m-star', 'star3'),   makeMP('', null, 'wave'),   makeMP('m-oneway', 'arrow'),   makeMP('', null, 'mount'),
+             makeMP('m-portal', 'portal-b'),  makeMP('red m-walked'),     makeMP('', null, 'cloud'),     makeMP('red m-walked'),
+  /* 行 4 */ makeMP('', null, 'cloud'),       makeMP('', null, 'plum'),   makeMP('red m-walked'),        makeMP('', null, 'moon'),
+             makeMP('', null, 'star'),        makeMP('', null, 'mount'),  makeMP('', null, 'wave'),      makeMP('pale m-end', 'end')
+];
+function buildEntranceBoard() {
+  document.getElementById('in-board').innerHTML = IN_MIX.map(chip =>
+    `<div class="in-cell">${chip}</div>`).join('');
+  document.querySelectorAll('#in-board .mp').forEach(m => { m.style.opacity = '0'; });
+}
+let inTimers = [], inBusy = false;
+function inClear() { inTimers.forEach(clearTimeout); inTimers = []; }
+function inSettleAll() {
+  document.querySelectorAll('#in-board .mp').forEach(m => {
+    m.style.animation = 'none'; m.style.transition = 'none';
+    m.style.opacity = '1'; m.style.transform = 'none';
+  });
+}
+function playEntrance() {
+  const flash = document.getElementById('in-flash');
+  const cells = [...document.querySelectorAll('#in-board .in-cell')];
+  if (inBusy) { /* 动画中再点 = 跳过：全部直接落定 */
+    inClear();
+    inSettleAll();
+    flash.classList.remove('go'); void flash.offsetWidth; flash.classList.add('go');
+    sfx('xun'); vib([12, 26, 12]);
+    inBusy = false;
+    return;
+  }
+  inBusy = true;
+  inClear();
+  cells.forEach(c => {
+    const m = c.querySelector('.mp');
+    m.style.animation = 'none'; m.style.transition = 'none';
+    m.style.opacity = '0'; m.style.transform = 'none';
+    void m.offsetWidth;
+  });
+  /* 降级：reduced-motion 不做坠落，逐行淡亮保留行序节奏 */
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) {
+    for (let r = 0; r < IN_ROWS; r++) {
+      inTimers.push(setTimeout(() => {
+        cells.slice(r * IN_COLS, (r + 1) * IN_COLS).forEach(cell => {
+          const m = cell.querySelector('.mp');
+          m.style.transition = 'opacity 180ms';
+          m.style.opacity = '1';
+        });
+        if (r === IN_ROWS - 1) inTimers.push(setTimeout(() => {
+          flash.classList.remove('go'); void flash.offsetWidth; flash.classList.add('go');
+          sfx('xun'); inBusy = false;
+        }, 220));
+      }, r * 240));
+    }
+    return;
+  }
+  cells.forEach((cell, i) => {
+    const r = Math.floor(i / IN_COLS), c = i % IN_COLS;
+    const start = r * ROW_GAP + c * CHIP_STAGGER;
+    const m = cell.querySelector('.mp');
+    inTimers.push(setTimeout(() => {
+      m.style.opacity = '1';
+      m.style.animation = `chipFall ${FALL}ms both`;
+    }, start));
+    inTimers.push(setTimeout(() => sfx('grind', 0.22), start + IMPACT));           /* 泥点落低语量 */
+    if (i % 3 === 0) inTimers.push(setTimeout(() => spawnDust(cell, 27, 50, 3), start + IMPACT)); /* 每 3 格一撮尘 */
+    if (c === IN_COLS - 1) inTimers.push(setTimeout(() => vib([6]), start + IMPACT)); /* 行落定轻震 */
+  });
+  const endT = (IN_ROWS - 1) * ROW_GAP + (IN_COLS - 1) * CHIP_STAGGER + FALL;
+  inTimers.push(setTimeout(() => {
+    flash.classList.remove('go'); void flash.offsetWidth; flash.classList.add('go');
+    sfx('xun'); vib([12, 26, 12]);
+    inBusy = false;
+  }, endT));
+}
+buildEntranceBoard();
+setTimeout(playEntrance, 500);
 </script>
 </body>
 </html>

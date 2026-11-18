@@ -33,7 +33,6 @@
  */
 import {
   candidateMoves,
-  shardAllows,
   stepMove,
   type Move,
   type RuleSet,
@@ -242,17 +241,15 @@ export function canStartAt(state: CoverState, local: number): boolean {
  * 从某个局部格出发，枚举所有合法的下一步。
  *
  * 复用 `rules.ts` 的 `candidateMoves` ——
- * 它已经处理了单向门、钥匙门、冰块滑行、传送门。
+ * 它已经处理了单向门、钥匙门、冰块滑行、传送门，
+ * 也已经处理了**滑行途中的星星顺序**（乱序的星星会让滑行停在它前面）。
  *
- * 有一处额外约束要在**玩家侧**加：
- * 星星必须在**进入时**编号正确（`shardAllows`），
- * 而 `rules.ts` 的 `candidateMoves` 只管「能不能走」。
+ * 所以这里不需要再额外过滤星星 —— `candidateMoves` 传进去的
+ * `state.shardNext` 就是当前的待收集编号。
  */
 export function movesFrom(state: CoverState, cur: number): Move[] {
   const r = rs(state);
-  return candidateMoves(r, cur, state.visited, state.keyMask).filter((mv) =>
-    mv.consumed.every((c) => shardAllows(r, c, state.shardNext)),
-  );
+  return candidateMoves(r, cur, state.visited, state.keyMask, state.shardNext);
 }
 
 /** 某个局部编号在当前路径上的位置；不在则 -1。 */
@@ -312,11 +309,28 @@ export function tryCoverMove(state: CoverState, target: number): CoverMoveResult
   const dx = tx - lx;
   const dy = ty - ly;
 
+  // 传送：线头站在传送门上时，拖到它的**搭档格** → 传送过去。
+  //
+  // 复用 `candidateMoves`（它已经判好「搭档能不能进」：已走过 / 未开锁的门 /
+  // 乱序的星星都不许传过去），不自己重写一套判定 —— 免得两处规则漂移。
+  //
+  // **优先于相邻 / 同行判断**：搭档可能就在旁边（那也是传送），
+  // 也可能隔着一整片盘（跳过中间格）。规则是「只要是传送，都是传送过去」。
+  if (r.typeOf[last] === CoverCell.PORTAL) {
+    const portalMove = movesFrom(state, last).find((mv) => mv.viaPortal && mv.target === target);
+    if (portalMove) {
+      applyConsumed(state, portalMove.consumed);
+      state.lastConsumed = portalMove.consumed.slice();
+      consumeHintCells(state, portalMove.consumed);
+      return 'moved';
+    }
+  }
+
   // 相邻 → 走一步
   if (Math.abs(dx) + Math.abs(dy) === 1) {
     const dir = dirOfDelta(dx, dy);
-    const consumed = stepMove(r, last, dir, state.visited, state.keyMask);
-    if (consumed && consumed.every((c) => shardAllows(r, c, state.shardNext))) {
+    const consumed = stepMove(r, last, dir, state.visited, state.keyMask, state.shardNext);
+    if (consumed) {
       applyConsumed(state, consumed);
       state.lastConsumed = consumed.slice();
       // 玩家照着提示走了 → 窗口往前滑；走岔了 → consumeHintCells 会把路线清掉。
@@ -369,12 +383,11 @@ function autoFill(
   let at = cur;
 
   for (let guard = 0; guard < r.n + 2; guard++) {
-    const consumed = stepMove(r, at, dir, simVisited, simKeyMask);
+    const consumed = stepMove(r, at, dir, simVisited, simKeyMask, simShardNext);
     if (!consumed) return null;
     // 冰块：不自动滑行，交给正常单步处理
     if (consumed.length > 1) return null;
     const c = consumed[0];
-    if (!shardAllows(r, c, simShardNext)) return null;
 
     for (const x of consumed) {
       simVisited[x] = 1;
@@ -389,7 +402,12 @@ function autoFill(
   return null;
 }
 
-/** 应用一次消耗（更新 visited / 收集效果 / 路径）。 */
+/**
+ * 应用一次消耗（更新 visited / 收集效果 / 路径）。
+ *
+ * **收集效果沿消耗序列逐格推进** —— 与 `rules.ts` 的 `makeMove` 同一套语义：
+ * 滑行是一次移动吃掉多格，中途捡到的钥匙/星星必须按顺序生效。
+ */
 function applyConsumed(state: CoverState, consumed: number[]): void {
   const r = rs(state);
   for (const c of consumed) {
@@ -501,6 +519,43 @@ export function resumeCover(state: CoverState, local: number): boolean {
   if (state.phase !== 'paused') return false;
   if (state.path.length === 0) return false;
   if (state.path[state.path.length - 1] !== local) return false;
+  state.phase = 'dragging';
+  state.lastConsumed = [];
+  return true;
+}
+
+/**
+ * 宽限期内**点到线头的邻格**：也当作"接着走"，把这一格吃掉。
+ *
+ * ## 为什么不能只认线头本身
+ *
+ * 触屏上有一多半玩家不是"拖"，而是"点着走"：点起点，再点右边一格，再点下一格。
+ * 老实现里第二次点（邻格）既不是线头也不是起手格，于是走「按别处」分支 ——
+ * 整条路径当场作废、还扣一次重来。一步没走错却被打断，玩家只会觉得"点不了"。
+ *
+ * 所以这里放宽到「线头的正交邻格」：判定通过后把 phase 推回 `dragging`，
+ * 由调用方补一次 `tryCoverMove` 把这一格真正吃进去。
+ * 只认**相邻一格**，不认同行的远处格 —— 远距离是"拖"的语义，
+ * 单点一下跨三格会让路径凭空补齐，反而看不清发生了什么。
+ *
+ * 不合法时**不改任何状态**，调用方可以安全地退回原流程。
+ */
+export function resumeCoverStep(state: CoverState, target: number): boolean {
+  if (state.phase !== 'paused') return false;
+  if (state.path.length === 0) return false;
+
+  const r = rs(state);
+  if (target < 0 || target >= r.n) return false;
+  if (pathIndexOf(state, target) >= 0) return false; // 走过的格交给 tryCoverMove 当回退
+  if (state.lastConsumed.includes(target)) return false;
+
+  const last = state.path[state.path.length - 1];
+  const lx = r.flatOf[last] % r.w;
+  const ly = Math.floor(r.flatOf[last] / r.w);
+  const tx = r.flatOf[target] % r.w;
+  const ty = Math.floor(r.flatOf[target] / r.w);
+  if (Math.abs(tx - lx) + Math.abs(ty - ly) !== 1) return false;
+
   state.phase = 'dragging';
   state.lastConsumed = [];
   return true;

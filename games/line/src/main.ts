@@ -6,7 +6,7 @@ import { CoverLevelStore } from './game/coverLevelStore';
 import { buildCoverRuntime, decodeCoverLevel } from './game/coverLevel';
 import { findCoverHint } from './game/coverHint';
 import { ProgressStore } from './game/progressStore';
-import { DESIGN_W, DESIGN_H } from './render/layout';
+import { DESIGN_W, DESIGN_H, cardOf } from './render/layout';
 import { createViewport } from './render/viewport';
 import { drawCoverCells, drawCoverEndpoints, drawCoverFreeStartHint, drawCoverHead, drawCoverMarks, drawCoverPlate } from './render/coverBoard';
 import { drawCoverTrail } from './render/coverTrail';
@@ -15,12 +15,14 @@ import { audio } from './render/audio';
 import { SKINS, skinById } from './render/skins';
 import { drawSkinsPage, pickThemeChip, themeIdAt, isThemeOwned, unlockedThemeCount, shelfCount, stepThemeScroll, clampShelfScroll, type SkinsPageState } from './ui/skins';
 import { themeById } from './render/themes';
+import { enterTotalMs } from './render/themes/kit';
+import { cellType, CoverCell } from './core/cover/v3/types';
 import { ads } from './ads/ads';
 import { needsAdForHint, canSkipToday, markSkippedToday } from './ads/rewardRules';
 import { tracker } from './analytics/tracker';
 import {
   drawHud, drawPlayFootnote, drawPlayTip, drawPlayLegend, drawPlaySub, drawResult, drawButton, hitButton,
-  starOfCover as starOfCoverLocal, type Button,
+  drawWinSeal, starOfCover as starOfCoverLocal, type Button,
 } from './ui/hud';
 import { drawHomePage, type HomePageState } from './ui/home';
 import {
@@ -32,6 +34,7 @@ import { drawRankPage, createRankState, type RankPageState } from './ui/leaderbo
 import { drawProfilePage, type ProfilePageState } from './ui/profile';
 import { drawNav, pickNavTab, type NavTab } from './ui/nav';
 import { LOBBY_THEME } from './ui/theme';
+import { drawWallWipe, WIPE_MS } from './ui/wipe';
 import { CLAY, CLAY_UI, clayBlock, clayText } from './ui/clay';
 import { drawLobbyGround } from './ui/ground';
 import { publishProfile } from './platform/openData';
@@ -89,6 +92,151 @@ function totalStars(): number {
 let lastFrameAt = Date.now();
 let winAnimStart = 0;
 let waveLit = new Set<number>();
+
+/**
+ * 按压反馈的时刻与落点（拍平索引，-1 = 无）。
+ *
+ * 只记**最近一次**：拖动时一帧可能连亮三格，三圈金环同时扩散会糊成一片光斑。
+ * 视觉上"最后一格刚被按下"才是真的，前面几格已经落定了。
+ */
+let pressCell = -1;
+let pressAt = 0;
+/**
+ * 落子：格 → 落下的时刻。
+ *
+ * 和 `pressCell` 的区别是**记全部**：拖动时连亮三格，三块色片是依次落下的
+ * （每格都有自己的时刻），而"按下"只有最后一格才需要扩散尘环。
+ * 一张 11×11 的盘最多 121 条，不用清，重开关卡时整体换掉。
+ */
+let dropAt = new Map<number, number>();
+/** 最近一次延长连线的时刻（沥金从上一格"堆"到这一格）。 */
+let trailAt = 0;
+/**
+ * 棋盘进场时刻：整盘逐格从上往下落。
+ *
+ * 重开一关也重播 —— 盘面确实是被"重新铺了一遍"，不是接着上一局的盘。
+ * 进结算页 / 回大厅时不清：那时根本不画盘面，留着也无害，
+ * 反而省掉一处"忘了清 → 下次进关直接从半空开始"的坑。
+ */
+let enterAt = 0;
+/**
+ * 用户是否要求减少动效（`prefers-reduced-motion: reduce`）。
+ *
+ * 设计稿「伍·初始界面 / 亮·沙光收尾」写了降级规则：
+ * 「**prefers-reduced-motion** 降级：不做坠落，逐行淡亮 180ms + 60ms 行间，保留行序节奏」。
+ *
+ * 注意它**不是关掉入场** —— 行序节奏要保留（那是这一屏的叙事：
+ * 残片一行一行贴回去），只是把"坠落 + 触底压扁 + 扬尘"换成"淡亮"。
+ * 所以这里不设 `enterAt = 0`（那会整盘瞬间出现，连节奏都没了）。
+ */
+let reduceMotion = false;
+try {
+  const mq = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+  reduceMotion = !!mq?.matches;
+  // 运行中改了系统设置也要跟上（用户可能在游戏开着时切换）
+  mq?.addEventListener?.('change', (e) => {
+    reduceMotion = e.matches;
+  });
+} catch {
+  // 老环境没有 matchMedia：当成"不降级"，比当成降级安全
+  reduceMotion = false;
+}
+/** 通关逐格落定：格 → 亮起时刻（铺满级联）。 */
+let waveAt = new Map<number, number>();
+/** 波次步进（设计稿 48ms 一粒；天青/黏土管线也吃这个值）。 */
+const WAVE_STEP_MS = 48;
+/**
+ * 通关级联跑完的时刻（相对 `winAnimStart`），以及盖印相对它的等待。
+ *
+ * 设计稿的顺序是**级联 → 土埙 → 盖印**：`铺满级联` 最后那一粒落定，
+ * 才轮到石章砸下来。所以印不能和第一粒同时出现 —— 一格一格还在落的时候
+ * 印已经压在盘心，读起来是"还没铺完就宣布结束了"。
+ *
+ * 这两个数在通关那一帧算一次，音（`audio.win` 的 `at`）、触感（盖印的 40ms）
+ * 和画（`winSeal` 的 `elapsed`）全都从同一条时间线出发。
+ */
+let winCascadeMs = 0;
+/** 土埙比末粒再晚一点起（设计稿 `N*48 + 120`，这里以末粒为 0 折算）。 */
+const WIN_XUN_GAP = 168;
+/** 印落定的时刻（相对盖印开始）。与 `ThemeMotion.seal.at` 同一个数。 */
+const WIN_SEAL_HIT = 175;
+/** 盖印相对 `winAnimStart` 的延迟（0 = 当场落印，没有级联的主题）。 */
+let winSealAt = 0;
+
+/**
+ * 当前装备的主题。
+ *
+ * `frame()` 里那份 `boardTheme` 是**局部**的（只在盘面阶段有值），
+ * 而通关时序、切页转场这些事发生在盘面之外 —— 所以这里单独给一个。
+ */
+/**
+ * 当前主题。**渲染层唯一的主题入口** —— 降级覆盖也挂在这里。
+ *
+ * ## 为什么在入口处改，而不是在每处调用点判断
+ *
+ * `prefers-reduced-motion` 只影响两件事：进场的**坠落形态**、以及盖印的抖墙。
+ * 如果在 `startLevel` / 绘制 / 音画收尾三处各判一次，三处迟早会不一致
+ * （一处按坠落算时长、一处按淡亮算，末格沙光就会早到或迟到）。
+ * 覆写在入口，下游拿到的就是"这一局真正该用的参数"。
+ *
+ * 覆盖只改 `enter`，且**只改形态参数**（不删 `pulse`）：设计稿要求
+ * 「不做坠落，逐行淡亮 180ms + 60ms 行间，**保留行序节奏**」，
+ * 所以行序、错峰、末行沙光都还在，只是每格不再从上方掉下来。
+ */
+function currentTheme() {
+  const th = themeById(progress.current.currentTheme);
+  if (!reduceMotion || !th?.motion?.enter) return th;
+  // 降级版：每格 180ms 淡亮（`ms`），行内不额外错峰（`step: 0`），
+  // 行间 60ms —— 逐行推进的节奏靠 `row` 撑住，而不是靠每格掉落。
+  return {
+    ...th,
+    motion: {
+      ...th.motion,
+      enter: {
+        ...th.motion.enter,
+        ms: 180,
+        step: 0,
+        row: 60,
+        lift: 0,
+        swell: 1,
+        // 淡亮不做"落定"位移，也就不需要大盘压缩（行数 × 60ms 本来就很短）
+        sweep: undefined,
+        // 画法：`settle` 形态 = 原地淡入，没有坠落位移
+        form: 'settle' as const,
+      },
+    },
+  };
+}
+
+/**
+ * 通关级联要跑多久（ms）。没有 `settle` 动效的主题 = 0（整段跳过）。
+ *
+ * 这个数决定三件事：土埙什么时候起、印制什么时候砸、结算页什么时候出现。
+ * 分散在三处各算一遍迟早会走偏，所以只在这里算一次。
+ */
+function cascadeMs(): number {
+  const n = session.state?.path.length ?? 0;
+  if (!currentTheme()?.motion?.settle || n < 2) return 0;
+  return (n - 1) * WAVE_STEP_MS;
+}
+
+/** 无效落子的抖动（点石头 / 没钥匙开门 / 撞单向门）。 */
+let shakeCell = -1;
+let shakeAt = 0;
+
+/**
+ * 切页 · 剥壁揭示。
+ *
+ * 只在**进出盘面**时用：大厅是陶土台面，抹一层沙墙就是错的世界。
+ * 主题没给 `wipe` 配色（黏土 / 天青）也整段跳过 —— 那几套的页面不是墙。
+ *
+ * 方向恒定向右退（和设计稿演示同一方向）。不按"前进/后退"翻向：
+ * 剥壁是**同一块墙被抹开**，不是空间位移，翻向只会让人以为页面在排队。
+ */
+let wipeAt = 0;
+let wipeSkin: import('./render/themes/types').BoardTheme['wipe'] | null = null;
+/** 上一帧的页面；null = 还没跑过第一帧（首帧不该触发转场） */
+let peekPhase: Phase | null = null;
 
 /** 页面状态机。大厅体系 5 页 + 游戏内 2 页 + 加载态。 */
 type Phase =
@@ -249,6 +397,56 @@ let profilePage: ProfilePageState = {
  * 音效是设备偏好，不是账号进度 —— 换手机重启默认开，是对的。
  */
 const KEY_SOUND = 'sound_off';
+
+/**
+ * 振动偏好落盘的 key（与音效同一套理由）。
+ *
+ * 这个开关以前和音效开关一样是**死的**：改了 `profilePage.vibrateOn`，
+ * 振动调用从来没读过它。现在所有振动都走 `vibe()`，它在中间挡一道。
+ */
+const KEY_VIBRATE = 'vibrate_off';
+
+/**
+ * 振动反馈。`pattern` 语义同 `navigator.vibrate`：数字 = 振多少毫秒，
+ * 数组 = 振/停交替。
+ *
+ * 时长全部照设计稿：落子 8 / 连径 15 / 铺满 `[10,25,10,25,18]` /
+ * 盖印 40 / 按钮 5。**不许统一成"震一下"** —— 手感是节奏，
+ * 五件事用同一个时长，等于告诉手指"这五件事没有区别"。
+ */
+function vibe(pattern?: number | number[]): void {
+  if (!profilePage.vibrateOn) return;
+  platform.vibrate(pattern);
+}
+
+/** 触感的五个槽位。主题可以整套覆盖（见 `BoardTheme.haptics`）。 */
+type VibeSlot = 'step' | 'trail' | 'settle' | 'seal' | 'tap';
+
+/**
+ * 通用那组触感（设计稿 · 鸣沙丹青）。
+ *
+ * 五档 + 一个**按钮档**：按钮不属于某个动作，它是 UI 的"我收到了"，
+ * 所以任何主题都不覆盖它（天青给的 5 和这里一样）。
+ */
+const VIBE_BASE: Record<VibeSlot, number | number[]> = {
+  step: 8,
+  trail: 15,
+  settle: [10, 25, 10, 25, 18],
+  seal: 40,
+  tap: 5,
+};
+
+/**
+ * 按槽位震一下。
+ *
+ * 为什么不直接 `vibe(15)`：五档的数字是**材质**决定的 —— 瓷叩要脆、
+ * 玉磬要长、石章要沉。写死在调用点上，换主题就只能听到同一套节奏，
+ * 那等于所有主题共用一套手感。
+ */
+function vibeAt(slot: VibeSlot): void {
+  vibe(currentTheme()?.haptics?.[slot] ?? VIBE_BASE[slot]);
+}
+
 let profileButtons: Button[] = [];
 
 /** 当前挑战上下文（若来自好友分享）。 */
@@ -309,7 +507,8 @@ const backHomeBtn: Button = { x: 385, y: 1196, w: 321, h: 88, label: '返 回', 
  * 色块用的是**格面本身的面色**（门/单向=石板青、星=鎏金、钥=铜、传送=暮紫、冰=霜青），
  * 这样图例和盘上那格是同一个东西，而不是另画一套小图标。
  */
-const LEGEND_META: Array<{ type: number; kind: 'arrow' | 'star' | 'key' | 'gate' | 'portal' | 'ice'; label: string; bg: string; ink: string }> = [
+const LEGEND_META: Array<{ type: number; kind: 'arrow' | 'star' | 'key' | 'gate' | 'portal' | 'ice' | 'rock'; label: string; bg: string; ink: string }> = [
+  { type: 2, kind: 'rock', label: '墨石', bg: '#16211C', ink: 'rgba(158,186,168,0.92)' },
   { type: 3, kind: 'arrow', label: '单向门', bg: '#26333B', ink: '#F2DCA8' },
   { type: 4, kind: 'star', label: '星屑 序', bg: '#B89045', ink: '#2A2114' },
   { type: 5, kind: 'key', label: '钥匙', bg: '#A07E3C', ink: '#2A2114' },
@@ -417,49 +616,84 @@ async function loadGlobalRank(): Promise<void> {
 
 session.on((e) => {
   if (e.type === 'won') {
-    // perfect = 一次没撤销。通关琶音要多一声高八度的闪光，
+    // 通关是一段**有先后**的演出，不是一堆同时触发的效果：
+    //   ① 逐粒落定（48ms 一粒，每粒一记轻研磨）
+    //   ② 末粒落定 → 全盘沙光 + 土埙
+    //   ③ 石章砸下 → 抖墙 + 石顿
+    // 所以音效只有第一声是立刻发的，土埙与石章都排进同一条时间线往后推。
+    // 各发各的（早先就是这样）会变成"埙在第一粒就吹、章在第一粒就盖"。
+    const cas = cascadeMs();
+    winCascadeMs = cas;
+    // 末粒之后多久起"结束音"：鸣沙土埙 168（要等沙雨尾音散）、天青玉磬 120
+    winSealAt = cas > 0 ? cas + (currentTheme()?.motion?.winGap ?? WIN_XUN_GAP) : 0;
+    // perfect = 一次没撤销。通关那一记要多一声高八度的闪光，
     // 这是「打得干净」唯一的即时听觉奖励（星级要等结算页才看到）
-    audio.win((session.state?.undos ?? 0) === 0);
+    audio.win((session.state?.undos ?? 0) === 0, winSealAt);
+    if (cas > 0) {
+      audio.settle(e.path.length, WAVE_STEP_MS);
+      // 铺满 · 沙落：四下短震夹三段停（设计稿同一组数）
+      vibeAt('settle');
+      // 盖印那一下的重震必须和石章落到墙上同帧，所以单独排一个定时器
+      setTimeout(() => vibeAt('seal'), winSealAt + WIN_SEAL_HIT);
+    } else {
+      // 没有级联的主题，印是当场落的，那就当场震
+      vibeAt('seal');
+    }
     if (challenge) void onChallengeWin(e.steps, e.timeMs, e.path);
     else void onWin(e.steps, e.timeMs, e.path);
   }
-  if (e.type === 'break') { audio.break(); platform.vibrate(); }
+  if (e.type === 'break') { audio.break(); vibeAt('trail'); }
+  if (e.type === 'blocked') {
+    // 点石头 / 没钥匙开门 / 逆着单向门走：**必须给一下**。
+    // 早先这里什么都不做，玩家点上去一片死寂，只会以为"点了没反应"——
+    // 而这一格其实明确地拒绝了他。
+    shakeCell = e.idx;
+    shakeAt = Date.now();
+    audio.blocked();
+    vibeAt('trail');
+  }
   if (e.type === 'moved') {
     audio.light();
-    const st = session.state;
-    if (st && session.layout) {
-      fx.burstAt(e.idx, st.runtime.level.w, session.layout.cell, session.layout.originX, session.layout.originY, '#F2C14E');
-    }
+    pressCell = e.idx;
+    pressAt = Date.now();
+    // 落子：这一下是**手底下有东西**，不是"振动提示"
+    vibeAt('step');
+    // 这一格刚刚"铺上颜料"：落子动效 + 沥金从上一格堆过来
+    dropAt.set(e.idx, pressAt);
+    trailAt = pressAt;
     reportEvent('tile_light', { level_idx: session.state?.runtime.level.idx });
   }
-  // ── 松手宽限期 ──
+  // ── 松手 ──
   //
-  // 只在「已经画出东西」时才提示：连点两下没拖动也要弹一句话就太吵了。
+  // **松手不再作废，也不再倒计时**：路径、钥匙、星星全部保持原状，
+  // 玩家随时按回线头接着拖。所以这里不弹任何提示 ——
+  // 早先那句「1.5 秒内按回线上可继续拖」是在解释一个倒计时，
+  // 倒计时没了，提示也就没有存在意义（反而让人以为有时间压力）。
   if (e.type === 'paused') {
-    const st = session.state;
-    if (st && st.path.length > 1) showToast('松手了 · 1.5 秒内按回线上可继续拖', 1600);
+    // 故意不做事：松手是玩家的常态动作，不该有声音、文字或震动回应。
+    // 留着这个分支是为了显式表明"这里有意安静"，不是漏了。
   }
   if (e.type === 'resumed') {
     // 续接不该有任何惩罚，连音效都省 —— 玩家只是以为自己断线了
     audio.light();
   }
-  if (e.type === 'expired') {
-    // 真正的「失败」在这里，不在松手那一刻
-    showToast('这一段作废了 · 重新起一笔', 1800);
-    reportEvent('level_fail', {
+  if (e.type === 'abandoned') {
+    // 作废只剩一个入口：玩家按了**别的格子**（显式要重新起一笔）。
+    // 有步数 = 真的丢了一段；没有步数 = 切后台那种，不打扰玩家。
+    if (e.steps && e.steps > 0) showToast('重新起一笔 · 这一笔已计入重来', 1600);
+    reportEvent('level_abandon', {
       level_idx: session.state?.runtime.level.idx,
       steps: e.steps,
       undos: session.state?.undos ?? 0,
     });
   }
-  if (e.type === 'abandoned') reportEvent('level_abandon', { level_idx: session.state?.runtime.level.idx });
 });
 
 /** 通关处理：上报成绩。 */
 async function onWin(steps: number, timeMs: number, path: number[], skipped = false) {
   const level = session.state!.runtime.level;
   const undos = session.state?.undos ?? 0;
-  // 通关波次动画（约 1.2 秒），结算页延后出现
+  // 通关波次动画（级联 48ms 一粒 + 盖印），结算页延后出现
   winAnimStart = Date.now();
   fx.clear();
   reportEvent('level_pass', { level_idx: level.idx, steps, time_ms: timeMs, undos, skipped });
@@ -486,7 +720,8 @@ async function onWin(steps: number, timeMs: number, path: number[], skipped = fa
       if (res.unlockedSkin) {
         progress.unlockSkin(res.unlockedSkin.id);
         audio.unlock();
-        platform.vibrate();
+        // 解锁是"东西到手了"，比按钮重一档（设计稿五档里的连径档）
+        vibeAt('trail');
       }
       progress.sync({
         maxLevel: res.maxLevel,
@@ -542,11 +777,18 @@ async function onWin(steps: number, timeMs: number, path: number[], skipped = fa
   // 发布进度到开放数据域（好友榜才准）
   publishMyProfile();
 
-  // 结算页延后出现，让通关波次动画播完；入场后再延迟 500ms 弹插屏
+  // 结算页延后出现，让通关波次 + 落印播完；入场后再延迟 500ms 弹插屏
+  //
+  // 1.75 秒是**旧管线**的固定值：那时印在第一帧就落，级联只是背景。
+  // 现在印要等末粒（`winSealAt`），一盘 30 格就是 1.56 秒之后才砸下来 ——
+  // 固定 1750 会把印切在"刚落到一半"。所以按实际编排算，再留一段静置：
+  // 印落定 320ms + 留在盘上停 700ms（这一个"过"就是整局唯一的结束语）。
+  const sealMs = currentTheme()?.motion?.seal?.ms ?? 320;
+  const tail = winSealAt + sealMs + 700;
   setTimeout(() => {
     phase = 'result';
     setTimeout(() => { void ads.showInterstitial('result_interstitial'); }, 500);
-  }, 1200);
+  }, Math.max(1750, tail));
 }
 
 /**
@@ -609,7 +851,8 @@ async function onChallengeWin(steps: number, timeMs: number, path: number[]) {
       fromName: challenge?.fromName ?? '好友',
       isNewBest,
     };
-  }, 1200);
+    // 挑战不落印，所以只要等波次跑完（没有级联的主题仍是 1.2 秒）
+  }, Math.max(1200, winCascadeMs + 320));
 }
 
 /**
@@ -778,9 +1021,68 @@ async function enterLevel(idx: number) {
   session.load(buildCoverRuntime(level));
   phase = 'playing';
   winAnimStart = 0;
+  winCascadeMs = 0;
+  winSealAt = 0;
   waveLit = new Set();
+  pressCell = -1;
+  pressAt = 0;
+  dropAt = new Map();
+  trailAt = 0;
+  waveAt = new Map();
+  shakeCell = -1;
+  shakeAt = 0;
   fx.clear();
+  // 进场从这一帧起算。和转场**同向**：幕从右边退、格子从上往下一格一格就位，
+  // 等幕退干净时盘面已经铺到第三行，观感是"幕被抹开，格子跟着落定"
+  enterAt = Date.now();
+  armEnterCue();
   reportEvent('level_start', { level_idx: idx, diff: level.diff, w: level.w, h: level.h });
+}
+
+/**
+ * 进场揭幕的音画收尾。
+ *
+ * ## 为什么要在开局就排一段定时器
+ *
+ * 设计稿的揭幕是"逐格就位 → **末格**全盘脉冲 + 玉磬"。末格那一刻
+ * 是由主题参数算出来的（`escortMs`），只有 `main` 知道 `enterAt`，
+ * 所以在这里排一次。
+ *
+ * ## 两个必须守住的细节
+ *
+ * 1. **逐格音**排成一条时间线（`audio.settle`），不是每格一个 `setTimeout`：
+ *    40 个定时器在低端机上各偏 10~30ms，听起来就是一串毛毛雨。
+ * 2. **主题没给 `enter` 或没给 `settle` 音色 → 一声不发**，连玉磬也不放。
+ *    玻璃 / 黏土那几套没有"逐格落下"这件事，硬加音效就是贴音效。
+ */
+function armEnterCue(): void {
+  const th = currentTheme();
+  const en = th?.motion?.enter;
+  if (!en || !en.pulse) return;
+  const st = session.state;
+  if (!st) return;
+
+  const w = st.runtime.level.w;
+  const h = st.runtime.level.h;
+  // 总扫掠 = (w−1)·step + (h−1)·(w·step+row)，再按 sweep 压缩
+  const step = en.step ?? 24;
+  const row = en.row ?? 0;
+  const sweep0 = (w - 1) * step + (h - 1) * (w * step + row);
+  const k = en.sweep && sweep0 > en.sweep ? en.sweep / sweep0 : 1;
+  const ms = Math.max(60, en.ms ?? 300);
+
+  // 倒数第二格的时刻 → 末格；末格"落定"再晚 `ms`
+  const total = sweep0 * k + ms;
+  const lastAt = total - ms;
+
+  // 逐格音（只有会"落定"的主题才有）：每格一小记，48ms 一粒
+  audio.settle(st.runtime.level.w * st.runtime.level.h, en.step ?? 48);
+  // 末格：玉磬 + 一次轻震（设计稿「末格触发全盘金光脉冲 + 玉磬」）
+  setTimeout(() => {
+    if (phase !== 'playing') return;
+    audio.chime();
+    vibeAt('tap');
+  }, Math.max(0, lastAt));
 }
 
 /**
@@ -1055,6 +1357,7 @@ function onDown(clientX: number, clientY: number) {
       if (rail.kind === 'world' || rail.kind === 'current') {
         mapPage.scrollTarget = scrollToLevel(rail.level ?? mapPage.currentLevel);
         audio.tap();
+        vibeAt('tap');
         return;
       }
       mapRailGrab = rail.grab;
@@ -1122,6 +1425,34 @@ function onDown(clientX: number, clientY: number) {
   }
 
   if (phase !== 'playing') return;
+
+  // ── 入场未播完：**这一下只用来跳过**，不落子 ──
+  //
+  // 设计稿「伍·初始界面」：「动画中再点 = 跳过（全部直接落定）」。
+  // 关键在"再点"和"全部直接落定"：
+  //
+  // - 必须**吞掉这一下**。不吞的话玩家想跳过，结果顺手在某个格子上起了一笔，
+  //   反而多出一段莫名其妙的线 —— 跳过这个动作本身会制造一个错误。
+  // - 不只是把 `enterAt` 推到过去：那样格子会"瞬间全在"，没有"落定"的收束感。
+  //   这里推到"刚好过了最后一格"的时刻，于是**全盘在同一步落定**，
+  //   末行沙光脉冲紧接着照常播（它按 `enterAt + total` 算，会自动跟上）。
+  if (enterAt && session.state) {
+    const en = currentTheme()?.motion?.enter;
+    if (en) {
+      const st = session.state;
+      const w = st.runtime.level.w;
+      const h = st.runtime.level.h;
+      const total = enterTotalMs(en, w, h);
+      if (Date.now() - enterAt < total) {
+        // 推到"整盘刚落定"那一刻，沙光脉冲才不会被一起跳掉
+        enterAt = Date.now() - total;
+        // 全部落定 = 这一段的音画收尾也一并结束（`armEnterCue` 排的就是它）
+        armEnterCue();
+        return;
+      }
+    }
+  }
+
   if (hitButton(backHomeBtn, d.x, d.y)) { pressedBtn = 'backHome'; return; }
   if (hitButton(hintBtn, d.x, d.y)) { pressedBtn = 'hint'; return; }
   if (!challenge && hitButton(skipBtn, d.x, d.y)) { pressedBtn = 'skip'; return; }
@@ -1246,6 +1577,7 @@ function onUp() {
       mapPage.fling = 0;
       mapPage.scrollTarget = scrollToLevel(mapPage.currentLevel);
       audio.tap();
+      vibeAt('tap');
       return;
     }
     if (id.startsWith('shelf:')) {
@@ -1297,9 +1629,18 @@ function onUp() {
       audio.setEnabled(profilePage.soundOn);
       platform.storage.set(KEY_SOUND, profilePage.soundOn ? '' : '1');
       if (profilePage.soundOn) audio.tap();
+      vibeAt('tap');
       return;
     }
-    if (id === 'toggleVibrate') { profilePage.vibrateOn = !profilePage.vibrateOn; return; }
+    if (id === 'toggleVibrate') {
+      profilePage.vibrateOn = !profilePage.vibrateOn;
+      platform.storage.set(KEY_VIBRATE, profilePage.vibrateOn ? '' : '1');
+      // 打开时立刻震一下 —— 这是玩家唯一能当场确认"到底开没开"的办法
+      // 用连径档而不是按钮档：按钮档 5ms 在多数安卓机上根本感知不到，
+      // 那样这个开关看起来还是"死的"
+      vibeAt('trail');
+      return;
+    }
     if (id === 'shareGame') { void doShare(); return; }
     if (id === 'clearCache') { platform.storage.remove('levels_cache'); return; }
 
@@ -1337,8 +1678,10 @@ function onUp() {
   }
   if (phase === 'playing') {
     // 松手后**不再**立即结算 —— 见 `CoverSession.pointerUp`。
-    // 判定（通关）、处罚（undos+1）、上报（level_fail）三件事被拆开了：
-    // 通关仍在这一刻确认，失败要等宽限期过完（`expired` 事件）。
+    //
+    // 判定（通关）在这一刻确认；**未通关则什么也不发生**：
+    // 路径定住、钥匙星星留着，玩家随时按回线头接着拖。
+    // 惩罚（`undos + 1`）只发生在玩家按下**别的格子**那一刻（`abandoned`）。
     session.pointerUp();
   }
 }
@@ -1422,14 +1765,21 @@ function tick() {
 /** 更新通关波次点亮状态（从终点反向扩散）。 */
 function updateWave(now: number) {
   waveLit = new Set();
+  waveAt = new Map();
   const st = session.state;
   if (!st || !winAnimStart) return;
   const elapsed = now - winAnimStart;
   const rs = st.runtime.rs;
   const total = st.path.length;
   for (let i = 0; i < total; i++) {
-    const delay = (total - 1 - i) * 60;
-    if (elapsed >= delay) waveLit.add(rs.flatOf[st.path[i]]);
+    // 设计稿是 48ms 一粒（"[10,25,10,25,18] 震"同一节奏）。
+    // 60ms 是上一版的数，一盘 40 步就是 400ms 的差距 —— 末粒的土埙会晚半拍
+    const delay = (total - 1 - i) * WAVE_STEP_MS;
+    if (elapsed >= delay) {
+      const idx = rs.flatOf[st.path[i]];
+      waveLit.add(idx);
+      waveAt.set(idx, winAnimStart + delay);
+    }
   }
 }
 
@@ -1511,7 +1861,7 @@ function renderFrame(now: number, dt: number): void {
   // 传入反算出来的设计坐标盒子后，一块渐变铺满整屏，接缝消失。
   //
   // 主题接管后由主题自己铺（每套的底纹是它成立的一半）。
-  if (boardTheme) boardTheme.backdrop(ctx, visibleDesignBox());
+  if (boardTheme) boardTheme.backdrop(ctx, visibleDesignBox(), now);
   else drawLobbyGround(ctx, visibleDesignBox());
 
   if (st && session.layout && playing) {
@@ -1551,8 +1901,10 @@ function renderFrame(now: number, dt: number): void {
       keysHeld,
       shardsGot,
       shardNext,
-      shakeCell: -1,
-      shakeAt: 0,
+      shakeCell,
+      shakeAt,
+      pressCell,
+      pressAt,
     };
     if (boardTheme) {
       // 主题接管整块盘面。提示只给窗口内的 5 格 —— 和黏土管线同一规则，
@@ -1575,8 +1927,16 @@ function renderFrame(now: number, dt: number): void {
           // 松手宽限：线要变淡。旧管线是在这里用 globalAlpha 包住的，
           // 主题接管后必须显式传下去，否则宽限期的线会全亮。
           paused: st.phase === 'paused',
-          shakeCell: -1,
-          shakeAt: 0,
+          shakeCell,
+          shakeAt,
+          pressCell,
+          pressAt,
+          // 动效的时刻：落子 / 沥金生长 / 铺满级联 / 盖印抖墙 / 整盘进场
+          drops: dropAt,
+          trailAt,
+          settle: waveAt,
+          wonAt: winAnimStart,
+          enter: enterAt || undefined,
         },
         now,
         dpr: viewport.scale * viewport.dpr,
@@ -1586,17 +1946,85 @@ function renderFrame(now: number, dt: number): void {
 
       drawCoverPlate(ctx, boardArg, session.layout, level.idx, viewport.scale * viewport.dpr);
       drawCoverCells(ctx, boardArg, session.layout, coverState, curSkin, now);
-      // 松手宽限期间线还在，但要读得出「这是暂存的」——
-      // 全亮会让玩家以为只要别按就有救，全灭又等于已经清空了。
-      const pausedGrace = st.phase === 'paused';
-      ctx.save();
-      if (pausedGrace) ctx.globalAlpha = 0.55;
+      // 松手后线**照常全亮** —— 它就是玩家画出的东西，是稳定状态，不是"暂存"。
+      //
+      // 早先这里给 `paused` 压到 0.55，因为当时松手只有 1.5 秒宽限、
+      // 线即将作废，压暗是在说"这还不是你的"。现在松手即定住，
+      // 再压暗就成了"我画完一条线，它自己变灰了"——纯粹的困惑。
       drawCoverTrail(ctx, flat, level.w, level.grid, session.layout, CLAY.terracotta);
-      ctx.restore();
       drawCoverMarks(ctx, boardArg, session.layout, coverState);
       drawCoverHead(ctx, boardArg, session.layout, coverState, now);
       // 端点圆片必须在连线之后，否则线头会横穿圆片、把「起」「终」压成一团
       drawCoverEndpoints(ctx, boardArg, session.layout);
+    }
+
+    // ── 抵达 · 爆闪（终点格）──
+    //
+    // 设计稿把它排在**通关级联之前**：线头碰到终点的那一瞬，终点格炸一下
+    // （八芒 + 双环 + 芯点，420ms），然后才开始"从终点反向点亮全路径"，
+    // 最后才是落印。所以这三件事在时间上是严格串行的，不能一起放。
+    //
+    // 画在盘面之后、印章之前：爆闪属于盘面（它长在终点那一格里），
+    // 而印章是浮在盘上的一枚印 —— 顺序反了，印会被爆闪的光洗掉。
+    if (winAnimStart && phase === 'playing' && boardTheme?.arrive) {
+      const burstElapsed = now - winAnimStart;
+      if (burstElapsed >= 0 && burstElapsed < 520) {
+        for (let i = 0; i < boardArg.grid.length; i++) {
+          if (cellType(boardArg.grid[i]) !== CoverCell.END) continue;
+          const bx = i % boardArg.w;
+          const by = Math.floor(i / boardArg.w);
+          const L = session.layout;
+          boardTheme.arrive(
+            ctx,
+            L.originX + bx * L.cell + L.cell / 2,
+            L.originY + by * L.cell + L.cell / 2,
+            L.cell,
+            burstElapsed,
+          );
+          break;
+        }
+      }
+    }
+
+    // ── 通关：棋盘正中落一枚朱印「过」 ──
+    //
+    // 必须有这一下。波次点亮（`waveLit`）点的是**本来就亮着**的格子，
+    // 通关那一刻盘面不会有任何变化，玩家看到的只是"最后一格连上 → 停 1.7 秒"。
+    // 印章是全屏唯一一点红，也是这一局唯一一次"被宣告结束"。
+    if (winAnimStart && phase === 'playing' && !challenge) {
+      const c = cardOf(session.layout);
+      /**
+       * 印的边长 —— **按卡宽算，不按格宽**。
+       *
+       * 这枚印是"盖在整面墙上的落款"，它属于盘面而不是某一格。
+       * 按格宽算（早先的写法 `cell × size`）会有两个后果：
+       *
+       * - **大盘上印会缩没**：11×11 的格宽只有 55px，`0.8 × 55 = 44px`，
+       *   那已经不是"盖印"了，是格心上的一个小红点；
+       * - **换关时量感会跳**：同一个通关动作，5×6 是 167px、11×11 是 91px，
+       *   隔两关再通关会觉得"这次的印怎么变小了"。
+       *
+       * 卡宽恒定（662，见 `BOARD_CARD_W`），所以按卡宽算的结果在任何盘面上
+       * 都是同一个尺寸。`0.29 × 662 ≈ 192`，正好是结算页那枚印
+       * （`SEAL_S = 192`）的大小 —— 通关动效既然收在一枚印上，
+       * 就该和结算页同一个量级，而不是比它小一圈。
+       *
+       * 主题可以覆盖这个比例（`motion.seal.size`），但那是"这套主题的印
+       * 相对别套重多少"，单位是**卡宽**。
+       */
+      const sealMul = boardTheme?.motion?.seal?.size ?? 0.25;
+      const sealSize = Math.min(c.w, c.h) * sealMul;
+      // 印要等**末粒落定**才砸（`winSealAt`）。早于那一刻 `elapsed` 为负，
+      // 主题自己会跳过 —— 这里不提前 return，免得天青/黏土那两套（没有级联）
+      // 一并被推迟
+      const sealElapsed = now - winAnimStart - winSealAt;
+      // 印的形状是各套主题的「款」：黏土/天青是圆的朱印，鸣沙是方的石章。
+      // 形状不同，砸下来的动效也不同，所以交给主题自己画
+      if (boardTheme?.winSeal) {
+        boardTheme.winSeal(ctx, c.x + c.w / 2, c.y + c.h / 2, sealSize, sealElapsed);
+      } else {
+        drawWinSeal(ctx, c.x + c.w / 2, c.y + c.h / 2, sealSize, now - winAnimStart);
+      }
     }
 
     // 主题的界面配色。空 = 黏土（经典盘面）
@@ -1621,24 +2049,32 @@ function renderFrame(now: number, dt: number): void {
     // 「返回 / 跳过」是负向/低频动作，压到最下面一行灰底 —— 和金子拉开层级，
     // 也离盘面最远（误触代价最小）。
     if (chrome) {
-      const badge = needsAdForHint(st.runtime.level.idx, st.hintUsed) ? '首 提 示 · 看 视 频' : null;
-      drawPlayTip(ctx, hintBtn, pressedBtn === 'hint', badge);
+      drawPlayTip(ctx, hintBtn, pressedBtn === 'hint');
     } else {
       drawButton(ctx, hintBtn, pressedBtn === 'hint', undefined, chrome);
     }
 
-    // 图例：只列盘上真有的机制（没有传送门的关里画传送门，玩家会去找它）
+    // 图例：固定七枚（含墨石），逐关不变 —— 它是这个世界的"物种表"，
+    // 不是本关的按键索引（见 `drawPlayLegend` 的说明）
     if (!challenge) {
-      const present = new Set<number>(rs.typeOf);
-      const items = LEGEND_META.filter((m) => present.has(m.type))
-        .map(({ kind, label, bg, ink }) => ({ kind, label, bg, ink }));
-      drawPlayLegend(ctx, items, 1008, chrome);
+      drawPlayLegend(
+        ctx,
+        // 图例的色块跟主题走：天青是暗石板 + 金线，鸣沙是六枚矿物色片。
+        // 不跟着换的话，亮色盘面上那六块近黑的方格会像六张贴纸。
+        LEGEND_META.map(({ kind, label, bg, ink }) => {
+          const ov = boardTheme?.legend?.[kind];
+          return { kind, label, bg: ov?.bg ?? bg, ink: ov?.ink ?? ink };
+        }),
+        1008,
+        chrome,
+        boardTheme?.legendMarks,
+      );
     }
 
     // 挑战关不给「跳过」：比的就是谁真能走完，花钱跳过是另一种玩法
     if (chrome) {
-      if (!challenge) drawPlaySub(ctx, skipBtn, pressedBtn === 'skip');
-      drawPlaySub(ctx, backHomeBtn, pressedBtn === 'backHome');
+      if (!challenge) drawPlaySub(ctx, skipBtn, pressedBtn === 'skip', chrome);
+      drawPlaySub(ctx, backHomeBtn, pressedBtn === 'backHome', chrome);
     } else {
       if (!challenge) drawButton(ctx, skipBtn, pressedBtn === 'skip', undefined, chrome);
       drawButton(ctx, backHomeBtn, pressedBtn === 'backHome', undefined, chrome);
@@ -1726,6 +2162,27 @@ function renderFrame(now: number, dt: number): void {
   // 等比缩放把 750×1334 塞进 844×390 时只剩 32% 宽，格子不到 20px，
   // 拖着拖着手指就出界了。桌面浏览器窗口拉宽不算（短边 > 560）。
   if (width > height * 1.05 && Math.min(width, height) < 560) drawRotateHint(ctx);
+
+  // ── 切页转场：剥壁揭示 ──
+  //
+  // 检测放在这里而不是每个 `phase = '...'` 旁边：页面切换在这一层已经全部
+  // 落定，逐处去埋点必然漏一处（大厅到地图、跳过到下一关、返回首页……）。
+  if (peekPhase === null) peekPhase = phase;
+  else if (phase !== peekPhase) {
+    peekPhase = phase;
+    const skin = phase === 'playing' || phase === 'result' ? currentTheme()?.wipe : undefined;
+    wipeSkin = skin ?? null;
+    wipeAt = skin ? now : 0;
+  }
+  if (wipeAt && wipeSkin) {
+    const e = now - wipeAt;
+    // 时长按主题走：鸣沙 480ms 剥壁，天青 520ms 釉光抹开
+    if (e >= (wipeSkin.ms ?? WIPE_MS)) {      wipeAt = 0;
+      wipeSkin = null;
+    } else {
+      drawWallWipe(ctx, visibleDesignBox(), e, wipeSkin);
+    }
+  }
 
   // ── 全局提示条（最后画，压在所有页面之上）──
   drawToast(ctx, now);
@@ -1848,6 +2305,7 @@ async function boot() {
   // （浏览器自动播放策略），由 `audio.light()` 首次调用时惰性创建。
   profilePage.soundOn = platform.storage.get(KEY_SOUND) !== '1';
   audio.setEnabled(profilePage.soundOn);
+  profilePage.vibrateOn = platform.storage.get(KEY_VIBRATE) !== '1';
   audio.setVoice(progress.current.currentTheme);
 
   // ① 登录（失败不致命）

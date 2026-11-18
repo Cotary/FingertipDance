@@ -121,7 +121,7 @@ export function drawPlayFootnote(
   const size = 19;
   const track = 5;
   const dim = chrome?.inkDim ?? chrome?.inkSoft ?? CLAY_UI.inkSoft;
-  const num = chrome ? 'rgba(184,207,192,0.92)' : CLAY_UI.ink;
+  const num = chrome ? (chrome.inkStrong ?? 'rgba(184,207,192,0.92)') : CLAY_UI.ink;
   const head = '本关重来 ';
   const mid = String(undos);
   const tail = ' 次 · 零重来 = ★★★';
@@ -142,28 +142,140 @@ export function drawPlayFootnote(
   sansTextLeft(ctx, tail, x, base, size, dim, track, 300);
 }
 
+// ────────────────────────── 通关：棋盘上落印 ──────────────────────────
+
+/** 落印动画时长（对齐设计稿 `.seal.show` 的 500ms）。 */
+export const WIN_SEAL_MS = 520;
+
+/**
+ * 通关瞬刻：在棋盘中央**砸**下一枚朱印「过」。
+ *
+ * 这一下是"打完了"唯一的一次现场宣告 —— 早先通关只有一格一格的波次点亮，
+ * 而波次点的是**已经亮着**的格子（通关时 `covered` 本来就是满的），
+ * 于是玩家看到的只是：最后一格连上 → 停顿 1.2 秒 → 突然跳结算页。
+ * 中间那 1.2 秒什么都没有，像是卡了一下。
+ *
+ * 动画照设计稿 `@keyframes stamp`：
+ *   `0% rotate(-16deg) scale(1.7) opacity 0`
+ *   `55% rotate(-6deg) scale(0.96) opacity 1`
+ *   `100% rotate(-8deg) scale(1)`
+ * 先冲到 0.96 再回弹到 1 —— 那 4% 的回弹是"按下去又弹起"的全部信息量，
+ * 少了它印章就只是"放大出现"。
+ *
+ * @param cx,cy 印章中心（棋盘正中）
+ * @param size  印章直径（设计稿 132 / 棋子 80 → 1.65 个棋子）
+ * @param elapsed 距离通关的毫秒数
+ */
+export function drawWinSeal(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  size: number,
+  elapsed: number,
+): void {
+  if (elapsed < 0) return;
+  const u = Math.min(1, elapsed / WIN_SEAL_MS);
+  let scale: number;
+  let rot: number;
+  if (u < 0.55) {
+    const k = u / 0.55;
+    // 三次缓出：前三成时间走完七成距离 —— 才有"砸下来"的速度感
+    const e = 1 - Math.pow(1 - k, 3);
+    scale = 1.7 + (0.96 - 1.7) * e;
+    rot = -16 + 10 * e;
+  } else {
+    const k = (u - 0.55) / 0.45;
+    scale = 0.96 + 0.04 * k;
+    rot = -6 - 2 * k;
+  }
+  const alpha = Math.min(1, u / 0.22);
+  if (alpha <= 0) return;
+
+  const r = (size / 2) * scale;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  // ── 印章压出来的接触影：贴地的一团暖红，不是黑
+  const sh = ctx.createRadialGradient(cx, cy + r * 0.22, 0, cx, cy + r * 0.22, r * 1.5);
+  sh.addColorStop(0, 'rgba(140,47,30,0.34)');
+  sh.addColorStop(0.55, 'rgba(140,47,30,0.12)');
+  sh.addColorStop(1, 'rgba(140,47,30,0)');
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + r * 0.22, r * 1.5, r * 1.5, 0, 0, Math.PI * 2);
+  ctx.fillStyle = sh;
+  ctx.fill();
+
+  ctx.translate(cx, cy);
+  ctx.rotate((rot * Math.PI) / 180);
+
+  // ── 印面：`radial-gradient(circle at 35% 30%, #D9614A, #C04B33 55%, #8C2F1E)`
+  const g = ctx.createRadialGradient(-r * 0.3, -r * 0.4, r * 0.05, 0, 0, r * 1.12);
+  g.addColorStop(0, '#D9614A');
+  g.addColorStop(0.55, '#C04B33');
+  g.addColorStop(1, '#8C2F1E');
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fillStyle = g;
+  ctx.fill();
+
+  // ── 印泥的厚：上沿受光、下沿吃土（走 clip，不描边）
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.clip();
+  const hi = ctx.createLinearGradient(0, -r, 0, -r * 0.15);
+  hi.addColorStop(0, 'rgba(255,226,214,0.30)');
+  hi.addColorStop(1, 'rgba(255,226,214,0)');
+  ctx.fillStyle = hi;
+  ctx.fillRect(-r, -r, r * 2, r * 0.85);
+  const lo = ctx.createLinearGradient(0, r * 0.25, 0, r);
+  lo.addColorStop(0, 'rgba(74,18,8,0)');
+  lo.addColorStop(1, 'rgba(74,18,8,0.40)');
+  ctx.fillStyle = lo;
+  ctx.fillRect(-r, r * 0.25, r * 2, r * 0.75);
+  ctx.restore();
+
+  // ── 印文「过」：衬线 900，字面中心在基线上方 0.36em
+  const fs = size * 0.47;
+  ctx.font = `900 ${fs}px ${SERIF_FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,244,238,0.94)';
+  ctx.shadowColor = 'rgba(90,25,12,0.45)';
+  ctx.shadowBlur = size * 0.05;
+  ctx.shadowOffsetY = size * 0.018;
+  ctx.fillText('过', 0, fs * 0.04);
+  ctx.restore();
+}
+
 // ────────────────────────── 盘底：提示 / 图例 ──────────────────────────
 
 /**
  * 「提示」金按钮（设计稿 03 屏底部那条）。
  *
  * 设计稿把它做成**满栏金条**而不是和「返回 / 跳过」并排的小按钮：
- * 它是这一屏唯一的正向行动点。右端压一枚朱砂签（「首提示 · 看视频」），
- * 红是全屏唯一的一点红 —— 和结算页的朱印同源。
+ * 它是这一屏唯一的正向行动点。
+ *
+ * 早期右端还压过一枚朱砂签（「首提示 · 看视频」），现已去掉 ——
+ * 那块红在深盘上是全屏最亮的一团，把唯一的行动点从"提 示"抢到了广告标上；
+ * 而它要表达的信息（这次提示要看完一段视频）在点下去的那一刻再说也不迟。
  */
 export function drawPlayTip(
   ctx: CanvasRenderingContext2D,
   b: Button,
   pressed: boolean,
-  badge: string | null,
 ): void {
   const dy = pressed ? 3 : 0;
   const r = 32;
   const y = b.y + dy;
 
   // 厚底边（设计稿 box-shadow 0 4px 0 #8A6B3C）
-  ctx.beginPath();
-  roundRect(ctx, b.x, y + b.h - 10, b.w, 16, 8);
+  //
+  // 圆角必须与金面**同半径**、高度也同 b.h，整块只是下移 8 —— 和首页
+  // `drawGoldCta` 一个写法。早先这里画的是 `y + h - 10 / 高 16 / 圆角 8`：
+  // 一条扁条压在按钮底下，两端的 8px 方角正好从按钮 32px 的圆弧处探出去，
+  // 在盘面上读成"按钮下面横着一根线"，非常突兀。
+  roundRect(ctx, b.x, y + 8, b.w, b.h, r);
   ctx.fillStyle = '#8A6B3C';
   ctx.fill();
 
@@ -188,32 +300,6 @@ export function drawPlayTip(
   // 设计稿的金面**没有内描边**：上亮下暗全靠那一道 180° 渐变。
   // 加 1.4px 高光边会把金条封成一个圆环（像胶囊药丸），金面反而变平
   spacedText(ctx, b.label, b.x + b.w / 2, y + b.h / 2 + 11, 30, '#2A2114', 9, 700);
-
-  if (badge) {
-    // 朱砂签是**压在金条上的一张票**，不是角标：设计稿里 91×54 CSS
-    // （`.g-tip .ad` 吃了 .g-tip 的 line-height: 48px），比按钮还高，
-    // 下沿探到按钮外面 13 CSS。做成小胶囊就退回成"标签"，这一屏就没有那一记红了
-    const fs = 17;
-    const bw = Math.max(150, trackedWidth(ctx, badge, fs, 2.04, 500, SANS_FONT) + 36);
-    const bh = 108;
-    const bx = b.x + b.w - bw - 20;
-    const by = y + 22;
-    ctx.beginPath();
-    roundRect(ctx, bx, by, bw, bh, 16);
-    ctx.fillStyle = '#C04B33';
-    ctx.fill();
-    // 印泥不匀：左上略亮
-    const sg = ctx.createLinearGradient(bx, by, bx + bw * 0.4, by + bh);
-    sg.addColorStop(0, 'rgba(214,96,66,0.85)');
-    sg.addColorStop(0.6, 'rgba(192,75,51,0)');
-    ctx.fillStyle = sg;
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,214,196,0.28)';
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-    // 票上的字是**无衬线**（设计稿 .ad 用 --sans）：小字号衬线在金红底上会糊成一团
-    sansText(ctx, badge, bx + bw / 2, by + bh / 2 + 6, fs, '#F2EEE6', 2.04, 500);
-  }
 }
 
 /**
@@ -222,109 +308,160 @@ export function drawPlayTip(
  * 不能用 `drawButton` 的黏土块：那是浅色工坊语言，深盘上一块凸起的黏土
  * 会读成"另一个世界的东西"。设计稿的次级按钮是一块**压平的墨玻璃**：
  * rgba(22,36,30,.85) + 一根冷青发丝边。
+ *
+ * 但「墨玻璃」只在暗盘上成立 —— 亮底的鸣沙上，两块近黑的胶囊是整屏最重的
+ * 东西，比「提示」还抢眼。所以底色/字色改由主题的 `ghost / ghostInk` 给：
+ * 暗盘仍是墨玻璃，亮盘是一块比墙面浅半档的沙板。不传 chrome 时保留旧值。
  */
 export function drawPlaySub(
   ctx: CanvasRenderingContext2D,
   b: Button,
   pressed: boolean,
+  chrome?: ThemeChrome,
 ): void {
   const dy = pressed ? 2 : 0;
+  const fill = chrome?.ghost ?? 'rgba(22,36,30,0.85)';
+  const ink = chrome?.ghostInk ?? '#D5E3D8';
+  ctx.save();
   ctx.beginPath();
   roundRect(ctx, b.x, b.y + dy, b.w, b.h, 28);
-  ctx.fillStyle = pressed ? 'rgba(30,46,38,0.95)' : 'rgba(22,36,30,0.85)';
+  ctx.fillStyle = fill;
   ctx.fill();
-  ctx.strokeStyle = pressed ? 'rgba(147,179,162,0.44)' : 'rgba(147,179,162,0.28)';
+  if (pressed) {
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
+    ctx.fill();
+  }
+  ctx.globalAlpha = pressed ? 0.52 : 0.30;
+  ctx.strokeStyle = ink;
   ctx.lineWidth = 2;
   ctx.stroke();
-  spacedText(ctx, b.label, b.x + b.w / 2, b.y + dy + b.h / 2 + 8, 22, '#D5E3D8', 6, 600);
+  ctx.restore();
+  spacedText(ctx, b.label, b.x + b.w / 2, b.y + dy + b.h / 2 + 8, 22, ink, 6, 600);
 }
 
 /**
- * 图例记号（六个 24 格线性图标，照设计稿 `#gLegend` 的 SVG 重画）。
- * @param r 记号的外接半径
+ * 图例记号：**照搬设计稿 `#gLegend` 的 24 单位 SVG**。
+ *
+ * 早先这里用「外接半径 r + 自造比例」画了六个近似的记号，
+ * 结果每个图标都撑到色块的 76% —— 而设计稿的 SVG 是 `viewBox="0 0 24 24"`
+ * 铺满 26px 的色块，箭头实际只占 12/24 = 50%，四周留着一圈空气。
+ * 对着看就是「我们的图例又大又挤，设计稿的又小又飘」。
+ *
+ * 所以不再近似：把画布缩到 24 单位，坐标与描边宽度逐字抄 SVG。
+ *
+ * @param sw 色块边长（设计稿 `.sw` = 26 CSS → 52）
  */
 function drawLegendMark(
   ctx: CanvasRenderingContext2D,
   kind: LegendItem['kind'],
   cx: number,
   cy: number,
-  r: number,
+  sw: number,
   ink: string,
 ): void {
+  const u = sw / 24; // 1 SVG 单位 = 多少设计像素
   ctx.save();
-  ctx.translate(cx, cy);
+  ctx.translate(cx - sw / 2, cy - sw / 2);
+  ctx.scale(u, u);
   ctx.strokeStyle = ink;
   ctx.fillStyle = ink;
-  ctx.lineWidth = Math.max(1.8, r * 0.16);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
   switch (kind) {
     case 'arrow': {
-      // 单向：一根横杆 + 箭头
+      // M5 12 H15 / M11 7 L17 12 L11 17，stroke-width 2
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(-r * 0.85, 0);
-      ctx.lineTo(r * 0.55, 0);
-      ctx.moveTo(r * 0.1, -r * 0.55);
-      ctx.lineTo(r * 0.8, 0);
-      ctx.lineTo(r * 0.1, r * 0.55);
+      ctx.moveTo(5, 12);
+      ctx.lineTo(15, 12);
+      ctx.moveTo(11, 7);
+      ctx.lineTo(17, 12);
+      ctx.lineTo(11, 17);
       ctx.stroke();
       break;
     }
     case 'star': {
+      // 纯填充的十点星（fill 无 stroke）
+      const pts: Array<[number, number]> = [
+        [12, 4], [14, 10], [20, 10], [15, 13.6], [17, 20],
+        [12, 16.2], [7, 20], [9, 13.6], [4, 10], [10, 10],
+      ];
       ctx.beginPath();
-      for (let i = 0; i < 10; i++) {
-        const a = -Math.PI / 2 + (i * Math.PI) / 5;
-        const rr = i % 2 === 0 ? r : r * 0.44;
-        const px = Math.cos(a) * rr;
-        const py = Math.sin(a) * rr;
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
+      pts.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
       ctx.closePath();
       ctx.fill();
       break;
     }
     case 'key': {
+      // circle(9,9,3) / M11 11 L17 17 / M14.6 14.6 L16.6 12.6，stroke-width 1.8
+      ctx.lineWidth = 1.8;
       ctx.beginPath();
-      ctx.arc(-r * 0.3, -r * 0.3, r * 0.38, 0, Math.PI * 2);
+      ctx.arc(9, 9, 3, 0, Math.PI * 2);
       ctx.stroke();
       ctx.beginPath();
-      ctx.moveTo(-r * 0.02, -r * 0.02);
-      ctx.lineTo(r * 0.72, r * 0.72);
-      ctx.moveTo(r * 0.42, r * 0.42);
-      ctx.lineTo(r * 0.68, r * 0.16);
+      ctx.moveTo(11, 11);
+      ctx.lineTo(17, 17);
+      ctx.moveTo(14.6, 14.6);
+      ctx.lineTo(16.6, 12.6);
       ctx.stroke();
       break;
     }
     case 'gate': {
-      // 门：一块立起来的板 + 一点门把
+      // rect(7,5,10,14,rx1.5) + circle(14,12,1)，stroke-width 1.5
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      roundRect(ctx, -r * 0.5, -r * 0.75, r, r * 1.5, r * 0.14);
+      roundRect(ctx, 7, 5, 10, 14, 1.5);
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(r * 0.16, 0, r * 0.11, 0, Math.PI * 2);
+      ctx.arc(14, 12, 1, 0, Math.PI * 2);
       ctx.fill();
       break;
     }
     case 'portal': {
+      // circle(10,12,4.6) + circle(15,12,4.6)，stroke-width 1.5
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(-r * 0.28, 0, r * 0.52, 0, Math.PI * 2);
-      ctx.moveTo(r * 0.8, 0);
-      ctx.arc(r * 0.28, 0, r * 0.52, 0, Math.PI * 2);
+      ctx.arc(10, 12, 4.6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(15, 12, 4.6, 0, Math.PI * 2);
       ctx.stroke();
       break;
     }
     case 'ice': {
-      // 冰：两个折角（裂面）
+      // M6 16 L10 8 L14 16 / M8.2 13 H11.8 / M15 16 L18 8，stroke-width 1.6
+      ctx.lineWidth = 1.6;
       ctx.beginPath();
-      ctx.moveTo(-r * 0.8, r * 0.6);
-      ctx.lineTo(-r * 0.28, -r * 0.62);
-      ctx.lineTo(r * 0.26, r * 0.6);
-      ctx.moveTo(-r * 0.44, r * 0.16);
-      ctx.lineTo(r * 0.0, r * 0.16);
-      ctx.moveTo(r * 0.34, r * 0.6);
-      ctx.lineTo(r * 0.78, -r * 0.62);
+      ctx.moveTo(6, 16);
+      ctx.lineTo(10, 8);
+      ctx.lineTo(14, 16);
+      ctx.moveTo(8.2, 13);
+      ctx.lineTo(11.8, 13);
+      ctx.moveTo(15, 16);
+      ctx.lineTo(18, 8);
+      ctx.stroke();
+      break;
+    }
+    case 'rock': {
+      // 墨石：一块带折面的碎石（外轮廓填充 + 一条受光的棱线）
+      ctx.beginPath();
+      ctx.moveTo(7.2, 8.4);
+      ctx.lineTo(13.6, 6.2);
+      ctx.lineTo(18.4, 10.2);
+      ctx.lineTo(17.4, 16.6);
+      ctx.lineTo(11.2, 18.6);
+      ctx.lineTo(6.2, 14.6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(158,186,168,0.55)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(7.2, 8.4);
+      ctx.lineTo(13.6, 6.2);
+      ctx.lineTo(18.4, 10.2);
+      ctx.moveTo(13.6, 6.2);
+      ctx.lineTo(11.6, 12.2);
       ctx.stroke();
       break;
     }
@@ -334,7 +471,7 @@ function drawLegendMark(
 
 /** 图例的一条：色块 + 名称。 */
 export interface LegendItem {
-  kind: 'arrow' | 'star' | 'key' | 'gate' | 'portal' | 'ice';
+  kind: 'arrow' | 'star' | 'key' | 'gate' | 'portal' | 'ice' | 'rock';
   label: string;
   bg: string;
   ink: string;
@@ -343,14 +480,25 @@ export interface LegendItem {
 /**
  * 盘面机制图例（设计稿 03 屏「单向门 / 星屑 序 / 钥匙 / 门 / 传送门 / 冰面」）。
  *
- * 只画**盘上真的有**的机制：一关里没有传送门却画出传送门，
- * 玩家会去盘上找它，找不到就开始怀疑规则。
+ * 固定列出**全部**机制（含墨石），不再按本关实际出现的过滤。
+ * 早先只列盘上真有的，理由是"没有传送门的关里画传送门，玩家会去找它"；
+ * 但实际读法是反的：这一行在盘下是**世界观的一部分**——它告诉玩家
+ * "这个世界有这七种东西"，而每一关只是其中几样登场。逐关变长的图例
+ * 反而像一排会自己增减的按钮，玩家既记不住位置，也读不出这是个体系。
  */
 export function drawPlayLegend(
   ctx: CanvasRenderingContext2D,
   items: LegendItem[],
   top: number,
   chrome?: ThemeChrome,
+  /**
+   * 主题自己的记号。
+   *
+   * 图例是"这个世界有哪几种东西"，记号必须**和盘面同一个形状** ——
+   * 鸣沙的冰砖是六边晶，天青的冰面是一道斜坡；用同一笔画，
+   * 至少有一边是错的（鸣沙的蓝片上，那道斜坡实测读成字母「A/」）。
+   */
+  marks?: Partial<Record<LegendItem['kind'], (c: CanvasRenderingContext2D, cx: number, cy: number, sw: number, ink: string) => void>>,
 ): void {
   // 名称色跟主题走：设计稿是 `--i500`（#7A7468），亮色主题上这行会读不见
   const label = chrome?.inkDim ?? (chrome ? chrome.inkSoft : '#7A7468');
@@ -371,7 +519,9 @@ export function drawPlayLegend(
     ctx.fillStyle = it.bg;
     ctx.fill();
 
-    drawLegendMark(ctx, it.kind, x + sw / 2, top + sw / 2, sw * 0.46, it.ink);
+    const mark = marks?.[it.kind];
+    if (mark) mark(ctx, x + sw / 2, top + sw / 2, sw, it.ink);
+    else drawLegendMark(ctx, it.kind, x + sw / 2, top + sw / 2, sw, it.ink);
 
     // 名称：无衬线 8.5 CSS / 字距 .12em / --i500（和底注同一档）
     sansText(ctx, it.label, x + sw / 2, top + sw + 28, 17, label, 2.04, 300);
@@ -432,8 +582,11 @@ export function drawHud(
   const rightX = DESIGN_W - pad;
   const gold = chrome ? chrome.fill : '#D4AF6A';
   // 关号比「关」亮一档（定稿 g200/g300 的层级）。不能用 primaryInk ——
-  // 那是金底上的暗字，压在暗底上会读成一块脏棕
-  const goldHi = '#F2DCA8';
+  // 那是金底上的暗字，压在暗底上会读成一块脏棕。
+  //
+  // 亮色主题（鸣沙）必须自己给一个**更暗**的强调色：同一个 #F2DCA8
+  // 压在土壁上等于没写（`inkStrong` 就是为这件事开的）
+  const goldHi = chrome?.inkStrong ?? '#F2DCA8';
   // 设计稿 `.g-lv` 是 **300**：关号是铜牌上的铭文，细体才有刻的味儿；
   // 加粗会把它变成"还能点的按钮"
   const lvW = trackedWidth(ctx, lv, 52, 3, 300);
@@ -921,6 +1074,14 @@ export function drawResult(
   // 金主按钮：渐变金面 + 8px 厚底边 + 微光
   {
     const b = b1;
+    // 厚底边先画、金面后压：圆角必须与面同半径、高度同 b.h，只下移 8。
+    // 早先是 `y + h - 8 / 高 12 / 圆角 6` 的一条扁条，两端方角从 32px 的
+    // 圆弧里探出来，成了"按钮下面横着一根线"（和「提示」按钮同一个错）
+    ctx.beginPath();
+    roundRect(ctx, b.x, b.y + 8, b.w, b.h, 32);
+    ctx.fillStyle = '#8A6B3C';
+    ctx.fill();
+
     ctx.save();
     ctx.shadowColor = 'rgba(212,175,106,0.22)';
     ctx.shadowBlur = 26;
@@ -934,11 +1095,6 @@ export function drawResult(
     ctx.fillStyle = g;
     ctx.fill();
     ctx.restore();
-    // 厚底边
-    ctx.beginPath();
-    roundRect(ctx, b.x, b.y + b.h - 8, b.w, 12, 6);
-    ctx.fillStyle = '#8A6B3C';
-    ctx.fill();
     spacedText(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2 + 11, 30, '#2A2114', 9, 700);
   }
   // 幽灵对按钮

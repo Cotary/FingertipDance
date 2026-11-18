@@ -73,6 +73,31 @@ export interface SoundNote {
   lp?: number;
   /** 高通截止（Hz） */
   hp?: number;
+  /**
+   * 带通中心频率（Hz）。
+   *
+   * 给了它就**取代** `hp`/`lp`：砂纸、石屑、掐沙这一族声音的全部性格都在
+   * "一条窄带"上。用 hp+lp 夹出来的只是一片宽噪声，听着像"风"，
+   * 而它要的是"砂"。
+   */
+  bp?: number;
+  /** 带通扫频终点（Hz）；省略 = 定频 */
+  bpTo?: number;
+  /**
+   * 扫频（`to` / `bpTo`）走完要多久（ms）。省略 = `dur × 0.85`。
+   *
+   * 绝大多数音里"扫频和包络同步"是对的：砂从指间磨过去，亮度跟着声音一起消失。
+   * 但**石章**不是 —— 设计稿 `playStamp` 里
+   * `112 → 58` 的扫频 **90ms 就走完**，而增益衰减到 **220ms**。
+   *
+   * 这两件事本来是分开的：音高"砸下去"是瞬间的（墙被撞了），
+   * 余响"收干净"是之后的事（墙在回响）。绑在一起会让低频
+   * 一路滑到 58Hz 才收尾，听感变成"一个下滑的长音"，
+   * 而设计稿要的是"一记闷响然后静下来"。
+   */
+  sweep?: number;
+  /** 带通 Q（默认 1）。Q 越高越"尖"，4 以上就变成口哨了 */
+  q?: number;
   /** 送入混响的比例 0..1；省略 = 0.3 */
   wet?: number;
   /**
@@ -107,6 +132,30 @@ export interface ThemeVoice {
   tap(): SoundNote[];
   /** 断线 */
   break(): SoundNote[];
+  /**
+   * 无效落子（点石头 / 没钥匙开门 / 逆着单向门走）。
+   *
+   * 不实现就退化成引擎里的一记通用闷响 —— 这一声必须**比落子低、比断线短**：
+   * 它是"不行"，不是"你错了"。断线（break）才是要付代价的那个。
+   */
+  blocked?(): SoundNote[];
+  /**
+   * 铺满级联的**每一粒**（通关波次，48ms 一粒）。
+   *
+   * 设计稿：`cells.forEach((c,i) => setTimeout(() => sfx('grind', 0.35), i*48))`
+   * —— 每粒都是「落子」的压缩版，音量压到三分之一。
+   * 这一族音色（不实现 = 级联只有画面没有声）只给"东西真的会落下去"的主题：
+   * 玻璃不会发出沙粒声，硬加一层就是贴音效。
+   */
+  settle?(): SoundNote[];
+  /**
+   * 「一声磬」：铺满末格 / 开局揭幕末格那一下。
+   *
+   * 和 `win` 分开，因为这两件事只共用**一半**：磬都是同一记玉磬，
+   * 但通关还要接"印落纸"。进场不能顺带砸一枚印 —— 那是"结束了"的声音，
+   * 而开局恰恰是"开始了"。
+   */
+  chime?(): SoundNote[];
   /** 通关。`perfect` = 一次没撤销 */
   win(perfect: boolean): SoundNote[];
   /** 解锁 */
@@ -729,9 +778,6 @@ const KINTSUGI: ThemeVoice = {
 
 // ── 秘色天青 ────────────────────────────────────────────────
 
-/** 宫五声。雅乐不需要意外，和金线同一族——但音色把它们分开了。 */
-const MISE_SCALE = [0, 2, 4, 7, 9] as const;
-
 /**
  * 秘色天青：瓷的清 + 磬的余。
  *
@@ -739,26 +785,67 @@ const MISE_SCALE = [0, 2, 4, 7, 9] as const;
  * 主能量在中高频，三角波起音 1ms（玻璃的硬），泛音比 1.35 / 1.81
  * （实测青瓷敲击的非谐成分），通关才放一记玉磬的长余韵。
  */
+/**
+ * 秘色天青：瓷的清 + 磬的余。
+ *
+ * ## 五声照 `2026-11-16-秘色天青-图标动效音效.html` 逐条对
+ *
+ * 那是这一套的**听觉定稿**，五个音各自有明确的频谱纪律：
+ *
+ * | 声 | 动作 | 配方 |
+ * |---|---|---|
+ * | 瓷轻叩 | 落子 | tri 2350/3170/4260 **三重泛音** 90ms + 4.2kHz 高通噪点 |
+ * | 金石细响 | 连径 | sine 1760/2640/3960/5280 四层 + bp 5.2k Q1.6 |
+ * | 玉磬余韵 | 铺满末格 | 524 × 1/2.76/5.40/8.93，1.45s 自然散 |
+ * | 印落纸 | 盖印 | sine 110→55 110ms + 520Hz 低通纸声 + 2.4k 摩擦 |
+ * | 釉息轻点 | 按钮 | tri 2900 28ms |
+ *
+ * ## 和旧版差在哪
+ *
+ * 旧版是"一个音阶往上爬"（scaleAt 784 起，`step` 每步换音高）。
+ * 设计稿不要音阶 —— **每次落子都是同一声**，只有频率微抖 ±5%。
+ * 这不一样：音阶是"旋律"，瓷叩是"材质"。连走十步时，旋律会变成一段
+ * 谁也没写的曲子；而同一声微抖才是"这十下敲的是同一只碗"。
+ *
+ * 所以 `step` 现在落在**同一个音高**上，靠 `n` 只调一点亮度。
+ */
+/** 玉磬的四层泛音。`chime` 与 `win` 共用同一记磬 —— 只写一次。 */
+const MISE_CHIME: SoundNote[] = [
+  { wave: 'sine', freq: 524, dur: 1450, gain: 0.170, attack: 10, wet: 0.30 },
+  { wave: 'sine', freq: 524 * 2.76, dur: 950, gain: 0.085, attack: 10, wet: 0.26 },
+  { wave: 'sine', freq: 524 * 5.40, dur: 550, gain: 0.045, attack: 8, wet: 0.22 },
+  { wave: 'sine', freq: 524 * 8.93, dur: 350, gain: 0.022, attack: 6, wet: 0.20 },
+];
+
 const MISE: ThemeVoice = {
   id: 'mise',
   name: '秘色天青',
   desc: '瓷叩玉磬 · 1.2s 展柜',
   space: { decay: 1.2, damp: 5200, wet: 0.16 },
   step: (n) => {
-    const f = scaleAt(784, MISE_SCALE, n, 1);
+    // 设计稿：2350 / 3170 / 4260 三个**三角波泛音** + 4.2k 以上的噪点。
+    // 三次泛音不是谐波（2350×1.35=3172、×1.81=4253）—— 青瓷的实测非谐成分，
+    // 整数比会变成"电子琴的哆"，非整数才是"瓷"。
+    //
+    // `n` 只让第一层微微变亮（每 8 步一个台阶，封顶 4%）：
+    // 连击时耳朵要听出"越走越顺"，但不能真的变成旋律。
+    const lift = 1 + Math.min(0.04, n * 0.005);
     return [
-      // 瓷体：三角波。正弦太暖（那是金缮的瓷），三角带棱才是「叩」
-      { wave: 'triangle', freq: f, dur: 95, gain: 0.105, attack: 1, hp: 220, wet: 0.13 },
-      // 非谐泛音两层：1.35 / 1.81 —— 决定「这是青瓷不是玻璃」
-      { wave: 'triangle', freq: f * 1.35, dur: 72, gain: 0.034, attack: 1, wet: 0.10 },
-      { wave: 'triangle', freq: f * 1.81, dur: 52, gain: 0.021, attack: 1, wet: 0.08 },
-      // 叩击的那一瞬
-      { wave: 'noise', freq: 0, dur: 8, gain: 0.036, attack: 1, hp: 5200, wet: 0.08 },
+      { wave: 'triangle', freq: 2350 * lift, dur: 90, gain: 0.13, attack: 2, wet: 0.13 },
+      { wave: 'triangle', freq: 3170 * lift, dur: 90, gain: 0.060, attack: 2, wet: 0.12 },
+      { wave: 'triangle', freq: 4260 * lift, dur: 90, gain: 0.025, attack: 2, wet: 0.10 },
+      // 叩击的接触帧：4.2k 以上的一粒噪点，30ms
+      { wave: 'noise', freq: 0, dur: 30, gain: 0.050, attack: 1, hp: 4200, wet: 0.08 },
     ];
   },
-  tap: () => [
-    { wave: 'triangle', freq: 1174, dur: 42, gain: 0.052, attack: 1, hp: 300, wet: 0.08 },
-    { wave: 'noise', freq: 0, dur: 7, gain: 0.028, attack: 1, hp: 5600, wet: 0.06 },
+  // 按钮：2900Hz 三角波 28ms。两片瓷轻碰的一点声音。
+  // **禁止**电子哔声、禁止水滴音 —— 这个音只负责"我收到了"
+  tap: () => [{ wave: 'triangle', freq: 2900, dur: 28, gain: 0.12, attack: 1, wet: 0.10 }],
+  // 铺满逐粒：瓷叩的 0.3 压缩版（设计稿 `sfx('tap', 0.3)`）
+  settle: () => [
+    { wave: 'triangle', freq: 2350, dur: 60, gain: 0.042, attack: 2, wet: 0.12 },
+    { wave: 'triangle', freq: 3170, dur: 48, gain: 0.020, attack: 2, wet: 0.10 },
+    { wave: 'noise', freq: 0, dur: 16, gain: 0.016, attack: 1, hp: 4200, wet: 0.06 },
   ],
   break: () => [
     // 瓷裂：宽噪一记 + 两片碎瓷的下落音
@@ -766,29 +853,188 @@ const MISE: ThemeVoice = {
     { wave: 'triangle', freq: 1568, to: 523, dur: 160, gain: 0.044, attack: 1, wet: 0.12 },
     { wave: 'triangle', freq: 2093, to: 784, dur: 120, gain: 0.030, attack: 1, delay: 40, wet: 0.12 },
   ],
+  // 撞在墨石上：一记被闷住的低叩，没有余韵。
+  // 高频一概不给 —— 高频＝"清脆＝可以" ，而这一下恰恰是"不行"
+  blocked: () => [
+    { wave: 'triangle', freq: 233, to: 174, dur: 90, gain: 0.058, attack: 1, lp: 900, wet: 0.06 },
+    { wave: 'noise', freq: 0, dur: 34, gain: 0.030, attack: 1, lp: 700, wet: 0.05 },
+  ],
+  /**
+   * 通关：玉磬 → 印落纸。
+   *
+   * 设计稿的两声是**串起来**的（`playChime()` 在 `N*48+120`，`playStamp()`
+   * 在落印那一刻，`+175`）。这里用 `delay` 一次排好：
+   * 磬在 0，印在 175 —— 与 `drawSealStamp` 的 55% 触底同帧。
+   */
+  // 玉磬：524Hz 的**非谐泛音钟**（×1 / 2.76 / 5.40 / 8.93）。
+  // 四层各自衰减 1.45 / 0.95 / 0.55 / 0.35 —— 高泛音先散，尾巴只剩基音。
+  // 「尾音是留白，不加任何和声垫」
+  chime: () => MISE_CHIME,
   win: (perfect) => [
-    // 玉磬余韵：非谐泛音列 1 / 2.76 / 5.4 / 8.93，长衰减是留白
-    { wave: 'sine', freq: 524, dur: 1450, gain: 0.115, attack: 1, wet: 0.30 },
-    { wave: 'sine', freq: 524 * 2.76, dur: 520, gain: 0.034, attack: 1, wet: 0.24 },
-    { wave: 'sine', freq: 524 * 5.4, dur: 260, gain: 0.018, attack: 1, wet: 0.20 },
-    // 一气呵成：印落纸 —— 全音色里唯一一记低频
+    ...MISE_CHIME,
+    // 印落纸：110→55Hz 下滑 110ms + 520 低通纸声 + 2.4k 的纸面摩擦。
+    // 低频一击收干净，**没有任何欢庆尾音** —— 它是"落款"，不是"胜利"
+    { wave: 'sine', freq: 110, to: 55, dur: 300, gain: 0.240, attack: 4, lp: 420, wet: 0.12, delay: 175 },
+    { wave: 'noise', freq: 0, dur: 130, gain: 0.140, attack: 2, lp: 520, wet: 0.08, delay: 175 },
+    { wave: 'noise', freq: 0, dur: 70, gain: 0.045, attack: 4, hp: 2400, wet: 0.06, delay: 200 },
+    // 一气呵成：磬的最高泛音多一记（8.93 那一层加亮），
+    // 只改音色不改音高 —— 奖励"干净"不该是另一段旋律
     ...(perfect
-      ? [{ wave: 'sine' as Wave, freq: 110, to: 58, dur: 210, gain: 0.058, attack: 2, lp: 420, wet: 0.12 }]
+      ? [{ wave: 'sine' as Wave, freq: 524 * 8.93, dur: 420, gain: 0.030, attack: 4, wet: 0.28 }]
       : []),
   ],
   unlock: () => [
-    // 金石细响：描金笔划过瓷面的一丝亮
-    { wave: 'triangle', freq: 1046, dur: 110, gain: 0.062, attack: 1, wet: 0.12 },
-    { wave: 'triangle', freq: 1318, dur: 110, gain: 0.058, attack: 1, delay: 70, wet: 0.14 },
-    { wave: 'triangle', freq: 1760, dur: 220, gain: 0.052, attack: 1, delay: 140, wet: 0.18 },
-    { wave: 'noise', freq: 0, dur: 10, gain: 0.028, attack: 1, hp: 5200, wet: 0.08 },
+    // 金石细响：描金笔划过瓷面的一丝亮（1760 / 2640 / 3960 / 5280 四层 + bp 5.2k）
+    { wave: 'sine', freq: 1760, dur: 200, gain: 0.090, attack: 3, wet: 0.14 },
+    { wave: 'sine', freq: 2640, dur: 165, gain: 0.055, attack: 3, wet: 0.13 },
+    { wave: 'sine', freq: 3960, dur: 130, gain: 0.032, attack: 3, wet: 0.12 },
+    { wave: 'sine', freq: 5280, dur: 95, gain: 0.018, attack: 3, wet: 0.11 },
+    { wave: 'noise', freq: 0, dur: 220, gain: 0.038, attack: 12, bp: 5200, q: 1.6, wet: 0.10 },
   ],
   signature: () => [
     // 世界观一秒说完：一叩 + 一磬
-    { wave: 'triangle', freq: 784, dur: 95, gain: 0.095, attack: 1, hp: 220, wet: 0.12 },
-    { wave: 'noise', freq: 0, dur: 8, gain: 0.032, attack: 1, hp: 5200, wet: 0.08 },
-    { wave: 'sine', freq: 524, dur: 700, gain: 0.082, attack: 1, delay: 130, wet: 0.28 },
-    { wave: 'sine', freq: 524 * 2.76, dur: 240, gain: 0.022, attack: 1, delay: 130, wet: 0.22 },
+    { wave: 'triangle', freq: 2350, dur: 90, gain: 0.120, attack: 2, wet: 0.12 },
+    { wave: 'triangle', freq: 3170, dur: 80, gain: 0.055, attack: 2, wet: 0.11 },
+    { wave: 'noise', freq: 0, dur: 30, gain: 0.045, attack: 1, hp: 4200, wet: 0.08 },
+    { wave: 'sine', freq: 524, dur: 700, gain: 0.100, attack: 8, delay: 130, wet: 0.28 },
+    { wave: 'sine', freq: 524 * 2.76, dur: 420, gain: 0.050, attack: 8, delay: 130, wet: 0.24 },
+  ],
+};
+
+// ── 鸣沙丹青 ────────────────────────────────────────────────
+
+/**
+ * 羽五声，而且压在低音区。
+ *
+ * 土埙的调式不能往上跑 —— 一爬八度就变成笛子，"壁"立刻变"竹"。
+ * 所以主音取 D3（147），`octaveSpan` 只给一个八度。
+ */
+const SAND_SCALE = [0, 3, 5, 7, 10] as const;
+
+/**
+ * 鸣沙丹青：土的钝 + 石的沉。
+ *
+ * ## 和天青的关系
+ *
+ * 同一句话（短促、克制、不拖泥），换掉了**材质**：天青主能量在中高频
+ * （瓷是硬的，敲下去有一串亮泛音），这一套把主能量全部压到中低频，
+ * 高频只留一点噪声颗粒做"砂"。所以两套放在一起听，是"瓷"和"土"的差别，
+ * 而不是"高一点"和"低一点"的差别。
+ *
+ * ## 五声对应五个动作（照设计稿）
+ *
+ * | 动作 | 声音 | 做法 |
+ * |---|---|---|
+ * | 落子 | 矿物研磨 | 带通噪声（hp 780 / lp 2500 夹出中频带）+ 160→95 的三角低钝垫 |
+ * | 连径 | 沥粉细响 | 3180 / 4720 双三角 —— 全主题**唯一**允许到 4kHz 以上的声 |
+ * | 铺满 | 土埙一记 | 196 正弦 + 194.6 微失谐（气感）+ 极弱二倍频，0.95s |
+ * | 盖印 | 石章落壁 | 112→58 一记 + 石屑 + 300Hz 壁体共鸣 |
+ * | 按钮 | 掐起一撮沙 | 1150 带通噪声 35ms |
+ *
+ * 混响是**石壁**：1.6s、阻尼 2600（比展柜暗一档）—— 土墙吸高频，
+ * 同一个音高在天青里是"叩在瓷上"，在这里是"砸进墙里"。
+ */
+const MINGSHA: ThemeVoice = {
+  id: 'mingsha',
+  name: '鸣沙丹青',
+  desc: '土埙石章 · 1.6s 石壁',
+  space: { decay: 1.6, damp: 2600, wet: 0.20 },
+  step: (n) => {
+    const f = scaleAt(147, SAND_SCALE, n, 1);
+    return [
+      // 矿物研磨：**带通扫落** 2400→850（设计稿 `playGrind`）。
+      // 这一条扫频就是全部的性格 —— 砂从指间磨过去，亮度是往下掉的；
+      // 用固定 hp+lp 夹出来的"中频带"听着像一阵风，不像砂
+      // `sweep: 85` —— 设计稿 `bp.frequency.exponentialRampToValueAtTime(850, t + 0.085)`。
+      // 包络 90ms、扫频 85ms：最后 5ms 是尾巴，已经在 850Hz 附近稳住了
+      { wave: 'noise', freq: 0, dur: 90, gain: 0.085, attack: 3, bp: 2400, bpTo: 850, q: 1.1, wet: 0.10, sweep: 85 },
+      // 低钝垫：160→95 的一记，落地感就靠它（设计稿是同一条三角波）
+      // 低钝垫 `160→95 @ +0.07`（设计稿），包络 80ms
+      { wave: 'triangle', freq: 160, to: 95, dur: 80, gain: 0.045, attack: 3, lp: 900, wet: 0.08, sweep: 70 },
+      // 极轻的一层土音：只为了让"第几步"有反馈，不许变成旋律
+      { wave: 'sine', freq: f, dur: 110, gain: 0.018, attack: 4, lp: 1100, wet: 0.10 },
+    ];
+  },
+  tap: () => [
+    // 掐起一撮沙：**1150Hz 带通** 35ms（设计稿 `playTap`，Q 1.4）
+    { wave: 'noise', freq: 0, dur: 35, gain: 0.042, attack: 2, bp: 1150, q: 1.4, wet: 0.06 },
+  ],
+  break: () => [
+    // 墙皮崩落：一片宽噪 + 一记闷到底的低音。没有"碎瓷"那种高频
+    { wave: 'noise', freq: 0, dur: 100, gain: 0.058, attack: 2, hp: 500, lp: 3200, wet: 0.14 },
+    { wave: 'triangle', freq: 190, to: 96, dur: 150, gain: 0.048, attack: 2, lp: 700, wet: 0.10 },
+  ],
+  // 撞在石障上：比落子低、比断线短 —— 是"不行"，不是"你错了"
+  blocked: () => [
+    { wave: 'triangle', freq: 150, to: 100, dur: 80, gain: 0.052, attack: 2, lp: 560, wet: 0.05 },
+    { wave: 'noise', freq: 0, dur: 30, gain: 0.026, attack: 2, lp: 600, wet: 0.05 },
+  ],
+  // 铺满级联的每一粒：落子那一下的压缩版（设计稿 `sfx('grind', 0.35)`）。
+  // **不带音高层** —— 级联是"一盘沙同时落定"，不是一段旋律；
+  // 48ms 一粒、每粒 80ms，前后必然叠在一起，叠出来的就是一片沙雨
+  settle: () => [
+    { wave: 'noise', freq: 0, dur: 80, gain: 0.031, attack: 2, bp: 2600, bpTo: 1000, q: 1.2, wet: 0.06, sweep: 68 },
+    { wave: 'triangle', freq: 150, to: 100, dur: 62, gain: 0.016, attack: 2, lp: 720, wet: 0.04 },
+  ],
+  /**
+   * 一记**土埙**（铺满末粒 / 开局揭幕末格）。
+   *
+   * 天青那一声是玉磬，鸣沙"玉磬位换土埙"（设计稿 TOIL 表原话）——
+   * 同一个位置、同一个功能（"东西都落定了"），但换成了这一套的材质。
+   * 只给埙，不带石章：石章是"盖住这段路"，那是 `win` 的后半段。
+   */
+  chime: () => [
+    // 196 / 194.6 等幅 —— 1.4Hz 拍频就是"埙的气"
+    { wave: 'sine', freq: 196, dur: 950, gain: 0.105, attack: 12, lp: 1400, wet: 0.26 },
+    { wave: 'sine', freq: 194.6, dur: 950, gain: 0.100, attack: 14, lp: 1200, wet: 0.26 },
+    // 极弱二倍频
+    { wave: 'sine', freq: 392.8, dur: 300, gain: 0.014, attack: 8, lp: 1600, wet: 0.20 },
+  ],
+  win: (perfect) => [
+    // 铺满：土埙。**两条正弦等幅**（196 / 194.6）—— 设计稿里它们接在同一个
+    // 增益上，1.4Hz 的拍频就是"埙的气"。副音压到一半就拍不起来了
+    { wave: 'sine', freq: 196, dur: 950, gain: 0.105, attack: 12, lp: 1400, wet: 0.26 },
+    { wave: 'sine', freq: 194.6, dur: 950, gain: 0.100, attack: 14, lp: 1200, wet: 0.26 },
+    // 二倍频极弱（设计稿 0.05 的支路）
+    { wave: 'sine', freq: 392.8, dur: 300, gain: 0.014, attack: 8, lp: 1600, wet: 0.20 },
+    // 620Hz 低通气声（见 `chime` 的说明）—— 没有它这声是电子音，不是埙
+    { wave: 'noise', freq: 0, dur: 700, gain: 0.020, attack: 10, lp: 620, wet: 0.16 },
+    // 盖印：石章落壁。112→58 一记 + 石屑带通 + 300Hz 壁体共鸣，收得干干净净。
+    //
+    // 175 而不是 130：这一声必须落在**印砸到墙上的那一帧**。石章 320ms 的
+    // 落体在 55%（176ms）触底（见 `drawSealStamp`），墙体抖动也定在 175 ——
+    // 早 45ms 会被读成"印还没落稳就响了"
+    // `sweep: 90` —— 设计稿 `playStamp` 的 `112→58Hz exponentialRamp @ +0.09`。
+    // 不写 sweep 时扫频会跟着包络走 187ms（220×0.85），听感变成"下滑的长音"；
+    // 90ms 才是"砸下去"——音高瞬间到底，之后 220ms 只是余响在散。
+    { wave: 'sine', freq: 112, to: 58, dur: 220, gain: 0.075, attack: 3, lp: 420, wet: 0.12, delay: 175, sweep: 90 },
+    // 石屑 `1400→420 @ +0.12`（设计稿），包络 160ms
+    { wave: 'noise', freq: 0, dur: 160, gain: 0.040, attack: 3, bp: 1400, bpTo: 420, q: 0.9, wet: 0.10, delay: 175, sweep: 120 },
+    { wave: 'noise', freq: 0, dur: 300, gain: 0.026, attack: 4, lp: 300, wet: 0.14, delay: 181 },
+    // 一气呵成：多一记高八度的土音，只多这一层
+    ...(perfect
+      ? [{ wave: 'sine' as Wave, freq: 392, dur: 420, gain: 0.026, attack: 6, lp: 1600, wet: 0.22, delay: 300 }]
+      : []),
+  ],
+  unlock: () => [
+    // 连径 · 沥粉细响：金泥从笔尖挤出来的一丝亮（全主题唯一允许的 4kHz 以上）
+    //
+    // 三个数值照设计稿 `playGilt` 逐个对：
+    // - 3180 主音 `exponentialRampTo 0.001 @ +55ms`，但 `o.stop(t + 70)` ——
+    //   设计稿是"衰减到 55、振膜留到 70"，这里 60 是折中（见下）
+    // - 4720 副音同样 55ms，**晚 12ms 起**（`o.start(t + i*0.012)`）——
+    //   这一错峰是"挤压"的读法：两片金箔不是同时亮，是被一起挤出来的
+    // - 高通噪 `hp 5200` 的增益衰减到 **75ms**（`exponentialRampTo 0.001 @ +0.075`），
+    //   早先写 24ms —— 短到在手机扬声器上只剩一声"嗒"，那一丝"亮"就没了
+    { wave: 'triangle', freq: 3180, dur: 60, gain: 0.030, attack: 1, wet: 0.10 },
+    { wave: 'triangle', freq: 4720, dur: 55, gain: 0.020, attack: 1, delay: 12, wet: 0.10 },
+    { wave: 'noise', freq: 0, dur: 75, gain: 0.016, attack: 1, hp: 5200, wet: 0.06, delay: 2 },
+  ],
+  signature: () => [
+    // 世界观一秒说完：一磨 + 一埙
+    { wave: 'noise', freq: 0, dur: 90, gain: 0.080, attack: 2, bp: 2400, bpTo: 850, q: 1.1, wet: 0.10 },
+    { wave: 'triangle', freq: 160, to: 95, dur: 80, gain: 0.044, attack: 3, lp: 900, wet: 0.08 },
+    { wave: 'sine', freq: 196, dur: 560, gain: 0.085, attack: 10, lp: 1400, wet: 0.24, delay: 130 },
   ],
 };
 
@@ -796,7 +1042,7 @@ const MISE: ThemeVoice = {
 
 /** 全部音色。顺序无关，索引靠 `VOICE_MAP`。 */
 export const VOICES: readonly ThemeVoice[] = [
-  CLAY, MISE, INK, GLASS, PIXEL, ORBIT, NEON, BURN, GILDED, ABYSS, KINTSUGI,
+  CLAY, MISE, MINGSHA, INK, GLASS, PIXEL, ORBIT, NEON, BURN, GILDED, ABYSS, KINTSUGI,
 ];
 
 const VOICE_MAP = new Map(VOICES.map((v) => [v.id, v]));

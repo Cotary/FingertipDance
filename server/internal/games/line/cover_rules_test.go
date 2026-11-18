@@ -152,7 +152,7 @@ func TestCoverIceSlide(t *testing.T) {
 
 	visited := make([]bool, 3)
 	visited[0] = true
-	consumed := coverStepMove(rs, 0, CoverDirRight, visited, 0)
+	consumed := coverStepMove(rs, 0, CoverDirRight, visited, 0, 0)
 	if len(consumed) != 2 {
 		t.Fatalf("滑行消耗 %d 格，期望 2（冰块 + 终点）", len(consumed))
 	}
@@ -163,7 +163,7 @@ func TestCoverIceSlide(t *testing.T) {
 	// 从 2 向左走进 1（冰块）→ 沿左滑 → 吃掉 0
 	visited2 := make([]bool, 3)
 	visited2[2] = true
-	consumed2 := coverStepMove(rs, 2, CoverDirLeft, visited2, 0)
+	consumed2 := coverStepMove(rs, 2, CoverDirLeft, visited2, 0, 0)
 	if len(consumed2) != 2 || consumed2[0] != 1 || consumed2[1] != 0 {
 		t.Fatalf("反向滑行序列 = %v，期望 [1 0]", consumed2)
 	}
@@ -185,12 +185,12 @@ func TestCoverOnewayDirection(t *testing.T) {
 	visited := make([]bool, 4)
 
 	// 从格 1（单向门）向上离开 → 箭头朝右，不允许
-	if coverStepMove(rs, 1, CoverDirUp, visited, 0) != nil {
+	if coverStepMove(rs, 1, CoverDirUp, visited, 0, 0) != nil {
 		t.Fatal("逆向离开单向门应被拒绝")
 	}
 	// 从格 1 向右离开 → 箭头朝右，允许（但格 1 在最右列，没有右邻居）
 	// 所以用格 0 检验：从格 0 向右进入格 1 是允许的（进入不看箭头）
-	if coverStepMove(rs, 0, CoverDirRight, visited, 0) == nil {
+	if coverStepMove(rs, 0, CoverDirRight, visited, 0, 0) == nil {
 		t.Fatal("向右进入单向门应被允许")
 	}
 }
@@ -209,11 +209,11 @@ func TestCoverKeyGate(t *testing.T) {
 	visited := make([]bool, 3)
 
 	// 无钥匙：不能进入门
-	if coverStepMove(rs, 0, CoverDirRight, visited, 0) != nil {
+	if coverStepMove(rs, 0, CoverDirRight, visited, 0, 0) != nil {
 		t.Fatal("没有钥匙时进入门应被拒绝")
 	}
 	// 有钥匙：可以
-	if coverStepMove(rs, 0, CoverDirRight, visited, 1) == nil {
+	if coverStepMove(rs, 0, CoverDirRight, visited, 1, 0) == nil {
 		t.Fatal("持有对应钥匙时进入门应被允许")
 	}
 }
@@ -256,5 +256,218 @@ func TestStarOfCover(t *testing.T) {
 		if got := StarOfCover(c.undos); got != c.want {
 			t.Errorf("StarOfCover(%d) = %d，期望 %d", c.undos, got, c.want)
 		}
+	}
+}
+
+// TestCoverIceSlideOnewayStopsBefore 验证滑行撞上箭头不一致的单向门时**停在门前**。
+//
+// 这是 2026-11-16 修复的核心场景：
+// 之前滑行只判「已走 / 障碍 / 未开锁的门」，**漏掉了单向门箭头**，
+// 于是「踩上冰块一路滑到底」会直接**穿过**反向的单向门。
+func TestCoverIceSlideOnewayStopsBefore(t *testing.T) {
+	// 4x1：普通 | 冰块 | 单向门(朝上) | 普通
+	bytes := []byte{
+		packCoverCell(CoverBrick, 0, 0),
+		packCoverCell(CoverIce, 0, 0),
+		packCoverCell(CoverOneway, CoverDirUp, 0),
+		packCoverCell(CoverBrick, 0, 0),
+	}
+	g := &CoverGrid{W: 4, H: 1, Bytes: bytes}
+	cells := g.Walkable()
+	rs := buildCoverRuleSet(cells, g)
+
+	visited := make([]bool, 4)
+	visited[0] = true
+	consumed := coverStepMove(rs, 0, CoverDirRight, visited, 0, 0)
+	if len(consumed) != 1 || consumed[0] != 1 {
+		t.Fatalf("滑行应停在单向门前，实际消耗 %v，期望 [1]", consumed)
+	}
+	for _, c := range consumed {
+		if c == 2 {
+			t.Fatal("滑行不能穿过箭头不一致的单向门")
+		}
+	}
+}
+
+// TestCoverIceSlideOnewayMatchingDirection 验证箭头一致时滑行可以穿过单向门。
+func TestCoverIceSlideOnewayMatchingDirection(t *testing.T) {
+	// 4x1：普通 | 冰块 | 单向门(朝右) | 普通
+	bytes := []byte{
+		packCoverCell(CoverBrick, 0, 0),
+		packCoverCell(CoverIce, 0, 0),
+		packCoverCell(CoverOneway, CoverDirRight, 0),
+		packCoverCell(CoverBrick, 0, 0),
+	}
+	g := &CoverGrid{W: 4, H: 1, Bytes: bytes}
+	cells := g.Walkable()
+	rs := buildCoverRuleSet(cells, g)
+
+	visited := make([]bool, 4)
+	visited[0] = true
+	consumed := coverStepMove(rs, 0, CoverDirRight, visited, 0, 0)
+	if len(consumed) != 3 || consumed[0] != 1 || consumed[1] != 2 || consumed[2] != 3 {
+		t.Fatalf("箭头一致时滑行应穿过单门，实际消耗 %v，期望 [1 2 3]", consumed)
+	}
+}
+
+// TestCoverIceSlideOnewayFromBehind 验证反向滑行同样尊重单向门箭头。
+func TestCoverIceSlideOnewayFromBehind(t *testing.T) {
+	// 4x1：普通 | 单向门(朝右) | 冰块 | 普通
+	bytes := []byte{
+		packCoverCell(CoverBrick, 0, 0),
+		packCoverCell(CoverOneway, CoverDirRight, 0),
+		packCoverCell(CoverIce, 0, 0),
+		packCoverCell(CoverBrick, 0, 0),
+	}
+	g := &CoverGrid{W: 4, H: 1, Bytes: bytes}
+	cells := g.Walkable()
+	rs := buildCoverRuleSet(cells, g)
+
+	visited := make([]bool, 4)
+	visited[3] = true
+	consumed := coverStepMove(rs, 3, CoverDirLeft, visited, 0, 0)
+	if len(consumed) != 1 || consumed[0] != 2 {
+		t.Fatalf("反向滑行应停在单向门前，实际消耗 %v，期望 [2]", consumed)
+	}
+}
+
+// TestCoverIceSlideKeyOpensGateMidSlide 验证滑行途中捡到的钥匙**立刻生效**。
+//
+// 「道具是行进中拿到的，不是障碍」—— 钥匙不该让滑行停下，
+// 且同一段滑行后面的门就该被刚捡到的钥匙打开。
+func TestCoverIceSlideKeyOpensGateMidSlide(t *testing.T) {
+	// 5x1：普通 | 冰块 | 钥匙(0) | 门(0) | 普通
+	bytes := []byte{
+		packCoverCell(CoverBrick, 0, 0),
+		packCoverCell(CoverIce, 0, 0),
+		packCoverCell(CoverKey, 0, 0),
+		packCoverCell(CoverGate, 0, 0),
+		packCoverCell(CoverBrick, 0, 0),
+	}
+	g := &CoverGrid{W: 5, H: 1, Bytes: bytes}
+	cells := g.Walkable()
+	rs := buildCoverRuleSet(cells, g)
+
+	visited := make([]bool, 5)
+	visited[0] = true
+	consumed := coverStepMove(rs, 0, CoverDirRight, visited, 0, 0)
+	if len(consumed) != 4 {
+		t.Fatalf("滑行消耗 %d 格，期望 4（冰块+钥匙+门+终点），实际 %v", len(consumed), consumed)
+	}
+}
+
+// TestCoverIceSlideShardOrder 验证滑行途中星星必须按编号顺序，且乱序会挡住滑行。
+func TestCoverIceSlideShardOrder(t *testing.T) {
+	// 4x1：普通 | 冰块 | 星星(1) | 普通   —— 期望收集的是 0 号
+	bytes := []byte{
+		packCoverCell(CoverBrick, 0, 0),
+		packCoverCell(CoverIce, 0, 0),
+		packCoverCell(CoverShard, 0, 1),
+		packCoverCell(CoverBrick, 0, 0),
+	}
+	g := &CoverGrid{W: 4, H: 1, Bytes: bytes}
+	cells := g.Walkable()
+	rs := buildCoverRuleSet(cells, g)
+
+	visited := make([]bool, 4)
+	visited[0] = true
+	consumed := coverStepMove(rs, 0, CoverDirRight, visited, 0, 0)
+	if len(consumed) != 1 || consumed[0] != 1 {
+		t.Fatalf("乱序星星应挡住滑行，实际消耗 %v，期望 [1]", consumed)
+	}
+
+	// 编号正确时（0 号）应能滑过去
+	bytes2 := []byte{
+		packCoverCell(CoverBrick, 0, 0),
+		packCoverCell(CoverIce, 0, 0),
+		packCoverCell(CoverShard, 0, 0),
+		packCoverCell(CoverBrick, 0, 0),
+	}
+	g2 := &CoverGrid{W: 4, H: 1, Bytes: bytes2}
+	rs2 := buildCoverRuleSet(g2.Walkable(), g2)
+	visited2 := make([]bool, 4)
+	visited2[0] = true
+	consumed2 := coverStepMove(rs2, 0, CoverDirRight, visited2, 0, 0)
+	if len(consumed2) != 3 {
+		t.Fatalf("顺序正确的星星应被滑过，实际消耗 %v，期望 3 格", consumed2)
+	}
+}
+
+// TestCoverMoveCarriesState 验证 coverMove 携带滑行后累积的钥匙掩码与星星进度。
+func TestCoverMoveCarriesState(t *testing.T) {
+	// 5x1：普通 | 冰块 | 钥匙(0) | 门(0) | 普通
+	bytes := []byte{
+		packCoverCell(CoverBrick, 0, 0),
+		packCoverCell(CoverIce, 0, 0),
+		packCoverCell(CoverKey, 0, 0),
+		packCoverCell(CoverGate, 0, 0),
+		packCoverCell(CoverBrick, 0, 0),
+	}
+	g := &CoverGrid{W: 5, H: 1, Bytes: bytes}
+	cells := g.Walkable()
+	rs := buildCoverRuleSet(cells, g)
+
+	visited := make([]bool, 5)
+	visited[0] = true
+	moves := coverCandidateMoves(rs, 0, visited, 0, 0)
+	var right *coverMove
+	for i := range moves {
+		if moves[i].Dir == CoverDirRight {
+			right = &moves[i]
+			break
+		}
+	}
+	if right == nil {
+		t.Fatal("应存在向右的移动")
+	}
+	if right.KeyMask != 1 {
+		t.Errorf("移动后钥匙掩码 = %d，期望 1", right.KeyMask)
+	}
+	if right.Key != 1 {
+		t.Errorf("应报告拾取第 0 组钥匙，实际 %d", right.Key)
+	}
+}
+
+// TestCoverIceSlideStopsAtPortal 验证滑行遇到传送门格时**停在门上**（传送门打断滑行）。
+//
+// 传送门不是墙 —— 它要被吃掉（滑行到它上面就停），
+// 而不是「停在它前面」。玩家站在上面可以主动传送到搭档。
+func TestCoverIceSlideStopsAtPortal(t *testing.T) {
+	// 4x1：普通 | 冰块 | 传送门(0) | 传送门(0)   ← 同一 group → 配成一对
+	bytes := []byte{
+		packCoverCell(CoverBrick, 0, 0),
+		packCoverCell(CoverIce, 0, 0),
+		packCoverCell(CoverPortal, 0, 0),
+		packCoverCell(CoverPortal, 0, 0),
+	}
+	g := &CoverGrid{W: 4, H: 1, Bytes: bytes}
+	cells := g.Walkable()
+	rs := buildCoverRuleSet(cells, g)
+
+	visited := make([]bool, 4)
+	visited[0] = true
+	consumed := coverStepMove(rs, 0, CoverDirRight, visited, 0, 0)
+	// 冰块 + 传送门（传送门被吃掉，滑行到此为止）
+	if len(consumed) != 2 || consumed[0] != 1 || consumed[1] != 2 {
+		t.Fatalf("滑行应停在传送门上，实际消耗 %v，期望 [1 2]", consumed)
+	}
+	if consumed[1] != 2 {
+		t.Fatal("线头应停在传送门上")
+	}
+
+	// 站在传送门上 → 有传送边（跳到搭档）
+	moves := coverCandidateMoves(rs, 2, visited, 0, 0)
+	var portal *coverMove
+	for i := range moves {
+		if moves[i].ViaPortal {
+			portal = &moves[i]
+			break
+		}
+	}
+	if portal == nil {
+		t.Fatal("站在传送门上应有传送边")
+	}
+	if len(portal.Consumed) != 1 || portal.Consumed[0] != 3 {
+		t.Errorf("传送应落到搭档格 3，实际 %v", portal.Consumed)
 	}
 }

@@ -173,6 +173,22 @@ function drawTicket(ctx: CanvasRenderingContext2D, st: HomePageState, now: numbe
   ctx.strokeStyle = C.goldLine;
   ctx.lineWidth = 2;
   ctx.stroke();
+
+  // 颗粒和柔光都按「圆角矩形」铺，不能铺外接矩形。
+  //
+  // ## 之前漏了 clip，圆角外会留一块淡色三角
+  //
+  // `fillGrain` 与径向光都是用 `fillRect(pad, ty, cardW, th)` 铺的 ——
+  // 那是圆角矩形的**外接矩形**。四个圆角之外的方形区域也被涂了一层，
+  // 上半部分被卡片自己的圆角挡住看不出，但左上角外侧那块
+  // 恰好在深色背景上，就成了截图里那块「淡淡的三角形」。
+  //
+  // 呼吸用的 `arc(pad+46, ty+40, 110)` 更过分：半径 110 从票角伸出卡片外，
+  // 不裁剪就会在卡片上方画出一整个半圆的淡光。
+  ctx.save();
+  roundRect(ctx, pad, ty, cardW, th, 40);
+  ctx.clip();
+
   fillGrain(ctx, pad, ty, cardW, th, 0.055);
 
   // 票角柔光：左上一盏灯，像票根被台灯照着（设计稿 ::before 的 160px 径向光）
@@ -188,6 +204,8 @@ function drawTicket(ctx: CanvasRenderingContext2D, st: HomePageState, now: numbe
   ctx.arc(pad + 46, ty + 40, 110, 0, Math.PI * 2);
   ctx.fillStyle = `rgba(212,175,106,${(breath * 0.08).toFixed(3)})`;
   ctx.fill();
+
+  ctx.restore();
 
   // 左：继续 + 大关号
   trackedText(ctx, '继续', M.ticketIn, ty + 71, 26, C.goldDeep, 7.8, 600);
@@ -249,11 +267,13 @@ export function drawGoldCta(ctx: CanvasRenderingContext2D, b: Button): void {
 /**
  * 无尽征途卡：青瓷圆章 + 一段里程碑说明 + 进度条。
  *
- * 文案口径沿用定稿：**每 10 关**一个里程碑，卡里只报「下一个里程碑」。
+ * 文案口径：**每 100 关**一个里程碑（地图上的百关大圈），卡里只报「下一个里程碑」。
+ * （旧口径是每 10 关 —— 地图上的朱砂旗删了、里程碑标记换成百关大圈后，
+ * 频率跟着走 100，两块界面说的是同一件事。）
  */
 function drawMilestone(ctx: CanvasRenderingContext2D, st: HomePageState): void {
   const my = M.world;
-  const next = Math.floor(st.currentLevel / 10) * 10 + 10;
+  const next = Math.floor(st.currentLevel / 100) * 100 + 100;
   const left = Math.max(1, next - st.currentLevel);
 
   roundRect(ctx, M.pad, my, M.cardW, M.worldH, 36);
@@ -265,7 +285,12 @@ function drawMilestone(ctx: CanvasRenderingContext2D, st: HomePageState): void {
   ctx.strokeStyle = 'rgba(147,179,162,0.16)';
   ctx.lineWidth = 2;
   ctx.stroke();
+  // 颗粒必须裁在圆角内（理由同 `drawTicket`：铺外接矩形会在圆角外留淡色块）
+  ctx.save();
+  roundRect(ctx, M.pad, my, M.cardW, M.worldH, 36);
+  ctx.clip();
   fillGrain(ctx, M.pad, my, M.cardW, M.worldH, 0.055);
+  ctx.restore();
 
   // 青瓷圆章（52 → 104）
   const ex = M.pad + 42 + 52;
@@ -287,7 +312,7 @@ function drawMilestone(ctx: CanvasRenderingContext2D, st: HomePageState): void {
   const tx = ex + 84;
   const tw = M.pad + M.cardW - 40 - tx;
   trackedText(ctx, '无 尽 征 途', tx, my + 67, 30, C.jade, 7.8, 600);
-  // 副题按「·」分段折行：绝不把「距里程碑 010」从中间断开（那是读数，不是句子）
+  // 副题按「·」分段折行：绝不把「距里程碑 100」从中间断开（那是读数，不是句子）
   const segs = ['第 1 关起', '机制渐次登场', `距里程碑 ${pad3(next)}`, `还差 ${left} 关`];
   const lines: string[] = [];
   for (const seg of segs) {
@@ -307,7 +332,7 @@ function drawMilestone(ctx: CanvasRenderingContext2D, st: HomePageState): void {
   roundRect(ctx, bx, by, bw, 10, 5);
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
   ctx.fill();
-  const ratio = st.currentLevel % 10 === 0 ? 1 : (st.currentLevel % 10) / 10;
+  const ratio = st.currentLevel % 100 === 0 ? 1 : (st.currentLevel % 100) / 100;
   roundRect(ctx, bx, by, Math.max(10, bw * ratio), 10, 5);
   const fg = ctx.createLinearGradient(bx, by, bx + bw, by);
   fg.addColorStop(0, '#6E9180');

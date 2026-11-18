@@ -18,8 +18,15 @@ export interface Platform {
     hideBanner(): void;
   };
   share(opts: { title: string; imageUrl?: string; query?: string }): Promise<void>;
-  /** 短振动反馈。 */
-  vibrate(): void;
+  /**
+   * 短振动反馈。
+   *
+   * `pattern` 与 Web 的 `navigator.vibrate` 同一套语义：数字 = 振多少毫秒，
+   * 数组 = 振/停交替（`[10,25,10,25,18]` 是四下短震夹三段停）。
+   * 主题的设计稿给每件事都定了时长（落子 8 / 连径 15 / 铺满那个数组 /
+   * 盖印 40 / 按钮 5）—— 手感是**节奏**，统一成"震一下"就等于没有节奏。
+   */
+  vibrate(pattern?: number | number[]): void;
   /** 获取主画布。 */
   getCanvas(): { canvas: HTMLCanvasElement; width: number; height: number; dpr: number };
   /**

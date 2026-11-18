@@ -298,7 +298,7 @@ function canFinish(st: SearchState, cur: number, endAt: number): boolean {
   }
   if (single < 0) return false;
   if (endAt >= 0 && single !== endAt) return false;
-  const moves = candidateMoves(rs, cur, visited, st.keyMask);
+  const moves = candidateMoves(rs, cur, visited, st.keyMask, st.shardNext);
   return moves.some(
     (mv) =>
       mv.consumed.length === 1 &&
@@ -564,9 +564,9 @@ function dfs(
   if (isPruned(st, cur, remaining, committedEndpoints)) {
     return { path: null, expanded: st.expanded + 1, exhausted: false };
   }
-  const moves = candidateMoves(rs, cur, st.visited, st.keyMask).filter((mv) =>
-    mv.consumed.every((c) => shardAllows(rs, c, st.shardNext)),
-  );
+  // 星星顺序由 `candidateMoves` 内部处理（传 `st.shardNext`）——
+  // 乱序的星星会让移动走不成（滑行停在它前面）。
+  const moves = candidateMoves(rs, cur, st.visited, st.keyMask, st.shardNext);
 
     // Warnsdorff 启发式：优先走「未访问邻居最少」的格。
     // 少了这一条，11x11 盘上搜索量会爆炸 ——

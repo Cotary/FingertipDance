@@ -47,6 +47,17 @@ import {
 const BURST_WINDOW_MS = 70;
 const BURST_MAX = 3;
 
+/**
+ * 没有 `blocked` 音色的主题退化成这一声。
+ *
+ * 一记被闷住的低叩：没有高频、没有余韵。它必须比落子**低**、比断线**短** ——
+ * "不行"和"你错了"是两件事。
+ */
+const BLOCKED_DEFAULT: SoundNote[] = [
+  { wave: 'triangle', freq: 196, to: 147, dur: 90, gain: 0.055, attack: 1, lp: 800, wet: 0.06 },
+  { wave: 'noise', freq: 0, dur: 30, gain: 0.028, attack: 1, lp: 640, wet: 0.05 },
+];
+
 export class Audio {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -189,23 +200,39 @@ export class Audio {
     // 终点是 0.0001 不是 0 —— 指数斜坡不能到 0
     amp.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
 
-    // 滤波链：先高通后低通（顺序反了会让低通的直流偏移进到高通里）
+    // 滤波链：先高通后低通（顺序反了会让低通的直流偏移进到高通里）。
+    //
+    // 带通是**第三种**：砂纸、石屑、掐沙这三声的全部性格都在"一条窄带"上，
+    // 用 hp+lp 夹出来的宽窄是错的 —— 夹出来的是"一片噪声"，带通才是"砂"。
     let tail: AudioNode = amp;
-    if (n.hp) {
-      const hp = ctx.createBiquadFilter();
-      hp.type = 'highpass';
-      hp.frequency.value = n.hp;
-      hp.Q.value = 0.7;
-      tail.connect(hp);
-      tail = hp;
-    }
-    if (n.lp) {
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.value = n.lp;
-      lp.Q.value = 0.7;
-      tail.connect(lp);
-      tail = lp;
+    if (n.bp) {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.setValueAtTime(Math.max(20, n.bp), t0);
+      if (n.bpTo !== undefined) {
+        // 扫落：2400→850 就是"砂从指间磨过去"的那一下（设计稿 grind）
+        bp.frequency.exponentialRampToValueAtTime(Math.max(20, n.bpTo), t0 + (n.sweep ?? dur * 0.85));
+      }
+      bp.Q.value = n.q ?? 1;
+      tail.connect(bp);
+      tail = bp;
+    } else {
+      if (n.hp) {
+        const hp = ctx.createBiquadFilter();
+        hp.type = 'highpass';
+        hp.frequency.value = n.hp;
+        hp.Q.value = 0.7;
+        tail.connect(hp);
+        tail = hp;
+      }
+      if (n.lp) {
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = n.lp;
+        lp.Q.value = 0.7;
+        tail.connect(lp);
+        tail = lp;
+      }
     }
 
     tail.connect(dry);
@@ -230,7 +257,9 @@ export class Audio {
     osc.frequency.setValueAtTime(Math.max(1, n.freq), t0);
     if (n.to !== undefined) {
       // 扫频走 85% 的时长，留一点余量让尾巴停在终点而不是半路
-      osc.frequency.exponentialRampToValueAtTime(Math.max(1, n.to), t0 + dur * 0.85);
+      // 扫频时长可以独立于包络（见 `Note.sweep`）：石章的 112→58 要走 90ms，
+      // 而它的增益要衰减 220ms。绑在一起就变成"下滑的长音"。
+      osc.frequency.exponentialRampToValueAtTime(Math.max(1, n.to), t0 + (n.sweep ?? dur * 0.85));
     }
 
     if (n.fm) {
@@ -258,8 +287,14 @@ export class Audio {
     if (!this.enabled) return;
     const ctx = this.ensure();
     if (!ctx) return;
-    // 每次发声前摸一下 —— 页面切走回来、iOS 首次手势后都会是 suspended
-    if (ctx.state === 'suspended') void ctx.resume();
+    // 每次发声前摸一下 —— 页面切走回来、iOS 首次手势后都会是 suspended。
+    //
+    // 但 `OfflineAudioContext` **不能** resume：它的 state 天生是 suspended，
+    // resume() 直接抛 InvalidStateError（音频试听页就是这么挂的）。
+    // 而且 resume 返回的是 Promise，不接住的话失败会变成 unhandled rejection。
+    const offline =
+      typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
+    if (!offline && ctx.state === 'suspended') void ctx.resume().catch(() => {});
     for (const n of notes) this.note(ctx, n);
   }
 
@@ -311,7 +346,18 @@ export class Audio {
   light(): void {
     if (!this.budget()) return;
     const v = this.voice;
-    this.fire(v.step(this.step));
+    // 音高微抖 ±2.5%。
+    //
+    // 设计稿对落子声的要求是"重复敲击频率微抖 ±5%，不像机器"。
+    // 一只真瓷碗被连敲 20 下，每一下都不在同一个赫兹上；
+    // 而采样的引擎会给出一模一样的波形 —— 连击到十几下就是机关枪。
+    // 抖动放在**引擎**而不是 `step()` 里：音色定义是纯数据（要能单测），
+    // 随机性属于演奏，不属于谱子。
+    const j = 1 + (Math.random() - 0.5) * 0.05;
+    const notes = v.step(this.step).map((n) =>
+      n.wave === 'noise' ? n : { ...n, freq: n.freq * j, to: n.to === undefined ? undefined : n.to * j },
+    );
+    this.fire(notes);
     // 封顶 64：再往上音阶早就撞了八度上限，计数只用于噪声亮度
     if (this.step < 64) this.step += 1;
   }
@@ -327,10 +373,59 @@ export class Audio {
     this.fire(this.voice.break());
   }
 
-  /** 通关琶音。`perfect` = 一次没撤销，多一声高八度的闪光。 */
-  win(perfect = false): void {
+  /**
+   * 无效落子：撞石头 / 没钥匙 / 逆单向门。
+   *
+   * **不推进乐句，也不重置乐句** —— 玩家只是"点错了一格"，
+   * 不是"走错了路"。重置在这里等于把他已经铺好的一段白白作废的听觉暗示。
+   */
+  blocked(): void {
+    this.fire(this.voice.blocked?.() ?? BLOCKED_DEFAULT);
+  }
+
+  /**
+   * 通关。`perfect` = 一次没撤销。
+   *
+   * `at` = 整套往后推多少毫秒。铺满级联会长达一秒多（48ms × 格数），
+   * 土埙必须等**末粒**落地才响（设计稿：`setTimeout(sfx('xun'), N*48+120)`）——
+   * 通关那一帧就把整套音频排进时间线，比挂一串 `setTimeout` 准得多：
+   * 定时器会被主线程的渲染帧挤偏，而这个偏移在"埙接在沙雨尾巴上"时听得出来。
+   */
+  win(perfect = false, at = 0): void {
     this.step = 0;
-    this.fire(this.voice.win(perfect));
+    const notes = this.voice.win(perfect);
+    this.fire(at > 0 ? notes.map((n) => ({ ...n, delay: (n.delay ?? 0) + at })) : notes);
+  }
+
+  /**
+   * 铺满级联：`count` 粒，每粒间隔 `stepMs`。
+   *
+   * 一次排完整段，不在每粒上挂定时器 —— 同一段沙雨，26 个 `setTimeout`
+   * 在低端机上会各自偏 10~30ms，听起来就是节奏散了。
+   * 音色不给（玻璃 / 瓷这类不会落沙的主题）就**一声都不发**。
+   */
+  settle(count: number, stepMs: number): void {
+    if (count <= 0) return;
+    const grain = this.voice.settle?.();
+    if (!grain || grain.length === 0) return;
+    const all: SoundNote[] = [];
+    for (let i = 0; i < count; i++) {
+      for (const n of grain) all.push({ ...n, delay: (n.delay ?? 0) + i * stepMs });
+    }
+    this.fire(all);
+  }
+
+  /**
+   * 一声玉磬（铺满末格 / 开局揭幕末格）。
+   *
+   * 主题不给 `chime` 就退回 `win` 的第一声磬？不 —— **一声不发**。
+   * 磬是"东西落定"的听觉标签，玻璃那一套没有这层语言；
+   * 强行拿 `win` 顶上会把"通关"和"开盘"混成一件事。
+   */
+  chime(): void {
+    const c = this.voice.chime?.();
+    if (!c || c.length === 0) return;
+    this.fire(c);
   }
 
   /** 解锁皮肤 / 主题。 */

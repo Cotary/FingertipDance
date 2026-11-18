@@ -153,21 +153,32 @@ export function drawSkinsPage(
   return buttons;
 }
 
-/** 货架上全部的卡：0 = 经典，1..N = 十套主题。 */
+/**
+ * 货架上全部的卡 —— **就是主题数**，没有"经典"那一张。
+ *
+ * 早先这里固定多一张 `0 = 经典（空串 = 黏土盘）`，主题从 1 开始。
+ * 结果主题页上永远摆着"经典 · 陶土盘面"，而它在玩法上已经不存在
+ * （`main.ts` 的经典 `Session` 早下线了，cover 模式是唯一玩法，
+ * 黏土盘只是"没有主题"时的兜底渲染）。
+ *
+ * 现在只有两套真主题，那张卡就纯粹是噪音：玩家点进去看到的是一张
+ * 和另外两张风格完全不同的盘，而它并不属于任何"世界"。
+ * 默认就是天青（`progressStore` 的 `currentTheme: 'mise'`）。
+ */
 export function shelfCount(): number {
-  return THEMES.length + 1;
+  return THEMES.length;
 }
 
 function themeAt(index: number): BoardTheme | undefined {
-  return index <= 0 ? undefined : THEMES[index - 1];
+  return THEMES[index];
 }
 
-/** 已解锁主题数（含经典；调试构建全解锁）。 */
+/** 已解锁主题数（不再含"经典"；调试构建全解锁）。 */
 export function unlockedThemeCount(st: SkinsPageState): number {
   if (st.themeAllUnlocked) return shelfCount();
   const maxLevel = st.maxLevel ?? 0;
   const ad = new Set<string>();
-  return 1 + THEMES.filter((t) => themeUnlocked(t, maxLevel, ad)).length;
+  return THEMES.filter((t) => themeUnlocked(t, maxLevel, ad)).length;
 }
 
 /** 某个主题是否已解锁。 */
@@ -220,13 +231,25 @@ function drawFeatured(ctx: CanvasRenderingContext2D, st: SkinsPageState): Button
   const isEquipped = equippedId === selId;
   const owned = sel ? isThemeOwned(st, sel) : true;
 
-  const name = sel ? displayName(sel.name) : '经典 · 陶土盘面';
-  const state = sel ? themeUnlockLabel(sel) : '内置盘面';
-  const detail = sel
-    ? hasOwnVoice(sel.id)
-      ? `♪ ${voiceFor(sel.id).desc}`
-      : sel.tagline
-    : '陶土盘 · 木纹 · 陶哨音';
+  /**
+   * 兜底不再是"经典 · 陶土盘面"，而是**回落到列表第一套**（天青）。
+   *
+   * 主题页现在只摆真主题，那张"经典"卡已经摘掉；但老存档 / 首次进入时
+   * `themeSelected` 可能是空串。这时如果还显示"经典 · 陶土盘面"，
+   * 玩家会以为有一张他点不到的卡 —— 名字指向一个货架上不存在的东西。
+   *
+   * 回落到 `THEMES[0]` 是安全的：它一定存在，而且那是默认主题。
+   */
+  const fallback = THEMES[0];
+  const shown = sel ?? fallback;
+
+  const name = shown ? displayName(shown.name) : '—';
+  const state = shown ? themeUnlockLabel(shown) : '—';
+  const detail = shown
+    ? hasOwnVoice(shown.id)
+      ? `♪ ${voiceFor(shown.id).desc}`
+      : shown.tagline
+    : '';
 
   // 名字（衬线 38 / 字距 9.12，设计 h4 19px + .24em）
   trackedText(ctx, name, x + 46, y + 72, 38, P.inkHi, 9.12, 700);
@@ -243,7 +266,7 @@ function drawFeatured(ctx: CanvasRenderingContext2D, st: SkinsPageState): Button
   );
 
   // 五色签（设计 26px / gap 6 → 52 / 12）
-  themeSwatches(selIdOf(sel)).forEach((c, i) => {
+  themeSwatches(selIdOf(shown)).forEach((c, i) => {
     roundRect(ctx, x + 46 + i * 64, y + 198, 52, 52, 20);
     ctx.fillStyle = c;
     ctx.fill();
@@ -274,7 +297,7 @@ function drawFeatured(ctx: CanvasRenderingContext2D, st: SkinsPageState): Button
   }
 
   // 未解锁：只写条件，不给假按钮（设计稿这些卡也没有按钮）
-  trackedTextRight(ctx, themeUnlockLabel(sel!), x + w - 46, y + h - 58, 22, P.gold, 3.2, 600);
+  if (shown) trackedTextRight(ctx, themeUnlockLabel(shown), x + w - 46, y + h - 58, 22, P.gold, 3.2, 600);
   return [];
 }
 
@@ -319,6 +342,12 @@ function displayName(name: string): string {
  */
 function themeSwatches(id: string): string[] {
   const t = themeById(id);
+
+  // 主题自己给了五色签就用它：界面五色 ≠ 盘面五色。
+  // 鸣沙的界面全是土黄系，从 chrome 派生出来的五格会是一排土黄 ——
+  // 而盘面上真正的五个色是石绿 / 朱砂 / 石青 / 沥金 / 壁土
+  if (t?.swatches && t.swatches.length >= 3) return [...t.swatches].slice(0, 5);
+
   const raw = t?.chrome
     ? [t.chrome.pill, t.chrome.ghost, t.chrome.fill, t.chrome.primary, t.chrome.ink]
     : ['#1D3A2E', '#4F7A66', '#B8CFC0', '#D4AF6A', '#C04B33'];
@@ -441,9 +470,10 @@ function drawShelf(ctx: CanvasRenderingContext2D, st: SkinsPageState, now: numbe
     // 视野外的卡不必画：12 张卡每张一次 backdrop + 24 格盘面，不便宜
     if (r.y > SHELF.viewBottom + 40 || r.y + r.h < SHELF.viewTop - 40) continue;
     const t = themeAt(i);
-    drawCard(ctx, r, t, i === 0 ? '' : t!.id, now, {
-      selected: (i === 0 ? '' : t!.id) === selId,
-      owned: i === 0 ? true : isThemeOwned(st, t!),
+    if (!t) continue;
+    drawCard(ctx, r, t, now, {
+      selected: t.id === selId,
+      owned: isThemeOwned(st, t),
     });
   }
 
@@ -468,8 +498,7 @@ function drawShelf(ctx: CanvasRenderingContext2D, st: SkinsPageState, now: numbe
 function drawCard(
   ctx: CanvasRenderingContext2D,
   r: { x: number; y: number; w: number; h: number },
-  t: BoardTheme | undefined,
-  id: string,
+  t: BoardTheme,
   now: number,
   opt: { selected: boolean; owned: boolean },
 ): void {
@@ -493,9 +522,10 @@ function drawCard(
   );
 
   const left = r.x + CARD.padX;
-  const nm = t ? displayName(t.name) : '经典';
-  const ax = t ? t.tagline : '陶土 · 线迹';
-  const un = t ? themeUnlockLabel(t) : '内置盘面';
+  // 没有兜底：主题页上每一张卡都是真主题（"经典 · 陶土盘面"那张已摘掉）
+  const nm = displayName(t.name);
+  const ax = t.tagline;
+  const un = themeUnlockLabel(t);
 
   const innerW = r.w - CARD.padX * 2;
   trackedText(ctx, fitText(ctx, nm, innerW, 23, 5.06, opt.selected ? 700 : 600), left, r.y + 166, 23, P.ink, 5.06, opt.selected ? 700 : 600);
@@ -507,8 +537,6 @@ function drawCard(
   // 未解锁**不压暗**（设计稿也没压）：
   // 把预览盖一层灰，等于告诉玩家「这张卡坏了」；这里要的是「这张盘面长这样，
   // 打到第 200 关就是你的」—— 唯一的区别是底行换成金色关号。
-
-  void id;
 }
 
 // ── 预览条 ──
@@ -637,7 +665,7 @@ function drawPreview(
 
 // ────────────────────────────── 拾取 ──────────────────────────────
 
-/** 点到第几张货架卡（0 = 经典）。没点到返回 -1。 */
+/** 点到第几张货架卡。没点到返回 -1。 */
 export function pickThemeChip(x: number, y: number, scroll = 0): number {
   if (y < SHELF.y - 8 || y > SHELF.viewBottom) return -1;
   for (let i = 0; i < shelfCount(); i++) {
@@ -647,10 +675,9 @@ export function pickThemeChip(x: number, y: number, scroll = 0): number {
   return -1;
 }
 
-/** 卡片序号 → 主题 id（0 = 经典 = 空串）。 */
+/** 卡片序号 → 主题 id。 */
 export function themeIdAt(index: number): string {
-  if (index <= 0) return '';
-  return THEMES[index - 1]?.id ?? '';
+  return THEMES[index]?.id ?? '';
 }
 
 /** 超宽就截断加省略号（本页只有卖点会用到）。 */

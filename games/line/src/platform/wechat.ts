@@ -89,8 +89,17 @@ export const wechatPlatform: Platform = {
     });
   },
 
-  vibrate() {
-    try { wx.vibrateShort({ type: 'light' }); } catch { /* noop */ }
+  /**
+   * 微信只给三档强弱，给不了「振 10ms、停 25ms」这种节奏。
+   *
+   * 所以按**总时长**归到最近的一档：设计稿的 8 / 15 / 18 / 40 分别落到
+   * light / medium / medium / heavy，和 Web 端的强弱排序是一致的 ——
+   * 两个平台手感不能一个"轻点"、一个"砸墙"。
+   */
+  vibrate(pattern: number | number[] = 15) {
+    const ms = Array.isArray(pattern) ? pattern.reduce((a, b) => a + b, 0) : pattern;
+    const type = ms >= 30 ? 'heavy' : ms >= 12 ? 'medium' : 'light';
+    try { wx.vibrateShort({ type }); } catch { /* noop */ }
   },
 
   getCanvas() {

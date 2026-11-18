@@ -101,12 +101,14 @@ describe('棋盘页 · 命中与解锁', () => {
     maxLevel: 0,
   };
 
-  it('陶片：0 号是「经典」，1 起是主题，越界返回空', () => {
-    expect(themeIdAt(0)).toBe('');
-    expect(themeIdAt(1)).toBe('mise');
-    expect(themeIdAt(2)).toBe('mingsha');
-    expect(themeIdAt(3)).toBe('');
+  it('陶片：0 号就是第一套主题（不再有「经典」那一张），越界返回空', () => {
+    // 主题页上只摆真主题 —— "经典 · 陶土盘面"那张卡已经摘掉。
+    // 默认装备是 `progressStore` 里的 `currentTheme: 'mise'`（天青）。
+    expect(themeIdAt(0)).toBe('mise');
+    expect(themeIdAt(1)).toBe('mingsha');
+    expect(themeIdAt(2)).toBe('');
     expect(themeIdAt(99)).toBe('');
+    expect(shelfCount()).toBe(2);
   });
 
   it('货架几何按设计稿：卡 320×252、间距 22、两列左沿 44 / 386', () => {

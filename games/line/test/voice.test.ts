@@ -108,8 +108,8 @@ describe('主题音色 · 音符合法性', () => {
   });
 });
 
-describe('主题音色 · 四套必须真的不一样', () => {
-  it('抽掉音高只留包络，四套的指纹两两不同', () => {
+describe('主题音色 · 两套必须真的不一样', () => {
+  it('抽掉音高只留包络，两套的指纹不同', () => {
     // 这就是画面那条判据的听觉版：只把 880 改成 1046 是换音高，不是换音色
     const fps = THEMES.map((t) => envelope(voiceFor(t.id)));
     expect(new Set(fps).size).toBe(fps.length);
@@ -120,8 +120,21 @@ describe('主题音色 · 四套必须真的不一样', () => {
     expect(new Set(f0).size).toBe(f0.length);
   });
 
-  it('四套的空间衰减跨度至少 3 倍（同一个音高听成两个世界的唯一来源）', () => {
-    const decays = THEMES.map((t) => voiceFor(t.id).space.decay);
+  it('瓷与土：土的那套主能量必须更低、混响必须更暗', () => {
+    // 两套最短的那句判据：一个"叩在瓷上"，一个"砸进墙里"。
+    // 只靠音高区分是不够的 —— 阻尼（damp）才是"材质"本身
+    const glaze = voiceFor('mise').space;
+    const wall = voiceFor('mingsha').space;
+    expect(wall.damp).toBeLessThan(glaze.damp);
+    // 土壁比展柜更"深"：衰减更长（声音进了墙里出不来）
+    expect(wall.decay).toBeGreaterThan(glaze.decay);
+    // 落子的第一声必须是噪声（研磨），而不是一个音 —— 换材质首先换掉的是"有没有音高"
+    expect(voiceFor('mingsha').step(0)[0].wave).toBe('noise');
+    expect(voiceFor('mise').step(0)[0].wave).not.toBe('noise');
+  });
+
+  it('整个音色库的空间衰减跨度至少 3 倍（同一个音高听成两个世界的唯一来源）', () => {
+    const decays = VOICES.map((v) => v.space.decay);
     expect(Math.max(...decays) / Math.min(...decays)).toBeGreaterThanOrEqual(3);
   });
 
@@ -196,6 +209,32 @@ describe('主题音色 · 事件音', () => {
     }
   });
 
+  it('秘色天青 · 撞石头是一声闷响：一点高频都不给', () => {
+    const v = voiceFor('mise');
+    expect(v.blocked, '秘色天青没有 blocked 音').toBeTruthy();
+    const b = v.blocked!();
+    expect(b.length).toBeGreaterThan(0);
+    for (const n of b) {
+      // 高频在耳朵里就是"清脆"，清脆就是"可以点"。
+      // 这一下偏偏是"不行"，所以整条音必须在 300Hz 以下、且不许开高通
+      expect(n.freq, '撞石头的音偏高，会被听成一次成功').toBeLessThan(300);
+      expect(n.hp ?? 0, '开了高通 = 又给了高频').toBe(0);
+      expect(n.lp ?? 0, '必须有一层低通把它闷住').toBeGreaterThan(0);
+    }
+  });
+
+  it('秘色天青 · 每一次通关都落印，不只完美通关', () => {
+    const v = voiceFor('mise');
+    for (const perfect of [false, true]) {
+      // 110→55Hz 的低频一击就是"印落纸"：它是整段琶音唯一的落点。
+      // 只给完美通关，等于"打得一般就没有盖印这一步"，通关会一直飘着
+      const seal = v.win(perfect).filter(
+        (n) => n.wave === 'sine' && n.freq <= 120 && (n.to ?? n.freq) <= 70,
+      );
+      expect(seal.length, `perfect=${perfect} 时没有落印`).toBeGreaterThan(0);
+    }
+  });
+
   it('签名动机在 1.5 秒内播完（展台上听完一整套世界观）', () => {
     for (const v of VOICES) {
       const end = Math.max(...v.signature().map((n) => (n.delay ?? 0) + n.dur));
@@ -227,6 +266,7 @@ describe('引擎 · 无 AudioContext 时静默降级', () => {
       audio.light();
       audio.tap();
       audio.break();
+      audio.blocked();
       audio.win(true);
       audio.unlock();
       audio.preview('gilded');

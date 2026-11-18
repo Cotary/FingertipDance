@@ -8,13 +8,13 @@
  *   ╭──────────────────────────────────────╮
  *   │  ∿∿∿∿ 等高线（纸雕地形）        ∞ 无尽 │   ← 场景卡（圆角 40、金边 .14）
  *   │        ○ 虚圈   ○ 虚圈                │
- *   │        ⚑ 旗 050                       │
+ *   │        ◎ 百关大圈 100                 │
  *   │        ● 金珠 047   [你在这里]         │
  *   │        ✓ 勾盘  ✓ 勾盘                 │
- *   │  ✓ 已过关  金珠 当前关  旗 里程碑 …    │   ← 图例（压在卡内底缘）
+ *   │  ✓ 已过关  金珠 当前关  ◎ 百关大圈 …   │   ← 图例（压在卡内底缘）
  *   ╰──────────────────────────────────────╯
  *   ╭──────────────────────────────────────╮
- *   │ 下一里程碑 050 关            还差 3 关 │   ← 脚卡（整卡可点）
+ *   │ 下一里程碑 100 关            还差 3 关 │   ← 脚卡（整卡可点）
  *   ╰──────────────────────────────────────╯
  * ```
  *
@@ -34,7 +34,7 @@ import { DEBUG_ENABLED } from '../core/debug';
 import {
   RAIL, SCENE, SKIN_LEVELS, VIEW_BOTTOM, ROUTE_TOP,
   clamp, levelNear, mapNodePos, nodeRadius, nodeY,
-  railGeometry, railYOf, screenYOf, visibleRange,
+  railGeometry, railYOf, screenYOf, screenXOf, camXOf, visibleRange,
   type MapViewState,
 } from './mapview';
 
@@ -162,10 +162,6 @@ function pad3(n: number): string {
   return String(n).padStart(3, '0');
 }
 
-/** 徽记色（设计稿固定值，不随主题变：朱砂旗是品牌的一部分）。 */
-const SEAL = '#C04B33';
-const SEAL_DEEP = '#A63B28';
-
 // ────────────────────────────── 场景卡 ──────────────────────────────
 
 /**
@@ -270,7 +266,7 @@ function drawMist(ctx: CanvasRenderingContext2D, p: MapPalette): void {
   ctx.fillStyle = top;
   ctx.fillRect(x, y, w, 224);
 
-  // 下缘的雾必须「厚到能垫图例」：露一点红旗下摆，图例就脏了
+  // 下缘的雾必须「厚到能垫图例」：露一点节点下摆，图例就脏了
   const btm = ctx.createLinearGradient(0, y + h - 250, 0, y + h - 30);
   btm.addColorStop(0, alpha(deep, 0));
   btm.addColorStop(0.45, alpha(deep, 0.55));
@@ -291,13 +287,13 @@ function drawInfinityMark(ctx: CanvasRenderingContext2D): void {
 // ────────────────────────────── 路 ──────────────────────────────
 
 /** Catmull-Rom 采样。一屏 15 关约 90 个采样点，足够顺滑。 */
-function samplePath(from: number, to: number, scrollY: number, levelCount: number): Pt[] {
+function samplePath(from: number, to: number, scrollY: number, camX: number, levelCount: number): Pt[] {
   const lo = Math.max(1, from - 1);
   const hi = Math.min(levelCount, to + 1);
   const pts: Pt[] = [];
   for (let i = lo; i <= hi; i++) {
     const p = mapNodePos(i);
-    pts.push({ x: p.x, y: screenYOf(p.y, scrollY) });
+    pts.push({ x: screenXOf(p.x, camX), y: screenYOf(p.y, scrollY) });
   }
   if (pts.length < 2) return pts;
 
@@ -339,6 +335,7 @@ function drawTrail(
   st: MapViewState,
   first: number,
   last: number,
+  camX: number,
   p: MapPalette,
 ): void {
   ctx.save();
@@ -347,7 +344,7 @@ function drawTrail(
 
   const doneEnd = Math.min(last, st.currentLevel - 1);
   if (doneEnd >= first) {
-    const pts = samplePath(first, doneEnd, st.scrollY, st.levelCount);
+    const pts = samplePath(first, doneEnd, st.scrollY, camX, st.levelCount);
     tracePath(ctx, pts);
     ctx.strokeStyle = alpha(p.gold, 0.26);
     ctx.lineWidth = 18;
@@ -365,7 +362,7 @@ function drawTrail(
 
   const ahead = Math.max(first, st.currentLevel);
   if (last > ahead) {
-    const pts = samplePath(ahead, last, st.scrollY, st.levelCount);
+    const pts = samplePath(ahead, last, st.scrollY, camX, st.levelCount);
     ctx.save();
     ctx.setLineDash([2, 18]);
     tracePath(ctx, pts);
@@ -381,12 +378,107 @@ function drawTrail(
 // ────────────────────────────── 节点 ──────────────────────────────
 
 /**
- * 节点四态（设计稿实测 ×2）：
+ * 百关大圈：一枚**玉璧式**圆章（外环 + 四乳 + 内环 + 玉盘），关号刻圈心。
  *
- * - 已过关：玉青圆盘 20 + 金勾；
- * - 当前：金珠 26（外晕 54 / 环 38）+ 珠下关号 + 「你在这里」金签；
- * - 未至：虚线虚圈 19，不写关号（写了就是一张表，不是一条路）；
- * - 每 10 关：虚圈 23 + 一面朱砂旗 + 关号。
+ * - 已过 / 未至：墨玉面 + 金环（未至的外环走虚线 —— 路还没修到这）；
+ * - 当前关：金面变体（径向金渐层 + 环光呼吸），「你在这里」签挂在圈外。
+ *
+ * 为什么是玉璧而不是旗：旗是布做的、会飘、会盖住隔壁的关号（旧截图里
+ * 050 的旗把下一关遮成「00」）；玉璧是圆的，r=33 全部落在自己的格子里，
+ * 关号刻在圈心，谁也遮不着谁。地图是「星空古路」，百关是路上的界碑。
+ */
+function drawBigCircle(
+  ctx: CanvasRenderingContext2D,
+  idx: number,
+  x: number,
+  y: number,
+  current: boolean,
+  locked: boolean,
+  now: number,
+  p: MapPalette,
+): void {
+  const R = 33;
+  const INNER = 20;
+  const pulse = current ? (Math.sin(now / 900) + 1) / 2 : 0;
+
+  // 圈光（只给当前关）：先把「你在这里」的视线兜住
+  if (current) {
+    const halo = ctx.createRadialGradient(x, y, R * 0.4, x, y, R * 1.9);
+    halo.addColorStop(0, alpha(p.gold, 0.14));
+    halo.addColorStop(1, alpha(p.gold, 0));
+    ctx.fillStyle = halo;
+    ctx.fillRect(x - R * 1.9, y - R * 1.9, R * 3.8, R * 3.8);
+  }
+
+  // 玉盘（整枚的底）
+  ctx.beginPath();
+  ctx.arc(x, y, R - 2, 0, Math.PI * 2);
+  if (current) {
+    const g = ctx.createRadialGradient(x - 10, y - 12, 4, x, y, R);
+    g.addColorStop(0, mixHex(p.current, '#FFFFFF', 0.28));
+    g.addColorStop(1, '#B8945A');
+    ctx.fillStyle = g;
+  } else {
+    ctx.fillStyle = mixHex(p.skyTop, p.gate, 0.5);
+  }
+  ctx.fill();
+
+  // 外环（未至走虚线：路还没修到这座界碑）
+  ctx.beginPath();
+  ctx.arc(x, y, R - 1.5, 0, Math.PI * 2);
+  if (locked) {
+    ctx.save();
+    ctx.setLineDash([7, 7]);
+  }
+  const ringA = current ? 0.78 + pulse * 0.17 : locked ? 0.34 : 0.62;
+  ctx.strokeStyle = alpha('#F2DCA8', ringA);
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  if (locked) ctx.restore();
+
+  // 四乳：外环与内环之间的四颗小凸（玉璧的看家纹样）
+  for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]] as const) {
+    ctx.beginPath();
+    ctx.arc(x + dx * (R - 8.5), y + dy * (R - 8.5), 4.6, 0, Math.PI * 2);
+    ctx.fillStyle = alpha('#F2DCA8', current ? 0.95 : locked ? 0.38 : 0.7);
+    ctx.fill();
+  }
+
+  // 内环
+  ctx.beginPath();
+  ctx.arc(x, y, INNER, 0, Math.PI * 2);
+  ctx.strokeStyle = alpha('#F2DCA8', current ? 0.65 : locked ? 0.26 : 0.42);
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // 玉芯：比玉盘深一档，给关号一块「刻字的地」
+  ctx.beginPath();
+  ctx.arc(x, y, INNER - 1.5, 0, Math.PI * 2);
+  ctx.fillStyle = current
+    ? mixHex(p.current, '#8A6B3C', 0.42)
+    : mixHex(p.skyTop, p.gate, locked ? 0.34 : 0.38);
+  ctx.fill();
+
+  // 关号刻圈心（4 位数收一档字号，不许顶破内环）
+  const nsize = idx >= 1000 ? 13 : 16;
+  label(ctx, pad3(idx), x, y, nsize, current ? '#2A2114' : locked ? 'rgba(185,178,164,0.55)' : '#F2DCA8', {
+    weight: 800,
+    stroke: 'rgba(14,24,21,0.6)',
+    strokeWidth: current ? 0 : 4,
+  });
+}
+
+/**
+ * 节点五态（设计稿实测 ×2）：
+ *
+ * - 已过关：玉青圆盘 + 金勾；
+ * - 当前：金珠（外晕 46 / 环 33）+ 珠下关号 + 「你在这里」金签；
+ * - 未至：虚线虚圈，不写关号（写了就是一张表，不是一条路）；
+ * - 每 10 关：墨玉小盘 + 虚线金环，关号**刻在盘内**。
+ *   （旗已删：旗杆插在节点上方和上一关互相压盖，盘外关号又顶到下一关，
+ *   截图里 050 的旗把关号都遮成了「00」。）
+ * - 每 100 关：**百关大圈**（玉璧式圆章，r=33），关号刻圈心。
+ *   当前关正好落在整百关时，画的是这枚大圈的金面变体。
  */
 function drawNode(
   ctx: CanvasRenderingContext2D,
@@ -396,25 +488,36 @@ function drawNode(
   st: MapViewState,
   now: number,
   p: MapPalette,
+  camX: number,
 ): void {
   const current = idx === st.currentLevel;
   const locked = idx > st.currentLevel;
   const r = nodeRadius(idx, y, st);
+  const big = idx % 100 === 0 && idx > 0;
   const milestone = idx % 10 === 0 && idx > 0;
 
   // 主题奖励关：右上角一颗小金钻（图例里承诺过，就得真的画出来）
   if (SKIN_LEVELS.includes(idx) && !locked) {
-    diamond(ctx, x + r * 0.9, y - r * 0.86, 11, p.gold);
+    // 大圈的钻石要挪出玉璧外缘（四乳外还有一道外环），否则压在环上
+    const dd = r + (big ? 14 : 5);
+    diamond(ctx, x + dd * 0.72, y - dd * 0.72, 11, p.gold);
+  }
+
+  // 百关大圈：整枚玉璧，关号刻圈心。当前关落在整百关时画金面变体。
+  if (big) {
+    drawBigCircle(ctx, idx, x, y, current, locked, now, p);
+    if (current) drawHereTag(ctx, x, y, idx, p, camX, r + 8);
+    return;
   }
 
   if (current) {
-    // 外晕 → 环 → 珠 → 芯（设计稿四层同心圆）
+    // 外晕 → 环 → 珠 → 芯（设计稿四层同心圆，随 `nodeRadius` 一起收了一档）
     ctx.beginPath();
-    ctx.arc(x, y, 54, 0, Math.PI * 2);
+    ctx.arc(x, y, 46, 0, Math.PI * 2);
     ctx.fillStyle = alpha(p.gold, 0.06);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(x, y, 38, 0, Math.PI * 2);
+    ctx.arc(x, y, 33, 0, Math.PI * 2);
     ctx.fillStyle = alpha(p.gold, 0.12);
     ctx.fill();
 
@@ -432,7 +535,7 @@ function drawNode(
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.arc(x, y, 10, 0, Math.PI * 2);
+    ctx.arc(x, y, 9, 0, Math.PI * 2);
     ctx.fillStyle = '#FFF3D6';
     ctx.fill();
 
@@ -441,40 +544,27 @@ function drawNode(
     // 行距只有 62，关号正好落在 y+62 上。来路接近正下方时，那里站着上一关的
     // 勾盘 —— 数字压绿圈，读起来像渲染出错。这种「竖直段」只在回头弯出现，
     // 出现时把关号挪到珠子**侧面**（和「你在这里」签相反的一侧）。
-    const prevX = idx > 1 ? mapNodePos(idx - 1).x : x - 100;
+    const prevX = idx > 1 ? screenXOf(mapNodePos(idx - 1).x, camX) : x - 100;
     const vertical = Math.abs(prevX - x) < 26;
-    const labelX = vertical ? x + (hereTagOnRight(x, idx) ? -52 : 52) : x;
+    const labelX = vertical ? x + (hereTagOnRight(x, idx, camX) ? -52 : 52) : x;
     const labelY = vertical ? y + 12 : y + 62;
     label(ctx, pad3(idx), labelX, labelY, 26, '#F2DCA8', {
       weight: 700, stroke: 'rgba(14,24,21,0.75)', strokeWidth: 6,
     });
-    drawHereTag(ctx, x, y, idx, p);
+    drawHereTag(ctx, x, y, idx, p, camX);
     return;
   }
 
   if (milestone) {
-    // 旗杆 + 朱砂三角旗（先画旗，珠子压住杆根）
-    ctx.beginPath();
-    ctx.moveTo(x, y - 18);
-    ctx.lineTo(x, y - 64);
-    ctx.strokeStyle = '#D4AF6A';
-    ctx.lineWidth = 3.6;
-    ctx.lineCap = 'round';
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x, y - 64);
-    ctx.lineTo(x + 34, y - 51);
-    ctx.lineTo(x, y - 38);
-    ctx.closePath();
-    const fg = ctx.createLinearGradient(x, y - 64, x + 30, y - 40);
-    fg.addColorStop(0, SEAL);
-    fg.addColorStop(1, SEAL_DEEP);
-    ctx.fillStyle = fg;
-    ctx.fill();
-
+    // 里程碑小盘：墨玉盘 + 虚线金环 + 关号**刻在盘内**。
+    //
+    // 旗删了：旗杆插在节点上方和上一关互相压盖，关号又写在盘外 y+44 ——
+    // 正好顶到下一关的盘顶，截图里都遮成了「00」。关号进盘，谁也不挡谁。
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = locked ? p.skyTop : p.gate;
+    // 里程碑的珠子是**一枚墨玉**，不是挖空的洞：
+    // 原来锁着的旗关填 `skyTop`（#060B08），在卡片上读起来就是个黑洞。
+    ctx.fillStyle = mixHex(p.skyTop, p.gate, 0.5);
     ctx.fill();
     ctx.save();
     ctx.setLineDash([6, 6]);
@@ -483,8 +573,9 @@ function drawNode(
     ctx.stroke();
     ctx.restore();
 
-    label(ctx, pad3(idx), x, y + 44, 17, locked ? 'rgba(185,178,164,0.5)' : 'rgba(185,207,192,0.65)', {
-      weight: 500, tracking: 3,
+    // 盘内关号：r=17/20 的盘心，三位数 13px 刚好刻得下
+    label(ctx, pad3(idx), x, y, 13, locked ? 'rgba(185,178,164,0.55)' : 'rgba(185,207,192,0.85)', {
+      weight: 700,
     });
     return;
   }
@@ -501,17 +592,12 @@ function drawNode(
     ctx.stroke();
     ctx.restore();
 
-    // 调试模式：锁着也能点，加一圈蓝虚线，一眼看出「这些是测试解的」
-    if (DEBUG_ENABLED && st.debugUnlockAll) {
-      ctx.save();
-      ctx.setLineDash([7, 7]);
-      ctx.strokeStyle = 'rgba(160,210,255,0.75)';
-      ctx.lineWidth = 2.4;
-      ctx.beginPath();
-      ctx.arc(x, y, r + 6, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
+    // 调试模式曾经在每个锁着的节点外面套一圈蓝虚线（「这些是能点的」）。
+    //
+    // 现在不画了：开发构建里 `debugUnlockAll` 恒开，那圈蓝线**贴着珠子**，
+    // 等于把所有节点撑大一号、还多出一层双环——做视觉比对时看到的
+    // 根本不是玩家会看到的图（「圈圈太大」有一半是它）。
+    // 「调试」小牌已经挂在卡片左上角，说明该说的话了。
     return;
   }
 
@@ -543,12 +629,15 @@ function drawNode(
  *
  * 关号也要躲签，所以这个判定抽出来共用：两边各自算一遍就会打架
  * （签翻到左边、关号也让到左边，数字就被压在签下面）。
+ *
+ * `gap`：珠心到签内缘的距离。默认 30 适配当前关金珠（r=23）；
+ * 百关大圈（r=33）要放签时得传 `r + 8`，否则签压在外环上。
  */
-function hereTagOnRight(nx: number, idx: number): boolean {
-  const prevX = idx > 1 ? mapNodePos(idx - 1).x : nx + 100;
+function hereTagOnRight(nx: number, idx: number, camX: number, gap = 30): boolean {
+  const prevX = idx > 1 ? screenXOf(mapNodePos(idx - 1).x, camX) : nx + 100;
   const wantRight = idx > 1 && prevX < nx;
-  const fitsLeft = nx - 30 - 152 >= SCENE.x + 14;
-  const fitsRight = nx + 30 + 152 <= SCENE.x + SCENE.w - 14;
+  const fitsLeft = nx - gap - 152 >= SCENE.x + 14;
+  const fitsRight = nx + gap + 152 <= SCENE.x + SCENE.w - 14;
   return wantRight ? fitsRight : !fitsLeft;
 }
 
@@ -564,21 +653,25 @@ function drawHereTag(
   ny: number,
   idx: number,
   p: MapPalette,
+  camX: number,
+  gap = 30,
 ): void {
   const tw = 152;
   const th = 42;
-  const flip = hereTagOnRight(nx, idx);
-  const tx = flip ? nx + 30 : nx - 30 - tw;
+  const flip = hereTagOnRight(nx, idx, camX, gap);
+  const tx = flip ? nx + gap : nx - gap - tw;
   const ty = ny - th / 2 - 4;
+  // 引线落点：随 gap 外移，始终点在珠子/大圈的外缘附近
+  const lead = gap - 14;
 
   // 引线：签的内侧下角 → 珠子外缘
   ctx.beginPath();
   if (flip) {
     ctx.moveTo(tx + 6, ty + th - 6);
-    ctx.lineTo(nx + 16, ny + 14);
+    ctx.lineTo(nx + lead, ny + 14);
   } else {
     ctx.moveTo(tx + tw - 6, ty + th - 6);
-    ctx.lineTo(nx - 16, ny + 14);
+    ctx.lineTo(nx - lead, ny + 14);
   }
   ctx.strokeStyle = alpha(p.gold, 0.45);
   ctx.lineWidth = 2.4;
@@ -613,7 +706,7 @@ function drawHeader(ctx: CanvasRenderingContext2D, st: MapViewState, first: numb
 }
 
 /**
- * 图例：四项一行，键（✓ / 金珠 / 旗 / ◆）用金，说明用灰。
+ * 图例：四项一行，键（✓ / 金珠 / ◎ / ◆）用金，说明用灰。
  *
  * 位置压在卡内底缘 24px —— 设计稿的图例是**卡的一部分**，
  * 不是卡下面的一行小字（那样会被误读成页脚）。
@@ -626,7 +719,7 @@ function drawLegend(ctx: CanvasRenderingContext2D, p: MapPalette): void {
   const items: Array<[string, string]> = [
     ['✓', '已过关'],
     ['金珠', '当前关'],
-    ['旗', '里程碑 · 每 10 关'],
+    ['◎', '百关大圈 · 每 100 关'],
     ['◆', `主题奖励 ${rewards}`],
   ];
   const gold = '#F2DCA8';
@@ -657,7 +750,7 @@ function drawLegend(ctx: CanvasRenderingContext2D, p: MapPalette): void {
   });
 }
 
-/** 脚卡：左「下一里程碑 050 关」+ 右金色大字「还差 3 关」。整卡可点。 */
+/** 脚卡：左「下一里程碑 100 关」+ 右金色大字「还差 3 关」。整卡可点。 */
 function drawFoot(ctx: CanvasRenderingContext2D, st: MapViewState, p: MapPalette): Button {
   const x = SCENE.x;
   const w = SCENE.w;
@@ -672,11 +765,13 @@ function drawFoot(ctx: CanvasRenderingContext2D, st: MapViewState, p: MapPalette
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  const next = Math.floor(st.currentLevel / 10) * 10 + 10;
+  // 里程碑 = 百关大圈（每 100 关一枚）。旗删了，里程碑标记被大圈接替，
+  // 频率也跟着走 100 —— 脚卡报的就是「离下一座界碑还差几关」。
+  const next = Math.floor(st.currentLevel / 100) * 100 + 100;
   const left = Math.max(1, next - st.currentLevel);
   const baseline = y + h / 2 + 4;
 
-  // 左：下一里程碑 050 关（数字用金，其余用 i300）
+  // 左：下一里程碑 100 关（数字用金，其余用 i300）
   const tSize = 24;
   const tTrack = 4.3;
   let tx = x + 38;
@@ -795,6 +890,8 @@ export function drawMapView(
   st.scrollY = clamp(st.scrollY, 0, st.maxScrollY);
   const p = mapPalette(themeId);
   const { first, last } = visibleRange(st.scrollY, st.levelCount);
+  // 横向相机：让当前关落在卡片横向的舒适区，路于是可以一直往右上延伸
+  const camX = camXOf(st.scrollY, st.levelCount);
 
   // ── 场景卡：以下全部裁在圆角里 ──
   ctx.save();
@@ -802,13 +899,14 @@ export function drawMapView(
   ctx.clip();
 
   drawScene(ctx, p);
-  drawTrail(ctx, st, first, last, p);
+  drawTrail(ctx, st, first, last, camX, p);
 
   for (let i = first; i <= last; i++) {
     const pos = mapNodePos(i);
+    const x = screenXOf(pos.x, camX);
     const y = screenYOf(pos.y, st.scrollY);
     if (y < ROUTE_TOP - 90 || y > VIEW_BOTTOM + 90) continue;
-    drawNode(ctx, i, pos.x, y, st, now, p);
+    drawNode(ctx, i, x, y, st, now, p, camX);
   }
 
   drawMist(ctx, p);

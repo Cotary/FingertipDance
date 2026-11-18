@@ -34,8 +34,17 @@ import { DEBUG_ENABLED } from '../core/debug';
 
 // ────────────────────────────── 尺寸 ──────────────────────────────
 
-/** 相邻两关的垂直间距（设计稿 31 CSS → 62）：一屏 15 关左右。 */
-export const NODE_STEP = 62;
+/** 相邻两关的垂直间距（设计稿 32.4 CSS → 65；取 70 让圈与圈之间松一点）。 */
+export const NODE_STEP = 70;
+
+/**
+ * 触控半径下限。
+ *
+ * 必须 **≥ `NODE_STEP` / 2**（70/2 = 35，取 36 留一点重叠）：
+ * 小圈（未至 r=16）加 8px 宽容也只有 24，比行距的一半还小，
+ * 两个命中圈就不相接了 —— 相邻两关正中间会出现一条点不中任何东西的死带。
+ */
+const TOUCH_MIN = 36;
 
 /**
  * 第一关节点的内容 y。
@@ -73,81 +82,293 @@ export function screenYOf(contentY: number, scrollY: number): number {
   return FLIP_BASE - contentY + scrollY;
 }
 
-/** 山道的中轴（0..706 的中点，右边 44px 是导轨）。 */
-export const CENTER_X = 353;
-
 /**
- * ── 山径的两层：一条走势腿 + 一层摆动 ──
+ * 内容 x → 屏幕 x（已减相机横移）。
  *
- * 定稿 02 屏实测（16 关，x 从 52 走到 272 CSS）：**整体向右上方走**，
- * 沿途只是 ±35 CSS 的小幅摆动（周期约 7 关）。也就是说——
+ * ## 为什么要有一个横向相机
  *
- *   走势（低频、大振幅）负责「这一段山往右上」，
- *   摆动（高频、小振幅）负责「路是人踩出来的，不是尺子画的」。
+ * 卡片只有 662 宽。如果要求「路持续向右上」又必须整条塞进这张卡里，
+ * 就只有一条出路：让它每 8 关折回一次 —— 那正是锯齿的来源。
  *
- * 旧实现把两件事压成一层正弦：振幅 198、周期 6.6 关。结果是
- * **一屏（15 关）横着扫两个来回**，读起来是弹簧或者折线，不是山路，
- * 而且每个来回的中段是等斜率直线 —— 就是「圆与圆几乎直线相连」的来源。
- *
- * 现在拆成两层：
- *
- * - **走势**是「三角波 + 滑动平均」：一条上升腿（往右上）接一条折返腿
- *   （往左上），转弯处用 1.8 关的滑动平均磨圆。三角波保证中段是真的在斜行
- *   （斜率恒定、不磨蹭）；滑动平均只在拐角处生效，把尖角变成半径 ~110px 的弯。
- *
- *   为什么不用正弦或 `smoothstep`：两者在波峰附近斜率都趋近 0，于是路径会
- *   **贴着头顶竖着走四五个节点**（两颗粒子上下叠着），比直线更难看。
- *   三角波的斜率是常数，节点永远在往前走。
- *
- * - **摆动**是设计稿那条 ±26 的小波（周期 6.8 关），让每一段斜线都有起伏。
+ * 设计样片之所以好看，是因为它画的是一条**长卷**：路可以一直往右上爬，
+ * 由视口跟着走，而不是把 1000 关压进一张卡片。
+ * 这里补上同一个机制：`nodeX` 返回的是**世界坐标**，绘制和命中统一减掉
+ * 相机偏移 `camX`。于是路想走多远走多远，屏幕上永远只看到一段。
  */
-const DRIFT_AMP = 230;
-
-/**
- * 上升腿与折返腿跨越的关数。一个周期 28 关 ≈ 1.8 屏：
- * **一屏里最多见一个回头弯**（旧版是两个半来回）。
- */
-const LEG_UP = 16;
-const LEG_DOWN = 12;
-
-/** 拐角圆化窗口（关）。1.8 关 ≈ 110px 半径 —— 再大就开始吃掉直线段了。 */
-const DRIFT_SMOOTH = 1.8;
-
-/** 相位：整体平移到「第 1 关在左下、正往右上走」的位置。 */
-const DRIFT_PHASE = 0;
-
-/** 摆动振幅：设计稿 ±35 CSS → 70 设备像素；这里 26，叠上走势后每屏横跨约 430。 */
-const WOB_AMP = 26;
-
-/** 摆动周期 ≈ 6.8 关（设计稿 7 关），与走势周期（28）不整除。 */
-const WOB_K = 0.92;
-
-/** 摆动的相位与第二谐波：让「同一段斜坡」也有起伏，不是纯正弦。 */
-const WOB_PHI = 0.4;
-const WOB2_AMP = 5;
-const WOB2_K = 2.31;
-const WOB2_PHI = 1.1;
-
-/** 未圆化的走势：三角波，一个周期里先爬 16 关再折回 12 关。 */
-function triDrift(i: number): number {
-  const cycle = LEG_UP + LEG_DOWN;
-  const u = (((i + DRIFT_PHASE) % cycle) + cycle) % cycle;
-  if (u < LEG_UP) return -DRIFT_AMP + (2 * DRIFT_AMP * u) / LEG_UP;
-  return DRIFT_AMP - (2 * DRIFT_AMP * (u - LEG_UP)) / LEG_DOWN;
+export function screenXOf(contentX: number, camX: number): number {
+  return contentX - camX;
 }
 
 /**
- * 走势腿的横向偏移（相对 `CENTER_X`）。
+ * 相机横向偏移：让当前关落在卡片横向的舒适区。
  *
- * = 三角波在 ±`DRIFT_SMOOTH`/2 范围内的 7 点平均。直线段原样通过，
- * 只有拐角被磨圆 —— 这正是盘山路的形状：长直坡 + 一个抱过来的回头弯。
+ * ## 为什么不是简单居中
+ *
+ * 路口居中会让「走过的路」和「没走的路」各占一半卡片，
+ * 玩家看不到前方有什么，也看不到自己从哪来。
+ * 定稿的构图是**当前关偏左、前方留白**（像人站在山口往上看），
+ * 所以这里把当前关放在卡片宽度的 `CAM_ANCHOR` 处，右侧留给未知。
  */
-function driftOf(i: number): number {
-  const N = 7;
-  let sum = 0;
-  for (let k = 0; k < N; k++) sum += triDrift(i + (k / (N - 1) - 0.5) * DRIFT_SMOOTH);
-  return sum / N;
+const CAM_ANCHOR = 0.42;
+
+/**
+ * 相机横移量：让**视野中心那一关**落在卡片横向的 `CAM_ANCHOR` 处。
+ *
+ * ## 为什么锚的是「视野中心」而不是「当前关」
+ *
+ * 第一版按 `currentLevel` 算，结果玩家一滚走，画面就空了：
+ * 相机停在当前关的世界 x，而视野里全是几百关之外的节点，
+ * 减掉那个偏移后横向全部飞出卡片 —— 整屏只剩等高线背景。
+ *
+ * 地图是**上下滚动**的，横向必须跟着视口走，屏幕上的每一屏才都看得见路。
+ *
+ * ## 为什么只跟「趋势」、不跟蜿蜒
+ *
+ * 早先版本直接 `nodeX(中心关)` 当相机 x，等于把蜿蜒也一起跟了：
+ * 弯处的世界 x 每关变化 60~70px，相机就跟着横向抽搐，
+ * 玩家**上下拖**的时候，整幅画面在左右平移 —— 手感像在横着滑，
+ * 完全不是「往上爬山」。
+ *
+ * 现在相机只跟 `BASE0 + SLOPE·t` 这一条斜线（趋势项），
+ * 蜿蜒留在画面上自己摆。于是：
+ *
+ * - 拖动时内容的横向位移**恒定** = `SLOPE` px/关，不会再忽快忽慢；
+ * - 弯道的幅度 100% 留在屏幕上（以前被相机吃掉一半）。
+ *
+ * 代价是当前关不再死死钉在 42% 处，会随弯左右晃 ±A —— 这正是想要的：
+ * 路在摆，人跟着路走。
+ *
+ * ## 为什么用浮点关号而不是 `levelNear` 取整
+ *
+ * 取整会让相机逐关跳一格（每关 13px），拖起来有顿挫。
+ * 这里按 y 在相邻两关之间线性插值，得到连续的浮点关号。
+ *
+ * @param scrollY 当前滚动偏移
+ * @param levelCount 关卡总数
+ */
+export function camXOf(scrollY: number, levelCount: number): number {
+  // 视野中心的关号（**连续值**，不是取整）
+  const midY = scrollY + (ROUTE_TOP + VIEW_BOTTOM) / 2;
+  const t = levelAtY(midY, levelCount);
+  const anchor = SCENE.x + SCENE.w * CAM_ANCHOR;
+  return ROUTE_BASE0 + ROUTE_SLOPE * t - anchor;
 }
+
+/**
+ * ── 山径的横向几何：一条在长卷上自由蜿蜒的路 ──
+ *
+ * ## 走过的弯路（两版都被否决的写法）
+ *
+ * **第一版**：中轴 + 对称三角波 + 两层正弦，全是零均值 ——
+ * 路只在屏幕中部来回荡，拖导轨时像一根弹簧。
+ *
+ * **第二版**：基线 + 固定 6 关缓爬 / 2 关陡折的三角波。
+ * 数值上「持续向右」达标了，但差分是完全重复的
+ * `44,44,44,44,24,-110,-110` —— 每 8 关一模一样地复读，
+ * 肉眼看到的是机械锯齿，不是山径。
+ *
+ * 两版的共同枷锁是同一个：**想把 1000 关压进一张 662 宽的卡片**。
+ * 于是横向位移只能靠「折返」来省地方，怎么调都是折线。
+ *
+ * ## 现在的公式：长卷 + 相机
+ *
+ *     x(i) = BASE0 + ROUTE_SLOPE·i          // 世界坐标：每关稳定右移
+ *          + run(i)                         // 不等长折返：右摆长、左退短
+ *
+ * 世界坐标里 `x` 一路向右延伸（真实的长卷，1000 关走 16000px）；
+ * 屏幕上看到的是减掉 `camX` 之后的那一段，相机跟着视野中心走。
+ * 因为不需要再「省地方」，折返只要负责**弯**，不用负责**右移** ——
+ * 右移交给斜率。两者一分开，参数就都能取到该有的量级。
+ *
+ * ## 为什么不是正弦
+ *
+ * 正弦在波峰处斜率趋零：那里会有四五个节点几乎竖着排成一列，
+ * 拖过去像卡住。折返段内用 smoothstep，两端本来就会放慢，
+ * 不需要靠正弦的「自然趋零」—— 而它带来的竖直堆叠是纯损失。
+ */
+
+/**
+ * 世界坐标的横向斜率（设备像素 / 关）。
+ *
+ * 这是「长卷向右上方延伸」的主项；屏幕上只看到视野中心附近那一段。
+ *
+ * 它同时决定了**拖动时内容的横向流速**（相机只跟趋势，见 `camXOf`）：
+ * 每滚一关，画面平移 `SLOPE` px。取 13 是刻意压过的 ——
+ * 16 时一屏要横移 224px，上下拖的感觉会偏「斜着滑」；
+ * 13 时是 182px，跨度仍够（配合下面的振幅，一屏 190~330px），
+ * 但竖向手感明显更正。
+ */
+const ROUTE_SLOPE = 13;
+
+/**
+ * 折返的振幅基准值（设备像素）。
+ *
+ * 实际每一折的振幅在 `ROUTE_AMP ± ROUTE_AMP_JITTER` 上再叠一层
+ * 长周期调制（`ROUTE_AMP_SWING`），实测落在 52~108 之间 ——
+ * 也就是**有的弯深、有的弯浅**，不再是每 9 关复读一次的等幅锯齿。
+ *
+ * 基准取 84：峰谷差 ~168，一屏高度是 15 关 × 70px = 1050px，
+ * 弯的横向摆幅占竖向的 ~16%，眼睛能明确读出「在绕」而不是「直线」。
+ *
+ * 上限受两件事夹住：
+ * - 屏幕横向：锚点 42%，振幅再大节点会顶到卡片左右缘；
+ * - 单关横移：p99 已到 61px/关，再快就成折线拐角了。
+ */
+const ROUTE_AMP = 84;
+
+/**
+ * 每折振幅的随机浮动比例（±38%）。
+ *
+ * 这是「千篇一律」的解药：只让段长随机，弯的**深浅**还是同一个模子，
+ * 远看就是一串同款 S。实测加上 ±38% 后，连着的弯从 123px 到 202px 不等。
+ *
+ * 再往上（>45%）会让最深的弯单关横移过 90px，读起来像折线，所以停在这里。
+ */
+const ROUTE_AMP_JITTER = 0.38;
+
+/**
+ * 振幅的长周期调制：周期（关）与深度（比例）。
+ *
+ * 47 关 ≈ 3 屏多 —— 玩家连滑几屏，会有「这一段绕得凶」和
+ * 「这一段比较直」的段落感；而单屏之内看不出周期，不会读成节奏。
+ */
+const ROUTE_AMP_PERIOD = 47;
+const ROUTE_AMP_SWING = 0.13;
+
+/**
+ * 右摆段 / 左退段的长度范围（关）。
+ *
+ * ## 这是整个形态的关键
+ *
+ * 设计稿 02 屏 16 个节点的差分是
+ * `+36,+30,-10,-28,+8,+40,+44,+34,-8,-40,-14,+36,+48,+34,+10` ——
+ * 正项合计 320，负项只有 −100，**右行占比 76%**。
+ *
+ * 换算成段长就是「右摆 6~8 关、左退 4~5 关」的不等长节奏，
+ * 所以 `ROUTE_RIGHT` 明显长于 `ROUTE_LEFT`（右行占比约 60%）。
+ * 一个完整折返周期 10~13 关，一屏（15 关）里一到两个弯。
+ *
+ * 左退段取 4~5（而不是更短）是为了**压住坡度**：
+ * 左退要在 L 关内退回 2A，速度 ≈ 3A/L。A=84、L=4 时约 63px/关，
+ * 已经是「看得出是个急弯」的上限；L=3 时会到 84px/关，像折线。
+ *
+ * 之前两版都栽在这里：
+ * - 固定 6+2：段长恒定，形态每 8 关精确复读 → 机械锯齿；
+ * - 纯正弦：波峰处斜率趋零，节点上下叠成一列，而且左右各半 → 原地打转。
+ */
+const ROUTE_RIGHT: readonly [number, number] = [6, 8];
+const ROUTE_LEFT: readonly [number, number] = [4, 5];
+
+/** 段表种子。固定值 → 同一关号永远同一位置（可测试、不依赖帧序）。 */
+const RUN_SEED = 0x2545f491;
+
+/**
+ * 一个折返段：起点（关，0-based）、长度、两端的有符号峰位。
+ *
+ * 存 `p0/p1` 而不是「方向 + 振幅」，是因为**每折的振幅不一样**：
+ * 相邻两折在转折点必须接得上（`p1` 就是下一段的 `p0`），
+ * 而它们的深度可以不同 —— 这才是「有胖有瘦」的来源。
+ * 若存成「方向 + 单一 AMP」，转折点就会跳一格。
+ */
+interface RouteRun {
+  from: number;
+  len: number;
+  p0: number;
+  p1: number;
+}
+
+/**
+ * 按序号取一个确定性随机数（0~1）。
+ *
+ * 不能用「顺序取」：段表是按需增长的，`buildRuns(4000)` 与
+ * `buildRuns(8000)` 里「转折点」的个数不同，顺序取会让同一折
+ * 拿到不同的振幅 —— 玩家滑到中途，前面的路会突然变形。
+ * 改成对序号做哈希，第 j 个转折点的振幅永远只取决于 j。
+ */
+function randAt(j: number): number {
+  let h = (Math.imul(j + 1, 0x27d4eb2d) ^ RUN_SEED) >>> 0;
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 0x100000000;
+}
+
+/** 生成到足够远的折返段表（确定性 LCG，只用于段长）。 */
+function buildRuns(need: number): RouteRun[] {
+  let x = RUN_SEED;
+  const next = (): number => {
+    x = (Math.imul(x, 1664525) + 1013904223) >>> 0;
+    return (x >>> 8) / 0x1000000;
+  };
+
+  // 第一遍：转折点的关号（段长随机，右长左短）
+  const turns: number[] = [0];
+  for (let j = 0; turns[turns.length - 1] < need; j++) {
+    const [lo, hi] = j % 2 === 0 ? ROUTE_RIGHT : ROUTE_LEFT;
+    turns.push(turns[turns.length - 1] + lo + next() * (hi - lo));
+  }
+
+  // 第二遍：每个转折点的振幅（±浮动 × 长周期调制）
+  const ampAt = (t: number, j: number): number => {
+    const jitter = 1 - ROUTE_AMP_JITTER + 2 * ROUTE_AMP_JITTER * randAt(j);
+    const swing = 1 + ROUTE_AMP_SWING * Math.sin((2 * Math.PI * t) / ROUTE_AMP_PERIOD);
+    return ROUTE_AMP * jitter * swing;
+  };
+  const out: RouteRun[] = [];
+  for (let k = 0; k < turns.length - 1; k++) {
+    // 转折点交替落在 +A / −A：偶数号是谷（−A），奇数号是峰（+A）
+    const s0 = k % 2 === 0 ? -1 : 1;
+    out.push({
+      from: turns[k],
+      len: turns[k + 1] - turns[k],
+      p0: s0 * ampAt(turns[k], k),
+      p1: -s0 * ampAt(turns[k + 1], k + 1),
+    });
+  }
+  return out;
+}
+
+/** 段表（按需增长）。 */
+let RUNS: RouteRun[] = buildRuns(4096);
+
+/** 取关号所属的段。 */
+function runAt(i: number): RouteRun {
+  while (i >= RUNS[RUNS.length - 1].from) RUNS = buildRuns(Math.ceil(i) + 4096);
+  let lo = 0;
+  let hi = RUNS.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (RUNS[mid].from <= i) lo = mid;
+    else hi = mid - 1;
+  }
+  return RUNS[lo];
+}
+
+/**
+ * 世界坐标的横向位置（关号 1-based）。
+ *
+ *     x(i) = BASE0 + SLOPE·i + run(i)
+ *
+ * `run(i)` 在相邻两个转折点之间做 smoothstep 插值（而不是直线 ——
+ * 直线段速度恒定，节点会像传送带一样匀速平移，缺少「走到拐弯处放慢」的感觉）。
+ * 两端峰位 `p0 / p1` 各带自己的振幅，所以每一折的深浅都不同。
+ */
+export function nodeX(idx: number): number {
+  const i = idx - 1;
+  const r = runAt(i);
+  const u = Math.min(1, Math.max(0, (i - r.from) / r.len));
+  const eased = u * u * (3 - 2 * u);
+  return ROUTE_BASE0 + ROUTE_SLOPE * i + r.p0 + (r.p1 - r.p0) * eased;
+}
+
+/**
+ * 世界坐标的起点 x（第 1 关）。
+ *
+ * 因为现在有横向相机（`camXOf`），这个值不再承担「塞进卡片」的约束，
+ * 只影响长卷的绝对原点。取 190 是为了让第 1 关（相机在最左、
+ * `camXOf(1) = nodeX(1) - anchor`）自然贴近卡片左缘。
+ */
+const ROUTE_BASE0 = 190;
+
 
 /**
  * 右侧导轨。
@@ -284,35 +505,32 @@ export function nodeY(idx: number): number {
   return FIRST_NODE_Y + i * NODE_STEP + Math.sin(i * 1.73) * 10;
 }
 
-/**
- * 第 idx 关节点的中心 x。
- *
- * 走势腿（往右上慢慢爬、偶尔绕一个回头弯）+ 摆动（踩出来的起伏）。
- * 两层周期不整除，所以「每个弯长得不一样」，但整体方向始终是往上偏右。
- */
-export function nodeX(idx: number): number {
-  const i = idx - 1;
-  return CENTER_X
-    + driftOf(i)
-    + Math.sin(i * WOB_K + WOB_PHI) * WOB_AMP
-    + Math.sin(i * WOB2_K + WOB2_PHI) * WOB2_AMP;
-}
-
-/** 节点坐标。关号 1-based。 */
+/** 节点坐标。关号 1-based。（世界坐标，屏幕位置要再过 `screenXOf`） */
 export function mapNodePos(idx: number): { x: number; y: number } {
   return { x: nodeX(idx), y: nodeY(idx) };
 }
 
 /**
- * 某关节点的视觉半径（设计稿实测 ×2）。
+ * 某关节点的视觉半径（设计稿实测 ×2，再收一档）。
  *
  * 定稿是**平的**：不再做「远小近大」。纸雕等高线的场景里没有灭点，
  * 节点一旦随位置缩放，就看不出哪颗是「现在」——四态靠形状与颜色区分。
+ *
+ * ## 比设计稿再小一号的理由
+ *
+ * 设计稿的半径÷间距是 9.5/32.4 ≈ 0.29。我们的地图卡只有 972 高
+ * （750×1334 画布比 375×812 矮一截，卡不可能做成 1140），
+ * 同样的间距塞进来的关数一样多，但**卡更矮**——照抄 0.29 会显得挤。
+ * 收到 16/70 ≈ 0.23，圈与圈之间才有设计稿那种「一阶一阶」的呼吸。
  */
 export function nodeRadius(idx: number, _screenY: number, st: MapViewState): number {
-  if (idx === st.currentLevel) return 26;
-  if (idx > st.currentLevel) return idx % 10 === 0 ? 23 : 19;
-  return 20;
+  // 百关大圈（每 100 关）：整枚玉璧的外廓半径。
+  // 它是地图上最大的圆章，优先级高于当前关 —— 当前关正好落在 100/200
+  // 时画的也是这枚大圈（只是换成金面）。
+  if (idx % 100 === 0 && idx > 0) return 33;
+  if (idx === st.currentLevel) return 23;
+  if (idx > st.currentLevel) return idx % 10 === 0 ? 20 : 16;
+  return 17;
 }
 
 /** 关号所属的世界下标。 */
@@ -402,19 +620,84 @@ export function visibleRange(scrollY: number, levelCount: number): { first: numb
   return { first, last: clamp(last, 1, levelCount) };
 }
 
+/**
+ * 点到线段的最短距离。用于「按在两关之间的路面上」。
+ */
+function distToSegment(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return Math.hypot(px - ax, py - ay);
+  // t = 投影在 [0,1] 之间的夹紧
+  const t = clamp(((px - ax) * dx + (py - ay) * dy) / len2, 0, 1);
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+/**
+ * 路面「走廊」的半宽（设备像素）。
+ *
+ * 命中圈接不上的那段路面，按在路面上就该按到旁边那一关。
+ * 取 22：比路面本身（外晕 18）略宽一点，够手指粗，又不会把远处的关捞进来。
+ */
+const CORRIDOR = 22;
+
 /** 判断点击落在哪个关卡节点上。@returns 关号，未命中返回 -1 */
 export function pickMapNode(x: number, y: number, st: MapViewState): number {
   const { first, last } = visibleRange(st.scrollY, st.levelCount);
+  // 与绘制用同一个相机：命中判定的 x 是屏幕坐标，节点是世界坐标
+  const camX = camXOf(st.scrollY, st.levelCount);
+  const nodes: { x: number; y: number; r: number }[] = [];
   for (let i = first; i <= last; i++) {
     const p = mapNodePos(i);
     const cy = screenYOf(p.y, st.scrollY);
-    const dx = x - p.x;
-    const dy = y - cy;
-    // 半径与视觉一致，再给 8px 宽容。下限 34 是触控底线（19 的虚圈只有 38 宽）。
-    const r = Math.max(34, nodeRadius(i, cy, st) + 8);
-    if (dx * dx + dy * dy <= r * r) return i;
+    nodes.push({
+      x: screenXOf(p.x, camX),
+      y: cy,
+      // 半径与视觉一致，再给 8px 宽容；下限 36（不能小于半个行距）。
+      r: Math.max(TOUCH_MIN, nodeRadius(i, cy, st) + 8),
+    });
   }
-  return -1;
+
+  // ① 直接命中节点圆盘
+  for (let k = 0; k < nodes.length; k++) {
+    const n = nodes[k];
+    const dx = x - n.x;
+    const dy = y - n.y;
+    if (dx * dx + dy * dy <= n.r * n.r) return first + k;
+  }
+
+  // ② 落在两关之间的「路面」上 —— 归给最近的那一关
+  //
+  // ## 为什么需要这一档
+  //
+  // 折返的陡崖段里，相邻两关横向能差 110+。两枚半径 36 的命中圈
+  // **接不上**，中间留下一条死带：按下去毫无反应。
+  //
+  // 这不是新公式带来的病 —— 旧公式（对称三角波）同样有：
+  // 实测前 400 关里有 194 对相邻节点的命中圈不相交，一半的地图都有死带。
+  //
+  // 路面是玩家看得见的东西，所以「按在路面上」就该按到旁边那一关。
+  let best = -1;
+  let bestD = Infinity;
+  for (let k = 0; k + 1 < nodes.length; k++) {
+    const a = nodes[k];
+    const b = nodes[k + 1];
+    if (distToSegment(x, y, a.x, a.y, b.x, b.y) > CORRIDOR) continue;
+    const da = Math.hypot(x - a.x, y - a.y);
+    const db = Math.hypot(x - b.x, y - b.y);
+    const near = Math.min(da, db);
+    if (near >= bestD) continue;
+    bestD = near;
+    best = da <= db ? first + k : first + k + 1;
+  }
+  return best;
 }
 
 /**
@@ -433,6 +716,29 @@ export function levelNear(y: number, levelCount: number): number {
   const lo = firstAtLeast(y, levelCount);
   if (lo > 1 && Math.abs(nodeY(lo - 1) - y) < Math.abs(nodeY(lo) - y)) return lo - 1;
   return lo;
+}
+
+/**
+ * 设计坐标 y → **连续的**关号（相邻两关之间线性插值）。
+ *
+ * 和 `levelNear` 的区别：后者返回整数（用于「视野中间是哪一关」这种判断），
+ * 这个返回浮点（用于相机这种**需要连续**的量）。
+ *
+ * `nodeY` 不是严格线性的（它有 `sin(i·1.73)·10` 的呼吸），
+ * 所以插值用相邻两关的实际 y 做分母，而不是常量 `NODE_STEP`。
+ */
+export function levelAtY(y: number, levelCount: number): number {
+  if (levelCount <= 0) return 1;
+  const lo = firstAtLeast(y, levelCount);
+  // 夹到两端（滚出地图时不外推）
+  if (lo <= 1) return 1;
+  if (lo > levelCount) return levelCount;
+  const y1 = nodeY(lo - 1);
+  const y2 = nodeY(lo);
+  const span = y2 - y1;
+  if (span <= 0) return lo;
+  // y 落在 [y1, y2) 内 → 关号落在 [lo-1, lo)
+  return lo - 1 + (y - y1) / span;
 }
 
 // ────────────────────────────── 滚动动力学 ──────────────────────────────

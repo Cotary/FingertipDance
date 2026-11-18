@@ -37,6 +37,47 @@ interface PartBase {
    * 所以图元可以点名要 `pal` 里的哪一档。
    */
   tone?: 'accent' | 'ink' | 'chip' | 'deep';
+  /**
+   * 线宽**绝对值**（单位空间长度，1 = `half`）。不填则用笔触的默认线宽。
+   *
+   * 存在的原因只有一个：**同心的多层环**。
+   *
+   * 设计稿的传送门外环不是一条线，而是「2.9 深靛 + 2.1 石青 + 0.7 亮边」
+   * 三层同心叠成一条**有厚度的环**。三层如果都吃笔触的默认线宽，
+   * 它们会完全重合，只剩最上面那一层可见 —— 厚环退化成一条细线，
+   * 传送门就读作"两个空心圈"，没有实体感。
+   *
+   * ## 为什么是绝对值而不是倍数
+   *
+   * 倍数要对着"当前笔触的默认线宽"算，而默认线宽本身是
+   * `0.26 × pal.lineW`（传送门的 `lineW = 0.55`，于是默认只有 0.143）。
+   * 想得到设计稿的 0.242 就得写 `width: 1.69` —— 这个数字既不可读、
+   * 又会在 `lineW` 一改时立刻失效（实测我第一次写 `2.9/3.12 = 0.93`，
+   * 画出来只有应有的 55%，外环细得像根线）。
+   *
+   * 直接写设计稿的量：`2.9 / 12 = 0.242`。分母 12 是因为 `MARKS` 是 24 视图。
+   */
+  width?: number;
+  /**
+   * 面图元的"磕边"开关。默认 `true`（矿物的颜料比墙低半毫米，边界是阴影）。
+   *
+   * 但**小圆点不该有边**：设计稿的传送门芯点 `circle r=1.3 fill #F0C868`
+   * 是纯色的一点金，没有描边。给它描 `deep`（深靛）会变成"金点套深圈"，
+   * 读作一颗眼睛 —— 而它要读作"口里有光"。
+   *
+   * 判据是**尺寸**：边宽固定 0.085 half，而芯点半径才 1.3/12 = 0.108 half，
+   * 描上去等于把点吃掉一半。所以这类小图元显式关掉。
+   */
+  edge?: boolean;
+  /**
+   * 线帽。默认 `'round'`（矿物笔触的钝笔）。
+   *
+   * 虚线必须显式给 `'butt'`：`round` 会让每段两端各鼓出**半个线宽**，
+   * 段长与间隙同时被吃掉一半 —— 传送门 B 的 `dash 3.2/2.6`、线宽 2.6 时，
+   * 视觉段长变成 `3.2+2.6 = 5.8`、间隙只剩 `2.6-2.6 = 0`，
+   * 一圈虚线**连成实线**（实测：设计稿是 12 段分离的弧块，引擎版是一整圈）。
+   */
+  cap?: CanvasLineCap;
 }
 
 /** 单位空间里的一个图元。 */
@@ -377,6 +418,8 @@ const PAINTERS: Record<
       ctx.fillRect(-half * 2, -half * 2, half * 4, half * 4);
       fillGrain(ctx, -half, -half, half * 2, half * 2, 0.9);
       ctx.restore();
+      // `edge: false` 的小图元不描边（见 `GlyphPart.edge`）
+      if (p.edge === false) continue;
       traceGlyphPart(ctx, p);
       ctx.strokeStyle = pal.deep;
       ctx.lineWidth = px(0.085 * (pal.edgeW ?? 1), half);
@@ -384,23 +427,33 @@ const PAINTERS: Record<
     }
 
     // ② 线：钝笔
+    //
+    // `p.width` 是**绝对线宽**（单位空间），只给"同心多层"用（传送门的三层外环）。
+    // 逐条设置而不是统一一条线宽：三层如果同宽就完全重合，厚环退化成一细线。
     const lw = pal.lineW ?? 1;
-    ctx.strokeStyle = pal.accent;
-    ctx.lineWidth = px(0.26 * lw, half);
     for (const p of parts) {
       if (fillable(p) && p.fill) continue;
+      ctx.strokeStyle = p.tone ? pal[p.tone] : pal.accent;
+      ctx.lineWidth = p.width !== undefined ? px(p.width, half) : px(0.26 * lw, half);
+      // 虚线图元自带线帽要求（见 `GlyphPart.cap`）；其余沿用笔触的钝笔圆头
+      ctx.lineCap = p.cap ?? 'round';
       traceGlyphPart(ctx, p);
       ctx.stroke();
+      ctx.lineCap = 'round';
     }
 
     // ③ 堆起来的那半毫米：同一根线往左上错一点，补一道更亮的
+    //
+    // 粗环（有 `width`）**不补这一道**：亮边本来就是单独的一层图元，
+    // 再叠一道会让环上沿发糊，厚度反而看不出来。
     ctx.save();
     ctx.translate(-half * 0.035, -half * 0.035);
     ctx.globalAlpha *= 0.55;
     ctx.strokeStyle = pal.chip;
-    ctx.lineWidth = px(0.075 * lw, half);
     for (const p of parts) {
       if (fillable(p) && p.fill) continue;
+      if (p.width !== undefined) continue;
+      ctx.lineWidth = px(0.075 * lw, half);
       traceGlyphPart(ctx, p);
       ctx.stroke();
     }

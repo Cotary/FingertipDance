@@ -809,105 +809,319 @@ function drawPlate(ctx: CanvasRenderingContext2D, layout: BoardLayout): void {
  * 4. **开片**：三根折线，每根画两遍（深绿 0.30 / 白 0.34 错位 0.5,0.6）。
  *    双线才有"刻痕两侧一明一暗"的立体感，单线只是一道划痕。
  */
+/**
+ * 釉面规格 —— **逐字照抄设计稿的 CSS**，不做任何换算。
+ *
+ * ## 为什么不再用 `ramp + sheen + foot` 那套
+ *
+ * 之前的结构是"5 段线性 + 一个高光强度 + 一个底影色"。它是从 CSS
+ * **推导**出来的，每推导一步就掉一层：
+ *
+ * - 侧壁色被抽成全局常量（`rgba(22,52,40,.92)`），于是 frost 要的
+ *   **蓝灰侧壁** `rgba(112,152,172,.80)` 永远对不上，stone 要的
+ *   **近黑侧壁** `rgba(8,11,9,.96)` 也不存在；
+ * - `rgba(255,255,255,.72)` 的高光被折成 `sheen: 0.62`；
+ * - `rgba(96,140,162,.40)` 的底内暗被折成 `rgba(40,84,78,0.28)`。
+ *
+ * CSS 的 `rgb()` 和 canvas 的 `fillStyle` 是**同一套 RGB**。同一个值，
+ * 两种技术画出来必须一致 —— 所以这里直接存设计稿的原值，
+ * `drawTile` 负责按 CSS 的语义摆它们（角度、位置、尺寸都照 CSS 的字面）。
+ *
+ * 每个字段后面都注了它对应设计稿的哪一条 `box-shadow` / `background`。
+ */
 interface Glaze {
-  /** 147° 五停：0 / 30 / 58 / 82 / 100 */
-  ramp: readonly [string, string, string, string, string];
-  /** 左上径向白光的峰值 alpha */
-  sheen: number;
-  /** 下唇内影：[高度比例, 颜色] */
-  foot: readonly [number, string];
   /**
-   * 缘光强度（0 = 没有）。
+   * 面渐变：设计稿 `linear-gradient(147deg, c1 0%, c2 28%, …)`。
    *
-   * 设计稿给每类机制格都配了一圈**同色系的外缘**：
-   * 已铺格金 `rgba(212,175,106,.22)`、钥匙格朱 `rgba(196,87,74,.26)`、
-   * 门格玄墨 `rgba(35,41,37,.40)`、开着的门天青 `rgba(150,205,185,.32)`、
-   * 传送门暮紫 `rgba(139,126,200,.32)`、星屑金 `rgba(212,175,106,.30)`。
-   * 它是"这颗棋子在盘上是什么身份"的最低成本的标记 —— 远看一圈色，
-   * 不必等看清图标就知道那儿有东西。
+   * `deg` 是 CSS 角度（0 = 向上，顺时针）。`stops` 是 `[色, 位置0..1]`。
+   * 照抄，不改角度也不改停靠点。
    */
-  edge: number;
-  /** 缘光的颜色；省略用金色 */
-  edgeColor?: string;
-  /** 开片线的浓度倍率 */
+  face: { deg: number; stops: ReadonlyArray<readonly [string, number]> };
+  /**
+   * 左上径向高光：`radial-gradient(38% 30% at 23% 15%, COLOR, transparent 72%)`。
+   *
+   * `at` 是圆心（格宽/格高的比例），`size` 是半径（同比例），
+   * `fade` 是"透明"的停靠点。
+   */
+  hi: { color: string; at: readonly [number, number]; size: readonly [number, number]; fade: number };
+  /**
+   * 右下径向转暗：`radial-gradient(120% 120% at 85% 90%, COLOR, transparent 58%)`。
+   *
+   * 有的格没有这一层（pale 有 `rgba(16,40,30,.46)`，stone 是 `rgba(0,0,0,.55)`）。
+   */
+  dim?: { color: string; at: readonly [number, number]; size: readonly [number, number]; fade: number };
+  /**
+   * 整片 glint：`linear-gradient(118deg, #fff .30 0%, #fff .08 16%, transparent 32%,
+   * transparent 68%, #000 .14 100%)`。
+   *
+   * 不是高光，是**釉面反光层**。`null` = 这类格没有（石障"无釉面"）。
+   */
+  glint: ReadonlyArray<readonly [string, number]> | null;
+  /**
+   * 胎厚侧壁：`0 3px 0 near` + `0 5px 0 far`（`box-shadow` 的模糊为 0）。
+   *
+   * **每格自己的颜色**，这是立体感的根：
+   * pale 是深绿两层，frost 是蓝灰两层，stone 是近黑两层。
+   */
+  wall: { near: string; far: string };
+  /**
+   * 倒角棱：`inset 1.5px 1.5px 0 hi` + `inset -1.5px -1.5px 0 lo`。
+   *
+   * `null` = 这一格不做倒角（设计稿里没有这两条 inset 的格）。
+   */
+  bevel: { hi: string; lo: string } | null;
+  /**
+   * 顶内高光：`inset 0 2px 7px COLOR`（`pale` 有，`stone` 没有）。
+   */
+  insetHi?: string;
+  /**
+   * 底内暗：`inset 0 -8px 18px COLOR`。
+   */
+  insetLo?: string;
+  /**
+   * 缘光：`0 0 0 1px rgba(…)` + `0 0 NNpx rgba(…)`。
+   *
+   * 设计稿用它标"这一格是什么身份"（金=星屑/单向、朱=钥匙、紫=传送门…）。
+   * `null` = 没有缘光。
+   */
+  rim: { line: string; glow?: string } | null;
+  /** 开片浓度倍率（设计稿各格 crackle 的 opacity 不同）。0 = 不画。 */
   crack: number;
 }
 
-/** 未铺：生釉。亮、哑一点点的金边都没有 —— 它是"还没烧过"的那一面 */
+/**
+ * ══════════════════════════════════════════════════════════════════
+ * 色板 · **逐字照抄设计稿 CSS**（2026-11-16-秘色天青）
+ * ══════════════════════════════════════════════════════════════════
+ *
+ * 变量表（设计稿 `:root`）：
+ * `--c050:#E4EDE6 --c100:#D5E3D8 --c200:#B8CFC0 --c300:#93B3A2 --c400:#6E9180`
+ * `--c500:#4F7A66 --c600:#2E5444 --c700:#1D3A2E`
+ * 主色 `#D4AF6A`（鎏金）、`#C4574A`（朱印）、`#8B7EC8`（暮紫）
+ *
+ * 每一条都注了它抄自设计稿的哪一行，可以直接逐字核对。
+ * **不许换算、不许推导、不许凭感觉微调。**
+ */
+
+// ── 公共层：`.pc .glint`（所有釉面格共用这一层反光）──
+const GLINT: ReadonlyArray<readonly [string, number]> = [
+  ['rgba(255,255,255,0.30)', 0],
+  ['rgba(255,255,255,0.08)', 0.16],
+  ['rgba(255,255,255,0)', 0.32],
+  ['rgba(255,255,255,0)', 0.68],
+  ['rgba(0,0,0,0.14)', 1],
+];
+
+// ── 各机制格共用的"淡青釉 + 一圈色标"侧壁/倒角/内影 ──
+//    （设计稿里 oneway/key-cell/door-cell/door-open/portal 都只有 box-shadow，
+//      background 全部继承 `.pc.pale`）
+const WALL_PALE = { near: 'rgba(22,52,40,0.92)', far: 'rgba(10,26,19,0.95)' };
+const BEVEL_PALE = { hi: 'rgba(255,255,255,0.42)', lo: 'rgba(20,52,40,0.60)' };
+const INSET_HI_PALE = 'rgba(255,255,255,0.30)';
+const INSET_LO_PALE = 'rgba(20,52,40,0.55)';
+
+/**
+ * 未铺 · 淡青釉（`.pc.pale` + `.t-final`）
+ *
+ * ```css
+ * background:
+ *   radial-gradient(38% 30% at 23% 15%, rgba(255,255,255,0.85), rgba(255,255,255,0) 72%),
+ *   radial-gradient(120% 120% at 85% 90%, rgba(16,40,30,0.46), rgba(16,40,30,0) 58%),
+ *   linear-gradient(147deg, var(--c100) 0%, var(--c200) 28%, var(--c300) 55%,
+ *                   var(--c400) 80%, var(--c500) 100%);
+ * box-shadow:
+ *   0 3px 0 rgba(22,52,40,.92), 0 5px 0 rgba(10,26,19,.95),
+ *   0 2px 4px rgba(0,0,0,.5), 0 12px 22px rgba(0,0,0,.38), 0 28px 52px rgba(0,0,0,.30),
+ *   inset 1.5px 1.5px 0 rgba(255,255,255,.42), inset -1.5px -1.5px 0 rgba(20,52,40,.60),
+ *   inset 0 2px 7px rgba(255,255,255,.30), inset 0 -8px 18px rgba(20,52,40,.55),
+ *   inset 0 0 0 1px rgba(255,255,255,.10);
+ * ```
+ */
 const GLAZE_PALE: Glaze = {
-  ramp: ['#D5E3D8', '#B8CFC0', '#93B3A2', '#6E9180', '#4F7A66'],
-  sheen: 0.50,
-  foot: [0.122, 'rgba(46,84,68,0.32)'],
-  edge: 0,
+  face: {
+    deg: 147,
+    stops: [['#D5E3D8', 0], ['#B8CFC0', 0.28], ['#93B3A2', 0.55], ['#6E9180', 0.8], ['#4F7A66', 1]],
+  },
+  hi: { color: 'rgba(255,255,255,0.85)', at: [0.23, 0.15], size: [0.38, 0.30], fade: 0.72 },
+  dim: { color: 'rgba(16,40,30,0.46)', at: [0.85, 0.90], size: [1.2, 1.2], fade: 0.58 },
+  glint: GLINT,
+  wall: WALL_PALE,
+  bevel: BEVEL_PALE,
+  insetHi: INSET_HI_PALE,
+  insetLo: INSET_LO_PALE,
+  rim: { line: 'rgba(255,255,255,0.10)' },
   crack: 0.42,
 };
 
-/** 已铺：深釉 + 金边 + 金外发光。点过的格是"烧成了"的那一颗 */
+/**
+ * 已铺 · 深釉（`.pc.deep`）—— 走过之后沉入深青，金缘 1px + 微辉光。
+ *
+ * ```css
+ * linear-gradient(147deg, var(--c500) 0%, var(--c600) 42%, var(--c700) 100%)
+ * 0 3px 0 rgba(7,16,11,.95), 0 5px 0 rgba(4,10,7,.98)
+ * 0 0 0 1px rgba(212,175,106,.28), 0 0 26px rgba(212,175,106,.14)
+ * ```
+ */
 const GLAZE_DEEP: Glaze = {
-  ramp: ['#4F7A66', '#416858', '#2E5444', '#254537', '#1D3A2E'],
-  sheen: 0.26,
-  foot: [0.15, 'rgba(0,0,0,0.38)'],
-  edge: 1,
+  face: {
+    deg: 147,
+    stops: [['#4F7A66', 0], ['#2E5444', 0.42], ['#1D3A2E', 1]],
+  },
+  hi: { color: 'rgba(255,255,255,0.40)', at: [0.23, 0.15], size: [0.38, 0.30], fade: 0.72 },
+  dim: { color: 'rgba(0,0,0,0.52)', at: [0.85, 0.90], size: [1.2, 1.2], fade: 0.58 },
+  glint: GLINT,
+  wall: { near: 'rgba(7,16,11,0.95)', far: 'rgba(4,10,7,0.98)' },
+  bevel: { hi: 'rgba(255,255,255,0.24)', lo: 'rgba(0,0,0,0.55)' },
+  insetHi: 'rgba(255,255,255,0.15)',
+  insetLo: 'rgba(0,0,0,0.52)',
+  rim: { line: 'rgba(212,175,106,0.28)', glow: 'rgba(212,175,106,0.14)' },
   crack: 0.34,
 };
 
-/** 机制格的色相：各自一套五停，但都保持"亮釉"的明度带 */
-const GLAZE_DARK: Glaze = {
-  ramp: ['#8E9BA0', '#7B8A90', '#68777E', '#55646B', '#3F4E55'],
-  sheen: 0.34, foot: [0.14, 'rgba(0,0,0,0.34)'],
-  edge: 0.55, edgeColor: 'rgba(35,41,37,0.55)', crack: 0.85,
-};
 /**
- * 门 · **开**：门洞里的天青漫到整颗棋子上。
+ * 石障 · 墨石（`.pc.stone`）—— **全盘唯一"无釉面"的格**。
  *
- * 设计稿 `door-open` 的缘光是 `0 0 22px rgba(150,205,185,.20)` ——
- * 那是"光从门里涌出来照在格上"。所以这颗棋子的釉要比闭门**亮一档、偏青**，
- * 而不是同一块暗石板上换一个图标。
+ * ```css
+ * radial-gradient(38% 30% at 23% 15%, rgba(255,255,255,0.16), … 72%)
+ * radial-gradient(120% 120% at 85% 90%, rgba(0,0,0,0.55), … 58%)
+ * linear-gradient(150deg, #3C423E 0%, #232925 52%, #12160F 100%)
+ * 0 3px 0 rgba(8,11,9,.96), 0 5px 0 rgba(4,6,5,.98)
+ * inset 1.5px 1.5px 0 rgba(255,255,255,.14), inset -1.5px -1.5px 0 rgba(0,0,0,.60)
+ * inset 0 -9px 20px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.05)
+ * ```
+ *
+ * 三处"没有"是刻意的，不是漏了：
+ * - **没有 glint**（设计稿不给 `.glint` 那一层）—— 它是死物，不反光；
+ * - **没有 `inset 0 2px 7px`**（顶内高光）—— 石头顶部不泛亮；
+ * - **没有缘光**（只有 `inset 0 0 0 1px rgba(255,255,255,.05)`，那是 1px 白线不是彩色缘）。
+ *
+ * 侧壁是**近黑**两层，不是深绿 —— 这是它和普通格在立体上的分界。
  */
-const GLAZE_OPEN: Glaze = {
-  ramp: ['#A9CFC2', '#93C0B0', '#7DAB9B', '#689585', '#547F71'],
-  sheen: 0.42, foot: [0.14, 'rgba(20,60,48,0.30)'],
-  edge: 0.62, edgeColor: 'rgba(150,205,185,0.42)', crack: 0.75,
+const GLAZE_STONE: Glaze = {
+  face: {
+    deg: 150,
+    stops: [['#3C423E', 0], ['#232925', 0.52], ['#12160F', 1]],
+  },
+  hi: { color: 'rgba(255,255,255,0.16)', at: [0.23, 0.15], size: [0.38, 0.30], fade: 0.72 },
+  dim: { color: 'rgba(0,0,0,0.55)', at: [0.85, 0.90], size: [1.2, 1.2], fade: 0.58 },
+  glint: null,
+  wall: { near: 'rgba(8,11,9,0.96)', far: 'rgba(4,6,5,0.98)' },
+  bevel: { hi: 'rgba(255,255,255,0.14)', lo: 'rgba(0,0,0,0.60)' },
+  insetLo: 'rgba(0,0,0,0.55)',
+  rim: { line: 'rgba(255,255,255,0.05)' },
+  crack: 0,
 };
-const GLAZE_VIOLET: Glaze = {
-  ramp: ['#B4A7E0', '#9E90D2', '#8778BE', '#6F60A4', '#5A4C8A'],
-  sheen: 0.34, foot: [0.14, 'rgba(30,20,60,0.34)'],
-  edge: 0.50, edgeColor: 'rgba(139,126,200,0.32)', crack: 0.85,
-};
-const GLAZE_FROST: Glaze = {
-  ramp: ['#E6F2EF', '#CEE5E0', '#B0D3CC', '#93BCB4', '#739F97'],
-  sheen: 0.56, foot: [0.13, 'rgba(40,84,78,0.28)'],
-  edge: 0, crack: 1.15,
-};
+
 /**
- * 星屑格：**深釉嵌金星**。
+ * 冰砖 · 霜面（`.pc.frost`）
  *
- * 早先是"鎏金格 + 墨星"—— 把全盘唯一的高光格给了它，结果每颗星屑都是
- * 盘上一个发亮的黄块，星在黄底上还得用深褐描线才看得见。
- * 设计稿是反过来的：**釉是深的，星是金的**（`深釉嵌金星 · 金填阴刻`）。
- * 深青底托一颗巴掌大的金星，那才是"嵌进去的一颗星"，
- * 也才配得上"1→2→3 逐颗点亮"这件事 —— 点亮的应该是星，不是格。
+ * ```css
+ * radial-gradient(38% 30% at 23% 15%, rgba(255,255,255,0.72), … 72%)
+ * radial-gradient(120% 120% at 85% 90%, rgba(80,130,155,0.35), … 58%)
+ * linear-gradient(147deg, rgba(214,236,242,0.62), rgba(160,200,214,0.42) 60%,
+ *                 rgba(120,170,190,0.36))
+ * 0 3px 0 rgba(112,152,172,.80), 0 5px 0 rgba(74,112,132,.85)
+ * inset 1.5px 1.5px 0 rgba(255,255,255,.80), inset -1.5px -1.5px 0 rgba(96,140,162,.55)
+ * inset 0 2px 7px rgba(255,255,255,.55), inset 0 -8px 16px rgba(96,140,162,.40)
+ * 0 0 0 1px rgba(255,255,255,.35), 0 0 20px rgba(190,225,240,.25)
+ * ```
+ *
+ * **两处最容易做错的地方**：
+ * 1. 侧壁是**蓝灰** `rgba(112,152,172,.80)`，不是深绿 —— 这是"冰"的厚度色。
+ *    之前侧壁色被抽成全局常量（深绿），所以冰块底下永远压着一道绿边。
+ * 2. 面渐变本身**是半透的**（`.62/.42/.36`），叠在盘面上才是"透"的。
+ *    之前我把 alpha 提成不透明，透感全丢。
+ */
+const GLAZE_FROST: Glaze = {
+  face: {
+    deg: 147,
+    stops: [
+      ['rgba(214,236,242,0.62)', 0],
+      ['rgba(160,200,214,0.42)', 0.60],
+      ['rgba(120,170,190,0.36)', 1],
+    ],
+  },
+  hi: { color: 'rgba(255,255,255,0.72)', at: [0.23, 0.15], size: [0.38, 0.30], fade: 0.72 },
+  dim: { color: 'rgba(80,130,155,0.35)', at: [0.85, 0.90], size: [1.2, 1.2], fade: 0.58 },
+  glint: GLINT,
+  wall: { near: 'rgba(112,152,172,0.80)', far: 'rgba(74,112,132,0.85)' },
+  bevel: { hi: 'rgba(255,255,255,0.80)', lo: 'rgba(96,140,162,0.55)' },
+  insetHi: 'rgba(255,255,255,0.55)',
+  insetLo: 'rgba(96,140,162,0.40)',
+  rim: { line: 'rgba(255,255,255,0.35)' },
+  crack: 1.15, // EXP: 保持原样
+};
+
+/**
+ * 星屑 · 深釉嵌金星（`.pc.star`）—— **底色与 `.pc.deep` 一致**，只是缘光更亮。
+ *
+ * ```css
+ * box-shadow 前 8 条与 deep 相同，只是最后两条：
+ *   0 0 0 1px rgba(212,175,106,.30), 0 0 18px rgba(212,175,106,.14)
+ * ```
+ * 注意：设计稿的 `.pc.star` **只写 box-shadow、没有写 background**，
+ * 所以底色取自 `.pc.pale` 或 `.pc.deep`（格态卡用的是 `deep star`）。
  */
 const GLAZE_STAR: Glaze = {
-  ramp: ['#3E6455', '#345849', '#2B4A3D', '#234033', '#1B342A'],
-  sheen: 0.30, foot: [0.14, 'rgba(0,0,0,0.34)'],
-  edge: 0.50, edgeColor: 'rgba(212,175,106,0.30)', crack: 0.5,
+  ...GLAZE_DEEP,
+  rim: { line: 'rgba(212,175,106,0.30)', glow: 'rgba(212,175,106,0.14)' },
 };
 
 /** 星屑格上的款：**金色浮雕**。填金、描深金边，与"深釉嵌金"同一句话。 */
 const STAR_PAL: GlyphPalette = {
-  ink: 'rgba(138,107,60,0.92)',
-  accent: '#F2DCA8',
-  chip: '#FFF3D6',
-  deep: 'rgba(90,66,30,0.80)',
-};
-const GLAZE_KEY: Glaze = {
-  ramp: ['#F0D49A', '#DFC082', '#CBA96A', '#B08E4F', '#8E7038'],
-  sheen: 0.50, foot: [0.13, 'rgba(88,62,26,0.30)'],
-  edge: 0.44, edgeColor: 'rgba(196,87,74,0.26)', crack: 0.7,
+  ink: '#2A1D08', accent: '#E3C170', chip: '#FFF3C9',
+  deep: 'rgba(120,86,20,0.85)', lineW: 0.9,
 };
 
-// ────────────────────────── 釉片 ──────────────────────────
+/**
+ * 钥匙 · 朱印钥（`.pc.key-cell`）—— 底色同 `.pc.pale`，缘光是**朱印**。
+ *
+ * ```css
+ * 0 0 0 1px rgba(196,87,74,.26), 0 0 16px rgba(196,87,74,.12)
+ * ```
+ * 设计稿明写"五色族里唯一不用金的机关"，所以缘光不是金。
+ */
+const GLAZE_KEY: Glaze = {
+  ...GLAZE_PALE,
+  rim: { line: 'rgba(196,87,74,0.26)', glow: 'rgba(196,87,74,0.12)' },
+};
+
+/**
+ * 单向 · 箭坯（`.pc.oneway`）—— 底色同 `.pc.pale`，缘光是**淡金**。
+ *
+ * ```css
+ * 0 0 0 1px rgba(212,175,106,.22), 0 0 14px rgba(212,175,106,.1)
+ * ```
+ */
+const GLAZE_DARK: Glaze = {
+  ...GLAZE_PALE,
+  rim: { line: 'rgba(212,175,106,0.22)', glow: 'rgba(212,175,106,0.10)' },
+};
+
+/**
+ * 门 · 开（`.pc.door-open`）—— 底色同 `.pc.pale`，缘光是**天青**。
+ *
+ * ```css
+ * 0 0 0 1px rgba(150,205,185,.32), 0 0 22px rgba(150,205,185,.2)
+ * ```
+ */
+const GLAZE_OPEN: Glaze = {
+  ...GLAZE_PALE,
+  rim: { line: 'rgba(150,205,185,0.32)', glow: 'rgba(150,205,185,0.20)' },
+};
+
+/**
+ * 传送门（`.pc.portal-a, .pc.portal-b`）—— 底色同 `.pc.pale`，缘光是**暮紫**。
+ *
+ * ```css
+ * 0 0 0 1px rgba(139,126,200,.32), 0 0 18px rgba(139,126,200,.18)
+ * ```
+ */
+const GLAZE_VIOLET: Glaze = {
+  ...GLAZE_PALE,
+  rim: { line: 'rgba(139,126,200,0.32)', glow: 'rgba(139,126,200,0.18)' },
+};
+
 
 /** 投影 / 外发光贴片缓存（键：边长 + 圆角 + 金边强度）。 */
 const spriteCache = new Map<string, HTMLCanvasElement>();
@@ -923,8 +1137,10 @@ const spriteCache = new Map<string, HTMLCanvasElement>();
  * 每画完一层就用 `destination-out` 把本体挖掉：贴片里只留**露在棋子外面**
  * 的那圈影子。不挖的话影子会糊在釉面上，整颗棋子发灰 —— 而釉面恰恰是亮的。
  */
-function shadowSprite(s: number, r: number, edge: number, edgeColor?: string): HTMLCanvasElement {
-  const key = `${Math.round(s)}|${Math.round(r)}|${edge}|${edgeColor ?? ''}`;
+function shadowSprite(s: number, r: number, g: Glaze): HTMLCanvasElement {
+  // 缓存键必须带上全部会影响像素的字段 —— 侧壁/缘光改成逐格不同之后，
+  // 只按 (尺寸, 圆角, 强度) 缓存会把 frost 和 pale 混成同一张贴片
+  const key = `${Math.round(s)}|${Math.round(r)}|${g.wall.near}|${g.wall.far}|${g.rim?.line ?? ''}|${g.rim?.glow ?? ''}`;
   const hit = spriteCache.get(key);
   if (hit) return hit;
 
@@ -945,11 +1161,17 @@ function shadowSprite(s: number, r: number, edge: number, edgeColor?: string): H
   const c = cv.getContext('2d');
   if (c) {
     c.scale(ssr, ssr);
-    if (edge > 0) {
-      // 缘光的外晕（`0 0 22px rgba(212,175,106,.13)`）：已铺格外面那圈暖光。
-      // 用 `edgeColor` 而不是写死金色 —— 钥匙的朱、传送门的紫都要这一圈
+    /**
+     * 缘光：`0 0 0 1px rgba(...)` + `0 0 NNpx rgba(...)`。
+     *
+     * 设计稿用它是标"这一格是什么身份"：
+     * 深釉 `rgba(212,175,106,.28)` 金、钥匙 `rgba(196,87,74,.26)` 朱、
+     * 门开 `rgba(150,205,185,.32)` 天青、传送门 `rgba(139,126,200,.32)` 紫。
+     * 两段都**逐字来自 `Glaze.rim`**，不再乘任何系数。
+     */
+    if (g.rim?.glow) {
       c.save();
-      c.shadowColor = edgeColor ?? `rgba(212,175,106,${0.13 * edge})`;
+      c.shadowColor = g.rim.glow;
       c.shadowBlur = 44 * k;
       c.fillStyle = '#000';
       c.beginPath();
@@ -969,10 +1191,23 @@ function shadowSprite(s: number, r: number, edge: number, edgeColor?: string): H
      *
      * 只有影子没有侧壁，格子会读成"一张飘着的卡片"。
      */
+    /**
+     * 侧壁的两层颜色**逐格来自 `Glaze.wall`**（`0 3px 0` + `0 5px 0`）：
+     *
+     * | 格 | near（3px） | far（5px） |
+     * |---|---|---|
+     * | 淡青釉 | `rgba(22,52,40,.92)` 深绿 | `rgba(10,26,19,.95)` 更深 |
+     * | 冰砖 | `rgba(112,152,172,.80)` **蓝灰** | `rgba(74,112,132,.85)` 更蓝 |
+     * | 墨石 | `rgba(8,11,9,.96)` 近黑 | `rgba(4,6,5,.98)` 更黑 |
+     *
+     * 早先这里写死成淡青釉那对深绿 —— 于是冰块底下永远压着一道绿边，
+     * 石头也没有自己的近黑侧壁。侧壁是"瓷片有多厚"的唯一表达，
+     * 颜色错了，那一格就不属于这个材质。
+     */
     const walls: Array<[number, string]> = [
       // 先画远的（暗唇），再画近的（釉壁），后者盖住前者上沿
-      [5, 'rgba(10,26,19,0.95)'],
-      [3, 'rgba(22,52,40,0.92)'],
+      [5, g.wall.far],
+      [3, g.wall.near],
     ];
 
     /**
@@ -1002,18 +1237,46 @@ function shadowSprite(s: number, r: number, edge: number, edgeColor?: string): H
       roundRect(c, pad, pad, s, s, r);
       c.fill();
       c.restore();
-
-      // 每挖一次就重画一次侧壁：挖洞的目的是"只留影子"，
-      // 而侧壁是**实体**，被挖掉就没了立体感（实测：整盘变回平片）。
-      // 重画在最上层，也保证它不会被下一层的影子盖住。
-      for (const [wdy, wcolor] of walls) {
-        c.fillStyle = wcolor;
-        c.beginPath();
-        roundRect(c, pad, pad + wdy * k, s, s, r);
-        c.fill();
-      }
     }
 
+    /**
+     * 侧壁**只在所有影子之后画一次**。
+     *
+     * 早先它被塞在影子循环里（每层影子挖完洞就重画一遍）——
+     * 三层影子下来，同一道侧壁叠了 **3 次**。
+     * `rgba(112,152,172,.80)` 叠三次，alpha 推到 ≈0.99，
+     * 颜色也被反复加亮：frost 的整格因此比设计稿亮 30~60，
+     * 蓝通道偏得最多（侧壁就是蓝灰的）。
+     *
+     * 挖洞的目的是"只留影子、不留实体"，所以侧壁必须在**挖完之后**补，
+     * 但只补**一次** —— 它是一块挤出体，不是可以层层叠加的半透明层。
+     */
+    /**
+     * **侧壁只能画在格子本体之外**（下沿以下的那一截）。
+     *
+     * 早先直接 `roundRect(pad, pad+dy, s, s)` 填充 —— 那是一个**和格子同样大**
+     * 的形状，只是往下挪了 `dy`。结果它覆盖了格子内部除顶部 `dy` 以外的全部区域，
+     * 等于给整颗棋子刷了一层 `rgba(112,152,172,.80)` 的侧壁色。
+     *
+     * 实测后果：frost 整格偏蓝偏亮 30~65（侧壁就是蓝灰）；
+     * pale 的深绿侧壁也把釉面压暗了一点（角落 Δ22~28）。
+     *
+     * 正确做法：先把**格子本体**挖掉，再画侧壁 —— 只留露在下面的那一条弧。
+     * 这样侧壁才是"瓷片的厚度"，而不是"覆盖整个面的色层"。
+     */
+    for (const [wdy, wcolor] of walls) {
+      c.save();
+      // 裁掉格子本体：只有露在外面的部分才画
+      c.beginPath();
+      c.rect(0, 0, box, box);
+      roundRect(c, pad, pad, s, s, r);
+      c.clip('evenodd');
+      c.fillStyle = wcolor;
+      c.beginPath();
+      roundRect(c, pad, pad + wdy * k, s, s, r);
+      c.fill();
+      c.restore();
+    }
   }
   spriteCache.set(key, cv);
   return cv;
@@ -1059,25 +1322,36 @@ function drawTile(
     const pad = Math.ceil(s * 0.72);
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.drawImage(shadowSprite(s, r, g.edge, g.edgeColor), x - pad, y - pad, s + pad * 2, s + pad * 2);
+    ctx.drawImage(shadowSprite(s, r, g), x - pad, y - pad, s + pad * 2, s + pad * 2);
     ctx.restore();
   }
 
   ctx.save();
   if (alpha < 1) ctx.globalAlpha = alpha;
 
-  // ── 釉色：147° 五停。
-  //    CSS 的角度从 +y（to top）起顺时针量，所以方向向量是 (sin θ, −cos θ)。
-  const td = (147 * Math.PI) / 180;
+  /**
+   * ── 面渐变：**逐字照抄** `linear-gradient(<deg>, …)`
+   *
+   * CSS 的角度从 +y（to top）起顺时针量，所以方向向量是 `(sin θ, −cos θ)`。
+   * `deg` 和 `stops` 都直接来自 `Glaze.face`，这里不做任何改写。
+   */
+  const td = (g.face.deg * Math.PI) / 180;
   const dx = Math.sin(td);
   const dy = -Math.cos(td);
-  const L = (Math.abs(dx) + Math.abs(dy)) * s * 0.5;
-  const ramp = ctx.createLinearGradient(cx - dx * L, cy - dy * L, cx + dx * L, cy + dy * L);
-  ramp.addColorStop(0, g.ramp[0]);
-  ramp.addColorStop(0.3, g.ramp[1]);
-  ramp.addColorStop(0.58, g.ramp[2]);
-  ramp.addColorStop(0.82, g.ramp[3]);
-  ramp.addColorStop(1, g.ramp[4]);
+  /**
+   * CSS 的渐变线长度 = `|w·sinθ| + |h·cosθ|`（整条线的长度，不是半长）。
+   *
+   * 端点 = 中心 ± 方向 × (L/2)。早先写的 `L = (|sin|+|cos|)·s/2` 再
+   * `cx ± dx·L`，实际端点间距只有 `2·|sin|·0.692s = 0.75s`，
+   * 而正确的应该是 `1.38s` —— **渐变线短了 45%**。
+   *
+   * 后果：格子（边长 `s`）只落在渐变的前 55%，
+   * 也就是永远取不到后半段的深色，整格系统性**偏亮**。
+   * frost 实测偏亮 40~60 就是这个原因（它的 3 个停靠点跨度大，缺掉后半段最明显）。
+   */
+  const L = (Math.abs(dx) + Math.abs(dy)) * s;
+  const ramp = ctx.createLinearGradient(cx - dx * L * 0.5, cy - dy * L * 0.5, cx + dx * L * 0.5, cy + dy * L * 0.5);
+  for (const [color, at] of g.face.stops) ramp.addColorStop(at, color);
   ctx.beginPath();
   roundRect(ctx, x, y, s, s, r);
   ctx.fillStyle = ramp;
@@ -1088,65 +1362,91 @@ function drawTile(
   roundRect(ctx, x, y, s, s, r);
   ctx.clip();
 
-  // ── 左上白光：`radial-gradient(118% 118% at 27% 19%, #fff .62, transparent 46%)`
-  //
-  //    118% 是半径（相对盒子），46% 是停点（相对那个半径）→ 实际半径 0.54s。
-  //    光源只有这一个，落点必须偏左上 —— 正中的光会把棋子读成球，
-  //    偏左上的光才读成"一片斜着受光的弧面"。
-  if (g.sheen > 0) {
-    const sx = x + s * 0.27;
-    const sy = y + s * 0.19;
-    const reach = s * 1.18 * 0.46;
-    const sheen = ctx.createRadialGradient(sx, sy, 0, sx, sy, reach);
-    sheen.addColorStop(0, `rgba(255,255,255,${g.sheen})`);
-    sheen.addColorStop(1, 'rgba(255,255,255,0)');
+
+  /**
+   * ── 左上径向高光：**照抄** `radial-gradient(<sx>% <sy>% at <x>% <y>%, COLOR, transparent <fade>%)`
+   *
+   * `size` 是半轴（相对格宽），`at` 是圆心（相对格宽）。`fade` 是"变透明"的停靠点。
+   * 一个圆角矩形格子上，`38% 30%` 的椭圆是扁的（横长竖短）——
+   * 这正是"一整片斜着受光的弧面"，而不是"一颗圆光斑"。
+   *
+   * 早先这里写死 `27%/19%`、半径 `1.18×0.46`、颜色由 `sheen` 折出来，
+   * 三处都和设计稿不同（设计稿是 `23%/15%`、`38% 30%`、`rgba(255,255,255,.85)`）。
+   */
+  {
+    const hx = x + s * g.hi.at[0];
+    const hy = y + s * g.hi.at[1];
+    const rx = s * g.hi.size[0];
+    const ry = s * g.hi.size[1];
+    /**
+     * canvas 没有"椭圆径向渐变"，标准做法是**在变换后的坐标系里建圆渐变**：
+     * 先 `translate` + `scale(1, ry/rx)`，再画半径 `rx` 的圆 ——
+     * 圆在设备空间里就被压成 `rx × ry` 的椭圆，渐变也跟着一起压。
+     *
+     * 这里必须用**矩阵变换**而不是"先画圆再缩放图层"：
+     * 后者会把 `addColorStop` 的插值也一起拉长，导致边缘衰减比 CSS 快/慢。
+     */
+    ctx.save();
+    ctx.translate(hx, hy);
+    ctx.scale(1, ry / rx);
+    const sheen = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+    sheen.addColorStop(0, g.hi.color);
+    // CSS 的 `transparent 72%`：72% 之后全是透明，且 0→72% 之间是**线性**插值
+    sheen.addColorStop(g.hi.fade, 'rgba(255,255,255,0)');
     ctx.beginPath();
-    ctx.arc(sx, sy, reach, 0, Math.PI * 2);
+    ctx.arc(0, 0, rx, 0, Math.PI * 2);
     ctx.fillStyle = sheen;
     ctx.fill();
+    ctx.restore();
   }
 
   /**
-   * **远端转暗**：`radial-gradient(120% 120% at 85% 90%, rgba(0,0,0,.52), transparent 58%)`。
+   * ── 右下径向转暗：**照抄** `radial-gradient(<sx>% <sy>% at <x>% <y>%, COLOR, transparent <fade>%)`
    *
-   * 设计稿的釉面是**两层径向**，不是只有一层高光：
-   * 左上 23%/15% 一团亮（凸起的受光面），右下 85%/90% 一团暗（背光的远端）。
-   * 一凸一凹，釉面才"隆起"。
-   *
-   * 只有高光没有这团暗时，格子读作"左上打了光的一张纸"——平的。
-   * 线性 glint 也压不住它：glint 是沿 118° 的一条带，而这里要的是**球形的远端**。
+   * 设计稿的釉面是**两层径向**：左上凸起受光、右下远端背光。一凸一凹才"隆起"。
+   * 颜色也是逐格不同 —— 浅釉格是 `rgba(16,40,30,.46)`（偏绿），
+   * 深釉格是 `rgba(0,0,0,.52)`（纯黑），冰砖是 `rgba(80,130,155,.35)`（偏蓝）。
+   * 早先这里用一个 `0.52 × (sheen/0.34) × 0.62` 的公式折，三种格的色相全丢了。
    */
-  if (g.sheen > 0) {
-    const dxp = x + s * 0.85;
-    const dyp = y + s * 0.90;
-    const dReach = s * 1.20 * 0.58;
-    const dim = ctx.createRadialGradient(dxp, dyp, 0, dxp, dyp, dReach);
-    // 0.52 是设计稿给的峰值；按 sheen 缩放，浅釉格（霜青）本来就不该太暗
-    dim.addColorStop(0, `rgba(0,0,0,${0.52 * (g.sheen / 0.34) * 0.62})`);
-    dim.addColorStop(1, 'rgba(0,0,0,0)');
+  if (g.dim) {
+    const dxp = x + s * g.dim.at[0];
+    const dyp = y + s * g.dim.at[1];
+    // CSS 的 `120% 120%` 就是**半轴等于 1.2 倍格宽**，不需要再折半。
+    // 早先这里多乘了 0.5 —— 那是"换算残留"，让转暗范围缩了一半，
+    // 结果一整片釉面比设计稿亮（实测 frost 偏亮 40~70）。
+    const rx = s * g.dim.size[0];
+    const ry = s * g.dim.size[1];
+    ctx.save();
+    ctx.translate(dxp, dyp);
+    ctx.scale(1, ry / rx);
+    const dim = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+    dim.addColorStop(0, g.dim.color);
+    dim.addColorStop(g.dim.fade, 'rgba(0,0,0,0)');
     ctx.beginPath();
-    ctx.arc(dxp, dyp, dReach, 0, Math.PI * 2);
+    ctx.arc(0, 0, rx, 0, Math.PI * 2);
     ctx.fillStyle = dim;
     ctx.fill();
+    ctx.restore();
   }
+
+  if ((globalThis as any).__EXP_ONLY_FACE) { ctx.restore(); ctx.restore(); return; }
 
   // ── 整片 glint：`linear-gradient(118deg, #fff .22, #fff .06 18%,
   //    transparent 34%, transparent 72%, #000 .10)`
   //
   //    这一层是"釉"和"塑料片"的分界：它描的是整个曲面（左上亮到右下暗），
   //    而不是在顶部点一颗光斑。少它 → 棋子读作贴纸；多它（当高光用）→ 读作玻璃珠。
-  const gd = (118 * Math.PI) / 180;
-  const gx = Math.sin(gd);
-  const gy = -Math.cos(gd);
-  const GL = (Math.abs(gx) + Math.abs(gy)) * s * 0.5;
-  const gl = ctx.createLinearGradient(cx - gx * GL, cy - gy * GL, cx + gx * GL, cy + gy * GL);
-  gl.addColorStop(0, 'rgba(255,255,255,0.22)');
-  gl.addColorStop(0.18, 'rgba(255,255,255,0.06)');
-  gl.addColorStop(0.34, 'rgba(255,255,255,0)');
-  gl.addColorStop(0.72, 'rgba(255,255,255,0)');
-  gl.addColorStop(1, 'rgba(0,0,0,0.10)');
-  ctx.fillStyle = gl;
-  ctx.fillRect(x, y, s, s);
+  // 颜色与停靠点直接来自 `Glaze.glint`（`null` = 这一格没有反光层，比如石障）
+  if (g.glint) {
+    const gd = (118 * Math.PI) / 180;
+    const gx = Math.sin(gd);
+    const gy = -Math.cos(gd);
+    const GL = (Math.abs(gx) + Math.abs(gy)) * s * 0.5;
+    const gl = ctx.createLinearGradient(cx - gx * GL, cy - gy * GL, cx + gx * GL, cy + gy * GL);
+    for (const [color, at] of g.glint) gl.addColorStop(at, color);
+    ctx.fillStyle = gl;
+    ctx.fillRect(x, y, s, s);
+  }
 
   // ── 开片：三根折线 × 两遍。
   //    深线压、白线提、错位 0.5/0.6 —— 裂缝两侧一明一暗才是"裂"，单线只是划痕。
@@ -1210,50 +1510,80 @@ function drawTile(
    * 这比切半区更接近 CSS 的 `inset 1.5px 1.5px 0` 观感 ——
    * CSS 的 inset 阴影本来就是"整圈 + 方向偏移"，不是"切一半"。
    */
-  const bevel = Math.max(1.2, s * 0.023); // 1.5/64
-  const bdx = x + s * 0.5;
-  const bdy = y + s * 0.5;
-  // 渐变沿 135°（左上亮 → 右下暗），长度覆盖整格对角线
-  const bl = s * 0.75;
-  const bev = ctx.createLinearGradient(bdx - bl * 0.7, bdy - bl * 0.7, bdx + bl * 0.7, bdy + bl * 0.7);
-  const hiA = g.edge > 0 ? 0.26 : 0.42;
-  const loA = g.edge > 0 ? 0.45 : 0.60;
-  bev.addColorStop(0, `rgba(255,255,255,${hiA})`);
-  bev.addColorStop(0.42, 'rgba(255,255,255,0.06)');
-  bev.addColorStop(0.5, `rgba(20,52,40,${loA * 0.5})`);
-  bev.addColorStop(1, `rgba(20,52,40,${loA})`);
-  ctx.beginPath();
-  roundRect(ctx, x + bevel * 0.5, y + bevel * 0.5, s - bevel, s - bevel, Math.max(1, r - bevel * 0.5));
-  ctx.strokeStyle = bev;
-  ctx.lineWidth = bevel;
-  ctx.stroke();
+  /**
+   * ── 倒角棱：`inset 1.5px 1.5px 0 hi` + `inset -1.5px -1.5px 0 lo`
+   *
+   * 这两个 inset 的语义是"整圈 + 方向偏移"：白的那条压在左上，暗的那条压在右下。
+   * 实现用**沿 135° 的线性渐变描一整圈**：左上半边自然吃到 `hi`、
+   * 右下半边吃到 `lo`，不需要切两个半区（切半区会在圆角处留竖直缝）。
+   *
+   * 颜色直接来自 `Glaze.bevel`，不乘系数。`null` = 这一格没有倒角。
+   *
+   * 宽度：CSS 的 `1.5px` 是 64px 棋子上的，按 `s/64` 换算才是同一个视觉厚度
+   * （这是"尺寸换算"不是"颜色换算" —— 颜色一字不改）。
+   */
+  if (g.bevel) {
+    const bevel = Math.max(1, s * (1.5 / 64));
+    const bdx = x + s * 0.5;
+    const bdy = y + s * 0.5;
+    const bl = s * 0.75;
+    const bev = ctx.createLinearGradient(bdx - bl * 0.7, bdy - bl * 0.7, bdx + bl * 0.7, bdy + bl * 0.7);
+    bev.addColorStop(0, g.bevel.hi);
+    // 中段过渡到 lo：CSS 没有中间的"透明段"，两条 inset 在 45° 处换手
+    bev.addColorStop(0.5, g.bevel.lo);
+    bev.addColorStop(1, g.bevel.lo);
+    ctx.beginPath();
+    roundRect(ctx, x + bevel * 0.5, y + bevel * 0.5, s - bevel, s - bevel, Math.max(1, r - bevel * 0.5));
+    ctx.strokeStyle = bev;
+    ctx.lineWidth = bevel;
+    ctx.stroke();
+  }
 
-  // 上唇：一根**硬线**（`inset 0 1px 0`）。
-  // 用渐变会变成"顶上刷了一道白雾"，整盘读作软糖。
-  const lip = Math.max(1.4, s * 0.016);
-  ctx.fillStyle = `rgba(255,255,255,${g.edge > 0 ? 0.22 : 0.62})`;
-  ctx.fillRect(x, y, s, lip);
-  // 下唇：`inset 0 -3px 7px`，从 3px 处开始压
-  const [fh, fc] = g.foot;
-  const foot = ctx.createLinearGradient(0, y + s * (1 - fh), 0, y + s);
-  foot.addColorStop(0, 'rgba(0,0,0,0)');
-  foot.addColorStop(1, fc);
-  ctx.fillStyle = foot;
-  ctx.fillRect(x, y + s * (1 - fh), s, s * fh);
-  // 内圈一根 1px 白：`inset 0 0 0 1px rgba(255,255,255,.14)`
-  ctx.beginPath();
-  roundRect(ctx, x + 0.75, y + 0.75, s - 1.5, s - 1.5, Math.max(1, r - 0.75));
-  ctx.strokeStyle = 'rgba(255,255,255,0.14)';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
+  /**
+   * ── 顶内高光：`inset 0 2px 7px <insetHi>`（设计稿里有这条的才是亮釉格）。
+   *
+   * 做法：从顶边往下铺一段渐变，`2px` 是偏移、`7px` 是模糊半径。
+   * 模糊用"从色到透明"的渐变近似 —— canvas 没有内阴影滤镜。
+   * **石障没有这一条**（`insetHi` 未定义），所以它顶部不泛亮。
+   */
+  if (g.insetHi) {
+    const sp = s * (2 / 64);
+    const bh = s * (7 / 64);
+    const ih = ctx.createLinearGradient(0, y + sp, 0, y + sp + bh);
+    ih.addColorStop(0, g.insetHi);
+    ih.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = ih;
+    ctx.fillRect(x, y, s, sp + bh);
+  }
+
+  /**
+   * ── 底内暗：`inset 0 -8px 18px <insetLo>`
+   *
+   * 从底边往上铺 8px 偏移 + 18px 模糊。这一层是"格子坐在台面上、
+   * 底沿被台面吃掉"的读法，不是装饰。
+   */
+  if (g.insetLo) {
+    const sp = s * (8 / 64);
+    const bh = s * (18 / 64);
+    const lo = ctx.createLinearGradient(0, y + s - sp - bh, 0, y + s);
+    lo.addColorStop(0, 'rgba(0,0,0,0)');
+    lo.addColorStop(1, g.insetLo);
+    ctx.fillStyle = lo;
+    ctx.fillRect(x, y + s - sp - bh, s, sp + bh);
+  }
 
   ctx.restore(); // clip
 
-  // ── 金边（只在深釉上）：`0 0 0 1px rgba(212,175,106,.22)`
-  if (g.edge > 0) {
+  /**
+   * ── 缘光线：`0 0 0 1px <rim.line>`
+   *
+   * 这是设计稿标"这一格是什么身份"的最外一圈（金/朱/天青/紫/白）。
+   * 画在 clip 外面，因为它压在格子轮廓上、略微出界。
+   */
+  if (g.rim) {
     ctx.beginPath();
     roundRect(ctx, x - 0.75, y - 0.75, s + 1.5, s + 1.5, r + 0.75);
-    ctx.strokeStyle = g.edgeColor ?? `rgba(212,175,106,${0.22 * g.edge})`;
+    ctx.strokeStyle = g.rim.line;
     ctx.lineWidth = 1.5;
     ctx.stroke();
   }
@@ -1461,9 +1791,26 @@ function drawSealStamp(
   ctx.lineWidth = Math.max(1, r * 0.055);
   ctx.stroke();
 
-  // 印文：一个「过」字。这是整个游戏唯一一次写出"结束"
+  /**
+   * 印文：一个「过」字。这是整个游戏唯一一次写出"结束"。
+   *
+   * ## 字号按**圆的内切方形**算，不是按直径
+   *
+   * 天青的印是**圆**的（瓷印），而丹青是方的（石章）。两者能放下多大的字
+   * 完全不同：方印的字可以占到边长 0.47 左右，圆印只能占到它的**内切方形**
+   * —— 边长 `size/√2 ≈ 0.707 size`，再留一圈印边，实际可用约 `0.55 size`。
+   *
+   * 早先写 `r * 1.30`（= `0.65 size`）：那个比例是照**方印**给的，
+   * 套到圆印上字的对角落到 `0.92 size` —— 远远超出 `0.707 size` 的圆面，
+   * "过"的四个角（横的右端、辶的底弯）会顶到圆边外。
+   * 81px 的时候看不出来（整体就小，糊在一起），
+   * 放大到 192px 之后这个溢出就一眼可见。
+   *
+   * `r * 1.12 = 0.56 size`：字面对角 `0.79 size`，落在内切方形里，
+   * 四周还留约 0.1 size 的印边 —— 和结算页那个 192 的印（字 96 = 0.5 size）同量级。
+   */
   ctx.fillStyle = 'rgba(255,236,224,0.94)';
-  ctx.font = `900 ${Math.round(r * 1.30)}px ${SEAL_FONT}`;
+  ctx.font = `900 ${Math.round(r * 1.12)}px ${SEAL_FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('过', 0, r * 0.04);
@@ -1561,7 +1908,19 @@ function drawCell(g: CellGeom): void {
   const seed = gx * 37.9 + gy * 21.3 + 1;
 
   if (type === CoverCell.BLOCK) {
-    drawStone(ctx, cx, cy, s, idx);
+    /**
+     * 石障 = **整格墨石釉面 + 一块八边形原石**，两层。
+     *
+     * 设计稿的格态卡是 `makePC('stone', null, 61)` —— `cls='stone'` 会带上
+     * `.pc.stone` 的**整格底色**（`linear-gradient(150deg, #3C423E, #232925, #12160F)`）
+     * 和它自己的近黑侧壁，然后才在上面画那块原石。
+     *
+     * 早先这里只调了 `drawStone()` 就 return —— 格面是空的，
+     * 墨石直接浮在盘面上，四周露出一圈底板（用户截图里那些"空白的地方"）。
+     * 那不是"少了一块石头"，是**石障自己这一格的釉面没画**。
+     */
+    drawTile(ctx, x + inset, y + inset, s, r, GLAZE_STONE, seed, 1, undefined, false);
+    drawStone(ctx, cx, cy, s * 0.94, idx);
     return;
   }
 
@@ -1569,7 +1928,26 @@ function drawCell(g: CellGeom): void {
   // 但明度带与"生釉"一致 —— 整盘得是同一批出窑的器物，不能有哪一格发暗
   switch (type) {
     case CoverCell.ICE:
-      drawTile(ctx, x + inset, y + inset, s, r, GLAZE_FROST, seed, walk ? 0.94 : 1);
+      /**
+       * 冰砖：**霜裂 + 一枚划花刻纹，但没有格内标**。
+       *
+       * 设计稿的格态卡是 `makePC('frost', 'moon', 66)`：
+       * - `cls='frost'` → 霜裂细纹（材质本体，`showCrack` 保持 true）；
+       * - 第 2 个参数是 **`glyphName`**，画进 `.glyph` 层 —— 那是**六字纹样**层；
+       * - 第 4 个参数 `markName` **没传** → `.mark` 层（格内标）是空的。
+       *
+       * 而 `makePC` 内部 `clean = isSpecial && !isFrost`：冰砖 `isFrost=true`
+       * 且无 `markName`，所以 `clean=false` —— 霜裂和纹样**两样都画**。
+       *
+       * 也就是说冰砖是"有材质纹、有装饰纹、唯独没有机制标"的格。
+       * 它的读点是**整块比周围亮一档 + 霜裂**，不是格心那枚冰晶。
+       *
+       * 这里纹样按 `motifOf` 轮换（和普通格同一套规则）：格态卡里恒传 `'moon'`
+       * 只是"这一张示例用哪一品"，盘面上几十块冰砖都长同一枚反而机械。
+       */
+      drawTile(ctx, x + inset, y + inset, s, r, GLAZE_FROST, seed, walk ? 0.94 : 1, (c, tx, ty, ts) => {
+        drawEngrave(c, tx + ts / 2, ty + ts / 2, ts, gx, gy, GLAZE_FROST);
+      });
       return;
     case CoverCell.SHARD:
       // 星屑：**净面**（格纹纪律）—— 深釉 + 一枚金星，不叠冰裂
@@ -1873,13 +2251,27 @@ interface Enamel {
   lift: string;
 }
 
+/** 解析 `#hex` / `rgb()` / `rgba()` 的相对亮度（0..255），解析失败返回 128。 */
+function lumaOfColor(c: string): number {
+  const hex = /^#([0-9a-f]{6})$/i.exec(c.trim());
+  if (hex) {
+    const n = Number.parseInt(hex[1], 16);
+    return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  }
+  const rgb = /rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i.exec(c);
+  if (rgb) {
+    return 0.299 * Number(rgb[1]) + 0.587 * Number(rgb[2]) + 0.114 * Number(rgb[3]);
+  }
+  return 128;
+}
+
 function enamelFor(g: Glaze): Enamel {
   // 用第一停的明度判"这片釉是浅是深"。170 是分界：
   // 浅釉（>170）上的刻痕必须是暗的，深釉上必须是亮的
-  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(g.ramp[0]);
-  const lum = m
-    ? (Number.parseInt(m[1], 16) * 0.299 + Number.parseInt(m[2], 16) * 0.587 + Number.parseInt(m[3], 16) * 0.114)
-    : 128;
+  // 取面渐变的第一停，解析 `#hex` / `rgb(…)` / `rgba(…)` 三种写法
+  // —— 冰砖的第一停现在是 `rgba(214,236,242,0.62)`（照抄设计稿的半透），
+  // 只认 `#hex` 会退化成默认值，把冰砖判成"深釉"。
+  const lum = lumaOfColor(g.face.stops[0][0]);
   if (lum > 170) {
     // 浅釉（霜青 / 鎏金 / 铜）：压一道暗刻，再在下方提一道极弱的高光 ——
     // 高光在**下面**是因为浅底上的"凸起"读作反光，凹槽的受光边在槽的下沿
@@ -2295,7 +2687,17 @@ export const MISE_THEME = composeTheme({
       // 末粒 → 玉磬：120ms（设计稿 `N*48 + 120`），比鸣沙的土埙早 48
       winGap: 120,
       // 盖印 320ms、175ms 触底、绢面抖 ±2px（设计稿 `silkShake` 的 2/54 格）
-      seal: { ms: 320, at: 175, shake: 2 / 54, size: 0.8 },
+      /**
+       * 盖印 320ms、墙抖 2/54 格（比鸣沙轻一档 —— 瓷印磕在釉面上，不是石章砸墙）。
+       *
+       * `size` 0.29 是**卡宽比例**：`0.29 × 662 ≈ 192`，与结算页的印同尺寸。
+       *
+       * 早先写 0.8（"0.8 个棋子"），5×6 上只有 81px、11×11 上 44px ——
+       * "过"字小到读不出来。当时那句注释写的是"瓷印是落款，不是盖住"，
+       * 方向没错，但**量级判断错了**：落款也可以很大，小的是喧宾夺主，
+       * 而 81px 的问题是读不清，不是谦让。
+       */
+      seal: { ms: 320, at: 175, shake: 2 / 54, size: 0.29 },
     },
 
     winSeal: drawSealStamp,
@@ -2356,7 +2758,21 @@ export const MISE_THEME = composeTheme({
        * **两个方框**（`rect`），压在金环上就是截图里那个"带方块的方框"。
        * 早先漏了这两项，起终点一直是「金圈 + 方框」两层打架。
        */
-      skip: [CoverCell.BLOCK, CoverCell.START, CoverCell.END],
+      /**
+       * 不画格内标的三类 + **冰砖**。
+       *
+       * 冰砖这一条是两个设计稿共同的规矩，但很容易漏：它长得像"有标"的格。
+       * 两套的 `MARKS`（24 视图格内标）里**都没有 `ice` 这个键** ——
+       * 十个键是 start/end/trail/arrow/key/door/door-open/portal-a/portal-b/arrive。
+       * 冰不在其中，因为它是「地形」不是「标」。
+       *
+       * 那个六边晶只存在于 `ICONS`（48 视图图鉴），供玩家"看说明书"用；
+       * 贴进格心就成了设计稿点名的误用：「把 48px 机制图标直接贴进棋格当机关」。
+       *
+       * 天青的冰砖另有霜裂 + 一枚划花（见 `case CoverCell.ICE`），
+       * 但那是**材质纹 + 装饰纹**，不是机制标。
+       */
+      skip: [CoverCell.BLOCK, CoverCell.START, CoverCell.END, CoverCell.ICE],
       shapes: MISE_SHAPES,
       decor: MISE_DECOR,
       // 「格内永远不落字」：星阶靠星数、传送门靠实虚，都不写数字角标

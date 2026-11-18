@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   WORLDS as MAP_WORLDS, createMapState, mapNodePos, visibleRange, pickMapNode, scrollToLevel,
-  worldOf, nodeY, nodeX, levelNear, stepMapScroll,
+  worldOf, nodeY, nodeX, levelNear, stepMapScroll, camXOf, screenXOf,
   railGeometry, railScrollAt, railYOf, pickRail, RAIL,
-  ROUTE_TOP, VIEW_BOTTOM, nodeRadius, screenYOf, FLIP_BASE,
+  ROUTE_TOP, VIEW_BOTTOM, nodeRadius, screenYOf, FLIP_BASE, SCENE,
 } from '../src/ui/mapview';
 import { mapPalette } from '../src/render/mapstyle';
 import { THEMES } from '../src/render/themes';
@@ -12,14 +12,31 @@ import { WORLDS as COVER_WORLDS } from '../src/core/cover/v3/generate';
 /** 四态里最大的视觉半径（当前金珠 26）。 */
 const MAX_R = 26;
 
+/** 卡片左缘（节点圆心不能比它更左，否则半个圆被裁掉）。 */
+const SCENE_LEFT = SCENE.x;
+
+/**
+ * 模拟「把视图滚到 `lv` 关」时的相机横移量。
+ *
+ * 相机的输入是 `scrollY`（视野中心落在哪一关），不是关号 ——
+ * 直接传关号会让「滚到第 300 关」变成「只看第 300 那一小段」，
+ * 所以这里统一用 `scrollToLevel` 换算。
+ */
+const camAtLevel = (lv: number, count = 1000): number => camXOf(scrollToLevel(lv), count);
+
 describe('关卡地图', () => {
-  it('节点不出界（含节点半径与右侧导轨的手势区）', () => {
-    for (let i = 1; i <= 400; i++) {
-      const p = mapNodePos(i);
-      // 左边至少留 40：再往外就贴屏幕边了
-      expect(p.x).toBeGreaterThanOrEqual(40);
-      // 右边 690 之后是导轨的手势区，节点压进去就会被导轨抢走点击
-      expect(p.x).toBeLessThanOrEqual(RAIL.hitLeft - MAX_R);
+  it('节点在屏幕视野内（横向相机跟随，节点不会跑出卡片）', () => {
+    // 相机把当前关锚在卡片 42% 处。任何一关成为「当前关」时，
+    // 它自己和前后各 8 关都必须还落在卡片的可视横向范围内。
+    for (let cur = 5; cur <= 400; cur += 7) {
+      const cam = camAtLevel(cur);
+      for (let i = cur - 8; i <= cur + 8; i++) {
+        if (i < 1) continue;
+        const sx = screenXOf(nodeX(i), cam);
+        // 左边留一点余量（卡左缘 44）；右边不能压进导轨手势区
+        expect(sx, `cur=${cur} i=${i}`).toBeGreaterThan(SCENE_LEFT - MAX_R);
+        expect(sx, `cur=${cur} i=${i}`).toBeLessThan(RAIL.hitLeft - MAX_R);
+      }
     }
   });
 
@@ -38,8 +55,8 @@ describe('关卡地图', () => {
     for (let i = 1; i < 400; i++) expect(nodeY(i + 1)).toBeGreaterThan(nodeY(i));
   });
 
-  it('蜿蜒：整条路不是直线，也不是「同一行四个点」', () => {
-    // 相邻节点的 x 必须真的在动 —— 全等就是退回了旧的网格
+  it('蜿蜒：长卷上的 x 真的在动，不是一根直线', () => {
+    // 相邻节点的世界 x 必须有变化 —— 全等就退回成一条竖直的斜坡
     let moved = 0;
     for (let i = 1; i < 40; i++) if (Math.abs(nodeX(i + 1) - nodeX(i)) > 20) moved++;
     expect(moved).toBeGreaterThan(20);
@@ -54,35 +71,92 @@ describe('关卡地图', () => {
     expect(max - min).toBeGreaterThan(150);
   });
 
-  it('一屏（15 关）横向至少走 180：路径不是一根竖线', () => {
-    // 定稿 02 屏一屏走完 440 设备像素；这条守的是「斜着上山」的下限。
-    // 旧版（振幅 198、周期 6.6 关）一屏扫两个来回，跨度虽然够，但方向反了 5 次。
-    for (let s = 1; s + 15 <= 400; s += 2) {
+  it('一屏（15 关）在屏幕上横向至少走 180：路径不是一根竖线', () => {
+    // 看的是**玩家实际看到的**那一屏：以某关为当前关（相机锚定它），
+    // 数它 ±7 关在屏幕上的横向跨度。
+    for (let cur = 10; cur + 7 <= 400; cur += 3) {
+      const cam = camAtLevel(cur);
       let min = Infinity;
       let max = -Infinity;
-      for (let i = s; i < s + 15; i++) {
-        min = Math.min(min, nodeX(i));
-        max = Math.max(max, nodeX(i));
+      for (let i = cur - 7; i <= cur + 7; i++) {
+        const sx = screenXOf(nodeX(i), cam);
+        min = Math.min(min, sx);
+        max = Math.max(max, sx);
       }
-      expect(max - min).toBeGreaterThanOrEqual(180);
+      expect(max - min, `cur=${cur}`).toBeGreaterThanOrEqual(180);
     }
   });
 
-  it('一屏里最多两次方向反转：不再「一屏绕几个弯」', () => {
-    // 旧实现（正弦 6.6 关一个来回）一屏反 5 次，读起来是弹簧。
-    // 现在是「长腿 + 一次折返」：允许摆动带来的一次小回头，但不许再来第三个。
-    for (let s = 1; s + 15 <= 400; s += 2) {
+  it('一屏里要有 2~5 个弯：照设计稿的「盘山路」，不是弹簧也不是直尺', () => {
+    // 设计稿 02 屏的 16 个节点折了 4 次 —— 这才是「路是人踩出来的」的来源。
+    // 少了成直尺，多了成弹簧。
+    // 现在看的是屏幕坐标（相机锚定当前关），因为玩家看到的就是这一段。
+    for (let cur = 10; cur + 7 <= 400; cur += 3) {
+      const cam = camAtLevel(cur);
       let turns = 0;
       let last = 0;
-      for (let i = s; i < s + 14; i++) {
-        const dx = nodeX(i + 1) - nodeX(i);
+      for (let i = cur - 7; i < cur + 7; i++) {
+        const dx = screenXOf(nodeX(i + 1), cam) - screenXOf(nodeX(i), cam);
         if (Math.abs(dx) < 6) continue; // 拐点附近的小抖动不算一次转向
         const sign = dx > 0 ? 1 : -1;
         if (last !== 0 && sign !== last) turns++;
         last = sign;
       }
-      expect(turns).toBeLessThanOrEqual(2);
+      expect(turns, `cur=${cur}`).toBeGreaterThanOrEqual(2);
+      expect(turns, `cur=${cur}`).toBeLessThanOrEqual(5);
     }
+  });
+
+  it('整条路持续向右上：长卷上的 x 单调推进，不是左右来回荡的弹簧', () => {
+    // ## 这条改了语义
+    //
+    // 旧版要求「每 15 关窗口中位数递增」，本质是在问
+    // 「屏幕上的路是不是在往右挪」。但加横向相机之后，屏幕上的路
+    // **本来就不该往右挪** —— 相机跟着走，画面永远是当前关附近的那一段。
+    //
+    // 真正的意图是「这条路整体在往右上延伸，而不是原地绕圈」，所以要量
+    // **世界坐标**：任意 100 关的窗口，最右端都要比前一个窗口更靠右。
+    // 因为 `nodeX` 里 `ROUTE_SLOPE * i` 是严格递增项，蜿蜒只是叠在上面的
+    // 有界扰动（|wobble| ≤ 138），所以窗口端点必然稳定右移。
+    const wins: number[] = [];
+    for (let s = 1; s + 100 <= 1000; s += 100) {
+      wins.push(Math.max(...Array.from({ length: 100 }, (_, k) => nodeX(s + k))));
+    }
+    const rising = wins.slice(1).filter((v, i) => v > wins[i]).length;
+    expect(rising).toBe(wins.length - 1);
+  });
+
+  it('起点在左下、终点在右上（长卷方向）', () => {
+    // 世界坐标里 x 必须随关号推进：第 1000 关远在第 1 关的右边。
+    expect(nodeX(1)).toBeLessThan(250);
+    expect(nodeX(1000)).toBeGreaterThan(nodeX(1) + 800);
+  });
+
+  it('相机锚点不越界：任何一关成为当前关时，它都落在卡片的舒适区', () => {
+    // 节点半径最大 26（当前关金珠）。相机把它锚在卡片宽度的 42% 处，
+    // 所以要检验的是**屏幕坐标**始终在卡片内、且不压导轨手势区。
+    for (let i = 1; i <= 1000; i++) {
+      const sx = screenXOf(nodeX(i), camAtLevel(i));
+      expect(sx - MAX_R, `lv=${i}`).toBeGreaterThanOrEqual(SCENE.x);
+      expect(sx + MAX_R, `lv=${i}`).toBeLessThanOrEqual(RAIL.hitLeft);
+    }
+  });
+
+  it('净漂移为正：长卷整体向右推进，蜿蜒只是叠在上面的扰动', () => {
+    // 有了 `ROUTE_SLOPE·i` 这一项，任意足够长的区间里
+    // 「向右的总路程」必然大于「向左的总路程」——
+    // 蜿蜒（|wobble| ≤ A1+A2）是有界的，基线是无界的，长程上一定赢。
+    // 用 200 关（远大于两个主周期）来量，避免被单个波峰带偏。
+    let right = 0;
+    let left = 0;
+    for (let i = 1; i < 200; i++) {
+      const d = nodeX(i + 1) - nodeX(i);
+      if (d > 0) right += d;
+      else left -= d;
+    }
+    expect(right).toBeGreaterThan(left);
+    // 净位移也要明显为正（不是「来回抵消后勉强为正」）
+    expect(nodeX(200) - nodeX(1)).toBeGreaterThan(150);
   });
 
   it('世界边界与 cover 关卡生成器一致', () => {
@@ -132,23 +206,55 @@ describe('关卡地图', () => {
   it('点击节点能选中关号', () => {
     const st = createMapState(5, 1000, {});
     const p = mapNodePos(3);
-    expect(pickMapNode(p.x, screenYOf(p.y, st.scrollY), st)).toBe(3);
+    // 命中判定吃的是**屏幕坐标**，所以要先过相机
+    const sx = screenXOf(p.x, camXOf(st.scrollY, st.levelCount));
+    expect(pickMapNode(sx, screenYOf(p.y, st.scrollY), st)).toBe(3);
     expect(pickMapNode(5, 5, st)).toBe(-1);
   });
 
   it('点到两关之间的空处，只会落到这两关之一', () => {
     const st = createMapState(5, 1000, {});
+    const cam = camXOf(st.scrollY, st.levelCount);
     const a = mapNodePos(3);
     const b = mapNodePos(4);
+    const ax = screenXOf(a.x, cam);
+    const bx = screenXOf(b.x, cam);
     const ay = screenYOf(a.y, st.scrollY);
     const by = screenYOf(b.y, st.scrollY);
-    // 行距 62、触控半径下限 34 —— 相邻两颗的命中圈本来就相交，
+    // 行距 70、触控半径下限 36 —— 相邻两颗的命中圈本来就相交，
     // 中间那块地不属于「空地」，属于「最近的那一关」。
     // 这里要守的是：**不能因为指偏而选中更远的关**。
-    const hit = pickMapNode((a.x + b.x) / 2, (ay + by) / 2, st);
+    const hit = pickMapNode((ax + bx) / 2, (ay + by) / 2, st);
     expect([3, 4]).toContain(hit);
     // 明显偏到隔壁的世界（离得远）就必须落空
     expect(pickMapNode(5, 5, st)).toBe(-1);
+  });
+
+  it('路面走廊没有死带：按在两关之间一定按得到某一关', () => {
+    // 折返的陡崖段里，相邻两关横向能差 110+，两枚半径 36 的命中圈接不上。
+    // 这不是新公式带来的病 —— 旧公式实测前 400 关里有 194 对相邻节点
+    // 的命中圈不相交，一半的地图都有「按下去没反应」的死带。
+    //
+    // 所以命中判定加了一档「路面走廊」：按在看得见的路面上，
+    // 归给最近的那一关。这条守的就是「任何一屏里都没有点不中的路」。
+    const st = createMapState(5, 1000, {});
+    for (const scrollY of [0, 30000, 61000]) {
+      st.scrollY = scrollY;
+      const cam = camXOf(st.scrollY, st.levelCount);
+      const { first, last } = visibleRange(st.scrollY, st.levelCount);
+      for (let i = first; i < last; i++) {
+        const a = mapNodePos(i);
+        const b = mapNodePos(i + 1);
+        const ax = screenXOf(a.x, cam);
+        const bx = screenXOf(b.x, cam);
+        const ay = screenYOf(a.y, st.scrollY);
+        const by = screenYOf(b.y, st.scrollY);
+        // 取中点（死带最深处）
+        const hit = pickMapNode((ax + bx) / 2, (ay + by) / 2, st);
+        expect(hit).toBeGreaterThanOrEqual(i);
+        expect(hit).toBeLessThanOrEqual(i + 1);
+      }
+    }
   });
 
   it('聚焦当前关的滚动偏移会被夹进合法区间', () => {
@@ -181,10 +287,11 @@ describe('关卡地图', () => {
 
   it('地图节点三态：已通关 / 当前 / 未解锁（几何上都能命中，拦截在 main）', () => {
     const st = createMapState(2, 1000, { '1': 3 });
+    const cam = camXOf(st.scrollY, st.levelCount);
     const p1 = mapNodePos(1);
-    expect(pickMapNode(p1.x, screenYOf(p1.y, st.scrollY), st)).toBe(1);
+    expect(pickMapNode(screenXOf(p1.x, cam), screenYOf(p1.y, st.scrollY), st)).toBe(1);
     const p3 = mapNodePos(3);
-    expect(pickMapNode(p3.x, screenYOf(p3.y, st.scrollY), st)).toBe(3);
+    expect(pickMapNode(screenXOf(p3.x, cam), screenYOf(p3.y, st.scrollY), st)).toBe(3);
   });
 });
 
@@ -313,21 +420,33 @@ describe('翻转坐标（往上走 = 走向 ∞）', () => {
 
   it('节点半径是平的：四态各有定值，与位置无关', () => {
     const st = createMapState(40, 1000, {});
-    expect(nodeRadius(40, 0, st)).toBe(26);       // 当前
-    expect(nodeRadius(39, 0, st)).toBe(20);       // 已过
-    expect(nodeRadius(41, 800, st)).toBe(19);     // 未至
-    expect(nodeRadius(50, 800, st)).toBe(23);     // 里程碑
+    expect(nodeRadius(40, 0, st)).toBe(23);       // 当前
+    expect(nodeRadius(39, 0, st)).toBe(17);       // 已过
+    expect(nodeRadius(41, 800, st)).toBe(16);     // 未至
+    expect(nodeRadius(50, 800, st)).toBe(20);     // 里程碑
     // 同一个节点画在任何高度都一样大
     expect(nodeRadius(41, ROUTE_TOP, st)).toBe(nodeRadius(41, VIEW_BOTTOM, st));
   });
 
-  it('节点命中半径有 34 下限', () => {
+  it('百关大圈半径 33，优先级压过当前关（整百关上的当前关画的也是大圈）', () => {
+    const st = createMapState(40, 1000, {});
+    expect(nodeRadius(100, 800, st)).toBe(33);     // 百关大圈
+    expect(nodeRadius(200, 800, st)).toBe(33);
+    const st100 = createMapState(100, 1000, {});
+    expect(nodeRadius(100, 0, st100)).toBe(33);    // 当前关落在 100：仍是大圈（金面变体）
+    expect(nodeRadius(110, 800, st100)).toBe(20);  // 未至整十小盘照旧
+    expect(nodeRadius(90, 800, st100)).toBe(17);   // 已过的整十关随已过关走
+    expect(nodeRadius(101, 800, st100)).toBe(16);
+  });
+
+  it('节点命中半径有 36 下限（≥ 半个行距，不能留死带）', () => {
     const st = createMapState(1, 1000, {});
     const p = mapNodePos(1);
+    const sx = screenXOf(p.x, camXOf(st.scrollY, st.levelCount));
     const y = screenYOf(p.y, st.scrollY);
-    expect(pickMapNode(p.x, y, st)).toBe(1);
-    expect(pickMapNode(p.x + 30, y, st)).toBe(1);
-    expect(pickMapNode(p.x + 40, y, st)).toBe(-1);
+    expect(pickMapNode(sx, y, st)).toBe(1);
+    expect(pickMapNode(sx + 30, y, st)).toBe(1);
+    expect(pickMapNode(sx + 40, y, st)).toBe(-1);
   });
 });
 

@@ -760,42 +760,67 @@ buildNav('nav-set','map');   buildNav('nav-skin','skin'); buildNav('nav-rank','r
 (function () {
   const svg = document.getElementById('mapSvg');
   const CUR = 47;
-  // 可视窗 40–55：蜿蜒山径（下=来路·第1关方向，上=去路·∞方向）
-  const nodes = [
-    { lv: 40, x: 52,  y: 508, label: '040' },
-    { lv: 41, x: 88,  y: 480 },
-    { lv: 42, x: 118, y: 450 },
-    { lv: 43, x: 108, y: 412 },
-    { lv: 44, x: 80,  y: 376 },
-    { lv: 45, x: 88,  y: 336, label: '045' },
-    { lv: 46, x: 128, y: 310 },
-    { lv: 47, x: 172, y: 282, label: '047' },
-    { lv: 48, x: 206, y: 246 },
-    { lv: 49, x: 198, y: 206 },
-    { lv: 50, x: 158, y: 172, label: '050' },
-    { lv: 51, x: 144, y: 132 },
-    { lv: 52, x: 180, y: 100 },
-    { lv: 53, x: 228, y: 76 },
-    { lv: 54, x: 262, y: 50 },
-    { lv: 55, x: 272, y: 22, label: '055' }
-  ];
-  // 过点平滑（中点二次贝塞尔）
-  function smooth(pts) {
-    if (pts.length < 2) return '';
-    let d = `M ${pts[0].x} ${pts[0].y}`;
-    if (pts.length === 2) return d + ` L ${pts[1].x} ${pts[1].y}`;
-    d += ` L ${(pts[0].x + pts[1].x) / 2} ${(pts[0].y + pts[1].y) / 2}`;
-    for (let i = 1; i < pts.length - 1; i++) {
-      const mx = (pts[i].x + pts[i + 1].x) / 2, my = (pts[i].y + pts[i + 1].y) / 2;
-      d += ` Q ${pts[i].x} ${pts[i].y} ${mx} ${my}`;
-    }
-    const last = pts[pts.length - 1];
-    return d + ` L ${last.x} ${last.y}`;
+
+  /* ===== 山径脊线函数 =====
+     t = 关卡号（可为小数）。可视窗 40–55，窗外由函数自然外延 → 1 → ∞，不再手写坐标。
+        x(t) = x0 − [ Σ Aᵢ·sin(2πt/Tᵢ + φᵢ) − Σ Aᵢ·sin(2π·CUR/Tᵢ + φᵢ) ]
+        y(t) = y0 − (t − CUR) · dy
+     方向：下=来路（第 1 关），上=去路（∞）。x 用减号 → 以 x0 为轴左右翻转，
+           山径从「左下」起、向「右上」走，末端正好指向右上角的 ∞ 标记。
+     三层各管一件事，缺一层就难看：
+        主摆 A₁=79  T₁=29.7 → 大 S 弯、定整条山径的骨架与气势
+        次摆 A₂=28  T₂=7.5  → 中频小弯，让摆动有呼吸、不呆板
+        微扰 A₃=6   T₃=4.6  → 极轻微的手作抖动，去掉机械感
+     三层周期取无理比（29.7 : 7.5 : 4.6），叠加后永不同相 → 无限关卡不重样。
+     上一版用「相邻节点连中点贝塞尔」，节点只是控制点、曲线不过点，
+     急弯处节点会浮在路外 7–15px；函数法从根上消除该问题。
+     调参指引（按此顺序改，改一处看一处）：
+       · 弯太急 / 出现 V 形尖角 → 调小 A₂ 或调长 T₂（当前最小转弯半径 ≈ 1960px，足够圆润）
+       · 出现长直斜段        → 调小 T₂ 让次摆更密，或调大 A₂
+       · 摆动太窄显拘谨      → 调大 A₁（勿超 90，否则贴边）
+       · 想改左右走向        → 把 spine() 里的减号改成加号（即整体左右镜像）
+       · 节点太挤 / 太疏     → 调 dy（32.3px 恰好把 16 关铺满 570 高）
+       · 换一个到底长啥样    → 只改三个 φ（相位），形态全新、风格不变
+     安全边界：ΣAᵢ = 113 < x0 − 40，两侧各留 ≥68px 呼吸区，任何关卡都不会贴边。 */
+  const SPINE = {
+    x0: 165, y0: 282, dy: 32.3,       // 中心轴 / 当前关纵位 / 每关步长
+    mirror: true,                     // true = 左下→右上（当前）；false = 右下→左上
+    waves: [
+      { a: 79, T: 29.7, p: 5.67 },    // 主摆：大 S 弯
+      { a: 28, T: 7.5,  p: 2.67 },    // 次摆：中频小弯
+      { a: 6,  T: 4.6,  p: 0.21 }     // 微扰：手作感
+    ]
+  };
+  const spineY = t => SPINE.y0 - (t - CUR) * SPINE.dy;
+  // 三层叠加后的原始摆动量
+  const waveSum = t => SPINE.waves.reduce((s, w) => s + w.a * Math.sin(2 * Math.PI * t / w.T + w.p), 0);
+  // 归一量：让当前关正好落在中心轴上，镜头不会跑偏
+  const _zero = waveSum(CUR);
+  function spine(t) {
+    const off = waveSum(t) - _zero;                 // 相对当前关的摆动位移
+    return { x: SPINE.x0 + (SPINE.mirror ? -off : off), y: spineY(t) };
   }
-  const inTail  = { x: 38, y: 572 };  // 来路尾迹（渐隐于画面外）
-  const outTail = { x: 288, y: -20 }; // 去路尾迹（没入云雾）
-  const walked = smooth([inTail].concat(nodes.slice(0, 8)));   // 40→47 已走
-  const future = smooth(nodes.slice(7).concat([outTail]));     // 47→55→∞ 未走
+  // 曲线 = 函数本身：密集采样即可，采样点本就在曲线上，无需再套贝塞尔平滑
+  function spinePath(t0, t1, step) {
+    step = step || 0.12;
+    let d = '', first = true;
+    for (let t = t0; t <= t1; t += step) {
+      const p = spine(t);
+      d += (first ? 'M ' : ' L ') + p.x.toFixed(1) + ' ' + p.y.toFixed(1);
+      first = false;
+    }
+    const e = spine(t1);
+    return d + ` L ${e.x.toFixed(1)} ${e.y.toFixed(1)}`;
+  }
+  // 节点 = 在整数关处对函数取样 → 天然精确落在曲线上（不可能「浮在路外」）
+  const LV_FROM = 40, LV_TO = 55;
+  const nodes = [];
+  for (let lv = LV_FROM; lv <= LV_TO; lv++) {
+    const p = spine(lv);
+    nodes.push({ lv, x: p.x, y: p.y, label: (lv % 5 === 0 || lv === CUR) ? String(lv).padStart(3, '0') : null });
+  }
+  const walked = spinePath(37.4, CUR);   // 来路：下方渐隐于雾
+  const future = spinePath(CUR, 57.6);   // 去路：上方没入云雾 · 指向 ∞
 
   let h = '';
   h += `<defs>
@@ -837,19 +862,27 @@ buildNav('nav-set','map');   buildNav('nav-skin','skin'); buildNav('nav-rank','r
   h += `<path d="${future}" fill="none" stroke="rgba(185,178,164,0.26)" stroke-width="3" stroke-linecap="round" stroke-dasharray="1 9"/>`;
 
   // 节点四态：已过（玉青勾）/ 当前（金珠）/ 未至（虚圈）/ 里程碑（旗）
-  nodes.forEach(n => {
+  // 回头弯处节点会纵向排成一列，故编号按局部走向放左右两侧，不放正下方（会压到下一个节点）
+  nodes.forEach((n, i) => {
     const isCur = n.lv === CUR;
     const isPast = n.lv < CUR;
     const isMile = n.lv % 10 === 0 && !isCur;
+    const prev = nodes[i - 1], next = nodes[i + 1];
+    // 用前后关的横向位移判断弯道方向：竖直段把字放到弯道外侧
+    const slope = (next ? next.x : n.x) - (prev ? prev.x : n.x);
+    const side = slope > 0 ? -1 : 1;   // 向右上行 → 字放左侧
     if (isCur) {
-      h += `<circle cx="${n.x}" cy="${n.y}" r="27" fill="rgba(212,175,106,0.06)"/>`;
-      h += `<circle cx="${n.x}" cy="${n.y}" r="19" fill="rgba(212,175,106,0.12)"/>`;
-      h += `<circle cx="${n.x}" cy="${n.y}" r="13" fill="#B8945A" stroke="#F2DCA8" stroke-width="1.8"/>`;
-      h += `<circle cx="${n.x}" cy="${n.y}" r="5" fill="#FFF3D6"/>`;
+      h += `<circle cx="${n.x}" cy="${n.y}" r="24" fill="rgba(212,175,106,0.06)"/>`;
+      h += `<circle cx="${n.x}" cy="${n.y}" r="17" fill="rgba(212,175,106,0.12)"/>`;
+      h += `<circle cx="${n.x}" cy="${n.y}" r="12.5" fill="#B8945A" stroke="#F2DCA8" stroke-width="1.8"/>`;
+      h += `<circle cx="${n.x}" cy="${n.y}" r="4.8" fill="#FFF3D6"/>`;
     } else if (isMile) {
+      // 里程碑旗：向上外侧斜挑。方向按上方邻居的横向位置决定，避开 32px 处的相邻关卡
+      const up = nodes[i + 1];
+      const dir = (up && up.x > n.x + 6) ? -1 : 1;
       h += `<circle cx="${n.x}" cy="${n.y}" r="11.5" fill="#1D3A2E" stroke="rgba(212,175,106,0.45)" stroke-width="1.3" stroke-dasharray="3 3"/>`;
-      h += `<line x1="${n.x}" y1="${n.y - 9}" x2="${n.x}" y2="${n.y - 32}" stroke="#D4AF6A" stroke-width="1.8" stroke-linecap="round"/>`;
-      h += `<path d="M ${n.x} ${n.y - 32} L ${n.x + 17} ${n.y - 25.5} L ${n.x} ${n.y - 19} Z" fill="#C04B33"/>`;
+      h += `<line x1="${n.x + dir * 7}" y1="${n.y - 7}" x2="${n.x + dir * 19}" y2="${n.y - 26}" stroke="#D4AF6A" stroke-width="1.8" stroke-linecap="round"/>`;
+      h += `<path d="M ${n.x + dir * 19} ${n.y - 26} L ${n.x + dir * 34.5} ${n.y - 21} L ${n.x + dir * 19} ${n.y - 15} Z" fill="#C04B33"/>`;
     } else if (isPast) {
       h += `<circle cx="${n.x}" cy="${n.y}" r="10" fill="#2E5444" stroke="rgba(212,175,106,0.5)" stroke-width="1.4"/>`;
       h += `<path d="M ${n.x - 4.5} ${n.y} L ${n.x - 1} ${n.y + 3.5} L ${n.x + 5} ${n.y - 3.5}" stroke="#F2DCA8" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
@@ -857,17 +890,24 @@ buildNav('nav-set','map');   buildNav('nav-skin','skin'); buildNav('nav-rank','r
       h += `<circle cx="${n.x}" cy="${n.y}" r="9.5" fill="#1D3A2E" stroke="rgba(185,178,164,0.32)" stroke-width="1.2" stroke-dasharray="3 3"/>`;
     }
     if (n.label) {
-      const ly = n.y + (isCur ? 31 : 22);
       const size = isCur ? 13 : 8.5;
       const fill = isCur ? '#F2DCA8' : (isPast ? 'rgba(185,207,192,0.65)' : 'rgba(185,178,164,0.5)');
-      h += `<text x="${n.x}" y="${ly}" text-anchor="middle" font-family="serif" font-size="${size}" font-weight="${isCur ? 700 : 500}" letter-spacing="1.5" fill="${fill}" stroke="rgba(14,24,21,0.75)" stroke-width="${isCur ? 3 : 2.4}" paint-order="stroke">${n.label}</text>`;
+      // 当前关：编号在左、金签在右；其余：编号按弯道方向放外侧
+      const lx = isCur ? n.x - 26 : n.x + side * 20;
+      const ly = isCur ? n.y + 4.5 : n.y + 3;
+      const anchor = isCur ? 'end' : (side > 0 ? 'start' : 'end');
+      h += `<text x="${lx}" y="${ly}" text-anchor="${anchor}" font-family="serif" font-size="${size}" font-weight="${isCur ? 700 : 500}" letter-spacing="1.5" fill="${fill}" stroke="rgba(14,24,21,0.75)" stroke-width="${isCur ? 3 : 2.4}" paint-order="stroke">${n.label}</text>`;
     }
   });
 
-  // 「你在这里」金签
-  h += `<line x1="152" y1="262" x2="166" y2="275" stroke="rgba(212,175,106,0.45)" stroke-width="1.2"/>`;
-  h += `<rect x="78" y="242" width="76" height="21" rx="10" fill="#D4AF6A"/>`;
-  h += `<text x="116" y="256.5" text-anchor="middle" font-family="serif" font-size="10" font-weight="700" letter-spacing="2" fill="#2A2114">你在这里</text>`;
+  // 「你在这里」金签（挂在当前关右侧）
+  const curNode = nodes.find(n => n.lv === CUR);
+  if (curNode) {
+    const bx = curNode.x + 20, by = curNode.y - 10.5;
+    h += `<line x1="${curNode.x + 13}" y1="${curNode.y}" x2="${bx}" y2="${curNode.y}" stroke="rgba(212,175,106,0.45)" stroke-width="1.2"/>`;
+    h += `<rect x="${bx}" y="${by}" width="76" height="21" rx="10" fill="#D4AF6A"/>`;
+    h += `<text x="${bx + 38}" y="${by + 14.5}" text-anchor="middle" font-family="serif" font-size="10" font-weight="700" letter-spacing="2" fill="#2A2114">你在这里</text>`;
+  }
 
   // 上下缘云雾渐隐（窗外 = 无尽）
   h += `<rect x="0" y="0" width="331" height="112" fill="url(#mistTop)"/>`;

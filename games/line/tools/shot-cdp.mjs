@@ -132,6 +132,23 @@ async function main() {
       }`,
   });
 
+  // 可选：在应用启动**之前**写 localStorage（存档 / 关卡缓存）。
+  //
+  // 为什么不用 EVAL：EVAL 是在页面跑起来之后求值的，那时进度已经读进内存，
+  // 改了存储也看不到效果，只能再刷新一次——而刷新会把后面的 TAP 全吞掉。
+  //
+  //   SEED='{"progress":"{\"maxLevel\":47}"}' node tools/shot-cdp.mjs ...
+  const seed = process.env.SEED;
+  if (seed) {
+    const kv = JSON.parse(seed);
+    const lines = Object.entries(kv)
+      .map(([k, v]) => `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(String(v))});`)
+      .join('');
+    await send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `try { ${lines} } catch (e) { window.__seedErr = String(e); }`,
+    });
+  }
+
   await send('Page.enable');
   await send('Runtime.enable');
   await send('Emulation.setDeviceMetricsOverride', {
@@ -163,11 +180,17 @@ async function main() {
 
   // 可选：先点一下再拍（用 CSS 像素坐标），用来进关卡 / 切 Tab。
   //   TAP="195,623" node tools/shot-cdp.mjs ...
+  //
+  // 每一击可以带自己的等待：`x,y@ms`。
+  //   TAP="195,623@2400;136,305@120"
+  // 为什么需要它：进关卡要等 2 秒加载，而"按下那一格"的反馈只有 200~500ms ——
+  // 共用一个 TAP_WAIT 时，要么等不到关卡，要么拍到的已经是回弹后的静止画面。
   const tap = process.env.TAP;
   if (tap) {
     // 支持多次点击：TAP="195,657;195,430"
     for (const pair of tap.split(';')) {
-      const [tx, ty] = pair.split(',').map(Number);
+      const [coord, waitArg] = pair.split('@');
+      const [tx, ty] = coord.split(',').map(Number);
       if (Number.isNaN(tx)) continue;
       // 用触摸事件而不是鼠标事件：Canvas 上绑的是 pointerdown/up，
       // 而 touchStart 在 Chrome 里会合成 pointer 事件（pointerType=touch），
@@ -175,7 +198,7 @@ async function main() {
       await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: tx, y: ty, id: 1 }] });
       await sleep(90);
       await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-      await sleep(Number(process.env.TAP_WAIT ?? 1200));
+      await sleep(Number(waitArg ?? process.env.TAP_WAIT ?? 1200));
     }
     // 最后一次点击之后的额外等待：进关卡要等接口回来，
     // 而中间几次点击只需要一帧。用 TAP_WAIT 统一设成 13 秒会让整条链路白白多等半分钟。
@@ -234,6 +257,30 @@ async function main() {
     });
     // 通关有约 1.2 秒的波次动画，结算页还没出来就拍会拍到一半
     await sleep(Number(process.env.AFTER_DRAG ?? 600));
+  }
+
+  // 可选：按住某格**不放**，用来拍按压反馈（环 + 下沉）。
+  //
+  // 为什么不能用 TAP：TAP 是按下即抬起，`pressAt` 在同一帧就被清掉，
+  // 拍到的永远是回弹后的静止画面。按压反馈只在"按住"期间存在。
+  //   HOLD="177,320" HOLD_MS=90 node tools/shot-cdp.mjs ...
+  //
+  // 四段写法 `HOLD="x1,y1,x2,y2"`：按下 → 拖到第二格 → 停在半路，
+  // 用来拍"踩上那一格"的按压环（按压态是 `moved` 事件给的，不是 pointerdown）。
+  const hold = process.env.HOLD;
+  if (hold) {
+    const v = hold.split(',').map(Number);
+    const [hx, hy, tx, ty] = v;
+    await send('Input.dispatchMouseEvent', {
+      type: 'mousePressed', x: hx, y: hy, button: 'left', buttons: 1, clickCount: 1,
+    });
+    if (v.length >= 4) {
+      await sleep(40);
+      await send('Input.dispatchMouseEvent', {
+        type: 'mouseMoved', x: tx, y: ty, button: 'left', buttons: 1,
+      });
+    }
+    await sleep(Number(process.env.HOLD_MS ?? 90));
   }
 
   // 可选：只截某一块（CSS 像素 `x,y,w,h`）。

@@ -31,8 +31,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { decodeGrid, decodeSolution, type LevelEntryWithSolution } from '../src/core/cover/v3/codec';
-import { buildRuleSet } from '../src/core/cover/v3/rules';
-import { CoverCell, cellType, DIR } from '../src/core/cover/v3/types';
+import { buildRuleSet, replay, stepMove } from '../src/core/cover/v3/rules';
+import { CoverCell, cellType, DIR, OPPOSITE, type Dir } from '../src/core/cover/v3/types';
 
 /** 读取真实关卡表（服务端版，含解）。 */
 function loadLevels(): LevelEntryWithSolution[] {
@@ -191,6 +191,79 @@ describe('cover v3 / 回归：机制互不覆盖', () => {
         expect(rs.dirOf[v], `第 ${entry.idx} 关单向门方向错误`).toBe(d);
       }
     }
+  });
+});
+
+describe('cover v3 / 回归：滑行 × 单向门（2026-11-16 修复）', () => {
+  /**
+   * **全量 1000 关**在**新规则**下参考解依然合法。
+   *
+   * 修复改变了滑行的语义（撞反向单向门 → 停在门前），
+   * 所以必须确认**存量关卡不需要重生成**。
+   */
+  it('全部 1000 关的参考解在新规则下依然合法', () => {
+    let checked = 0;
+    for (const entry of LEVELS) {
+      const grid = decodeGrid(entry.grid, entry.w * entry.h);
+      const cells: number[] = [];
+      for (let i = 0; i < grid.length; i++) {
+        const t = cellType(grid[i]);
+        if (t === CoverCell.VOID || t === CoverCell.BLOCK) continue;
+        cells.push(i);
+      }
+      const rs = buildRuleSet(cells, grid, entry.w, entry.h);
+      if (entry.startAt >= 0) rs.startAt = rs.localOf[entry.startAt];
+      if (entry.endAt >= 0) rs.endAt = rs.localOf[entry.endAt];
+      const path = decodeSolution(entry.solution, entry.w).map((f) => rs.localOf[f]);
+      const r = replay(rs, path);
+      expect(r.ok, `第 ${entry.idx} 关参考解在新规则下失效：${r.error}`).toBe(true);
+      checked++;
+    }
+    expect(checked).toBe(LEVELS.length);
+  });
+
+  /**
+   * 任意方向进入冰块，滑行都**不能穿过箭头不一致的单向门**。
+   *
+   * 这条覆盖的是「玩家从非参考解方向进入冰块」的路线 ——
+   * 生成器只保证参考解方向合法，其他方向是玩家的自由。
+   */
+  it('滑行永不穿过箭头不一致的单向门（任意进入方向）', () => {
+    let slideCount = 0;
+    for (const entry of LEVELS) {
+      const grid = decodeGrid(entry.grid, entry.w * entry.h);
+      const cells: number[] = [];
+      for (let i = 0; i < grid.length; i++) {
+        const t = cellType(grid[i]);
+        if (t === CoverCell.VOID || t === CoverCell.BLOCK) continue;
+        cells.push(i);
+      }
+      const rs = buildRuleSet(cells, grid, entry.w, entry.h);
+
+      for (let ice = 0; ice < rs.n; ice++) {
+        if (rs.typeOf[ice] !== CoverCell.ICE) continue;
+        for (let dir = 0; dir < 4; dir++) {
+          // 玩家沿 dir 方向滑行 → 上游格在 ice 的 **dir 反方向**
+          const upstream = rs.nbr[ice * 4 + OPPOSITE[dir as Dir]];
+          if (upstream < 0) continue;
+          const visited = new Uint8Array(rs.n);
+          visited[upstream] = 1;
+          const consumed = stepMove(rs, upstream, dir, visited, 0, 0);
+          // 必须真的滑起来了（消耗序列的第一格是冰块，且不止一格）
+          if (!consumed || consumed[0] !== ice || consumed.length < 2) continue;
+          slideCount++;
+          for (const c of consumed) {
+            if (rs.typeOf[c] === CoverCell.ONEWAY) {
+              expect(
+                rs.dirOf[c],
+                `第 ${entry.idx} 关：滑行穿过了箭头不一致的单向门（格 ${c}）`,
+              ).toBe(dir);
+            }
+          }
+        }
+      }
+    }
+    expect(slideCount, '应当统计到若干条滑行路线').toBeGreaterThan(0);
   });
 });
 
