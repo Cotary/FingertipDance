@@ -46,3 +46,18 @@ games/line/tools/ui-debug.html
 
 # 一次性探测页（临时实验，不入库）
 games/line/tools/_probe.html
+
+# 复刻 SOP 的中间产物（脚本可重新生成，不入库）
+#   baseline/ —— baseline.mjs --build 产出
+#   baked/    —— bake.mjs 产出
+#   shots/    —— 游戏侧出图（尚未接通）
+#   report/   —— baseline.mjs --check 产出
+# 证据图在 docs/连连看/复刻验证/，那个要入库。
+docs/连连看/复刻SOP/scripts/baseline/
+docs/连连看/复刻SOP/scripts/baked/
+docs/连连看/复刻SOP/scripts/shots/
+docs/连连看/复刻SOP/scripts/report/
+docs/连连看/复刻SOP/scripts/*.png
+
+# 闸门临时输出目录
+/out/
