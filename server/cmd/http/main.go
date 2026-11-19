@@ -163,6 +163,17 @@ func main() {
 		// 因为匿名可调，必须限流 —— 否则 events 表可以被刷爆。
 		api.POST("/report", core.RateLimitMiddleware(reportLimiter), core.OptionalAuthMiddleware(issuer), core.ReportHandler(db))
 
+		// ── 分享挑战：**查询不鉴权** ──
+		//
+		// 好友点开分享链接时还没登录（登录发生在启动之后的第一帧），
+		// 挂鉴权的话拿不到「谁在挑战我」，横幅只能写「好友的挑战」。
+		//
+		// 不加鉴权是安全的：
+		//   - token 是 160bit 随机串，不可枚举；
+		//   - 返回的只有「关号 + 昵称 + 重来次数」—— 这些本来就要写进分享卡片，
+		//     不是私密数据。
+		api.GET("/cover/challenge/:token", line.ChallengeInfoHandler(db))
+
 		// ── cover 模式（现行玩法）──
 		// 每一项都有独立入口：关卡表、成绩上报、挑战、跳过。
 		// **不能复用经典模式的接口** —— 两套关卡的数据模型和校验规则完全不同
@@ -170,9 +181,17 @@ func main() {
 		auth.POST("/cover/progress", line.CoverProgressHandler(db, rdb))
 		auth.POST("/cover/challenge", line.CoverChallengeHandler(db))
 		auth.POST("/cover/skip", line.CoverSkipHandler(db))
+		// 发起分享：把「谁分享了哪一关、当时什么成绩」记到服务端，返回挑战 token。
+		//
+		// 为什么分享也要走服务端：胜负判定要有一个**服务端可信**的对手成绩。
+		// 详见 internal/games/line/share_challenge.go 的说明。
+		auth.POST("/cover/share", line.ShareChallengeHandler(db))
 		// 提示：**查参考解**，O(1) 切片，零计算。
 		// 玩家走岔时返回 fromReference=false，客户端退回实时求解。
 		auth.POST("/cover/hint", line.CoverHintHandler(coverLevelDB))
+		// 通关判定：**服务端按完整规则回放**玩家上送的路径。
+		// 客户端那份 `isCoverSolved` 只做即时反馈，不作数。
+		auth.POST("/cover/verify", line.CoverVerifyHandler(coverLevelDB))
 
 		// ── 调试接口（仅测试环境）──
 		//

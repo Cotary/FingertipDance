@@ -22,6 +22,20 @@ type coverLevelReq struct {
 	Undos    int   `json:"undos"`
 	Path     []int `json:"path"`
 	Skipped  bool  `json:"skipped"`
+
+	// Token 是「我在挑战谁的分享」（可选）。
+	//
+	// ## 为什么胜负要带 token 而不是从链接读 undos
+	//
+	// 旧做法是分享链接里带 `undos=N`，客户端自己比
+	// `myUndos <= fromUndos` 就宣布输赢。而链接参数是可以随便改的 ——
+	// 好友把 `undos=0` 一改，「挑战成功」就出来了。
+	//
+	// 带 token 之后，对手成绩由**服务端**按 token 从 `challenges` 表里取，
+	// 客户端报什么都不影响判定结果。
+	//
+	// 空字符串 = 这不是挑战局（普通通关 / 自己重玩），不做胜负判定。
+	Token string `json:"token"`
 }
 
 // CoverLevelsHandler 分批下发 cover 关卡表（**不含解**）。
@@ -465,15 +479,115 @@ func CoverChallengeHandler(db *core.DB) gin.HandlerFunc {
 			bestUndos, bestTime = req.Undos, req.TimeMs
 		}
 
-		core.OK(c, gin.H{
+		// ── 挑战胜负：**服务端判定**，不看客户端报的任何分数 ──
+		//
+		// 这一段是整个分享挑战的公正性所在：对手成绩只有服务端
+		// 按 token 查出来的那一份算数，客户端上送的 query / undos 一概不信。
+		// 详见 `resolveChallenge` 的说明。
+		challengeOut := resolveChallenge(db, c, req, uid)
+
+		resp := gin.H{
 			"passed": true,
 			"best": gin.H{
 				"undos": bestUndos,
 				"timeMs": bestTime,
 			},
 			"isNewBest": isNewBest,
-		})
+		}
+		if challengeOut != nil {
+			resp["challenge"] = challengeOut
+		}
+		core.OK(c, resp)
 	}
+}
+
+// challengeOutcome 是挑战局的判定结果。
+type challengeOutcome struct {
+	// Win 是**服务端**判的胜负。客户端必须用它，不能自己比 undos。
+	Win bool `json:"win"`
+	// MyUndos / RivalUndos 都取自服务端记录，便于结算页展示与事后核对。
+	MyUndos    int `json:"myUndos"`
+	RivalUndos int `json:"rivalUndos"`
+	FromName   string `json:"fromName"`
+	// HasScore = false 表示这条分享是「纯邀请」（发起人没宣称成绩），
+	// 此时不比输赢，`Win` 恒为 true 且前端不该显示「挑战成功 / 惜败」。
+	HasScore bool `json:"hasScore"`
+}
+
+// resolveChallenge 按 token 判定挑战胜负，并落一条结果流水。
+//
+// ## 三种情况，必须分清
+//
+// 1. **没带 token** —— 不是挑战局（普通通关、自己重玩）。
+//    返回 nil，响应里不出现 `challenge` 字段，客户端按普通结算走。
+//
+// 2. **token 无效 / 不存在** —— 分享链接被改坏了，或者那条挑战被清理了。
+//    同样返回 nil：**不能让「挑战查不到」把一次通关判成失败**。
+//    通关成绩照常写、进度照常推进，只是这次不算挑战。
+//
+// 3. **token 有效** —— 按服务端记录的 `from_undos` 判：
+//    - `from_undos = -1`（纯邀请）：不比输赢，`Win = true`、`HasScore = false`。
+//    - 否则 `我 <= 他` 即胜（平手算赢，与客户端此前的口径一致）。
+//
+// ## 为什么还要写 `challenge_results`
+//
+// 埋点只能告诉我们「有人点了分享」，但回答不了
+// 「这条分享带来了几个挑战者、赢了几次」。
+// 这张流水是裂变健康度的原始数据，也是「同一人反复刷同一挑战」的去重依据。
+//
+// 写失败**不影响**通关结果 —— 挑战流水是旁路数据，
+// 比通关本身次要，不该因为它失败而让玩家看到报错。
+func resolveChallenge(db *core.DB, c *gin.Context, req coverLevelReq, uid int64) *challengeOutcome {
+	if req.Token == "" || !isChallengeToken(req.Token) {
+		return nil
+	}
+
+	var levelIdx, fromUndos int
+	var fromName string
+	err := db.QueryRow(
+		"SELECT level_idx, from_undos, from_name FROM challenges WHERE token=$1",
+		req.Token,
+	).Scan(&levelIdx, &fromUndos, &fromName)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			// 查询出错也不该挡住通关，记一笔日志就行
+			c.Error(fmt.Errorf("查询挑战失败: %w", err))
+		}
+		return nil
+	}
+
+	// 挑战的关号必须和这次提交的关号一致。
+	//
+	// 不一致说明链接被拼到了别的关上（手工改 `l=` 而没改 `c=`），
+	// 那时拿 A 关的成绩去比 B 关的对手毫无意义 —— 不算挑战。
+	if levelIdx != req.LevelIdx {
+		return nil
+	}
+
+	out := &challengeOutcome{
+		MyUndos:    req.Undos,
+		RivalUndos: fromUndos,
+		FromName:   fromName,
+		HasScore:   fromUndos >= 0,
+	}
+	if !out.HasScore {
+		// 纯邀请：没有可比的分，不判输赢
+		out.Win = true
+		return out
+	}
+	// 平手算赢 —— 和好友一样好，也是一种赢
+	out.Win = req.Undos <= fromUndos
+
+	// 结果流水（旁路，失败不阻塞）
+	if _, err := db.Exec(
+		"INSERT INTO challenge_results (token, uid, my_undos, win, rival_undos, created_at) "+
+			"VALUES ($1,$2,$3,$4,$5,$6)",
+		req.Token, uid, req.Undos, out.Win, fromUndos, nowFunc(),
+	); err != nil {
+		c.Error(fmt.Errorf("写入挑战结果失败: %w", err))
+	}
+
+	return out
 }
 
 // coverSkipDay 保留给将来「每日跳过次数上限」用。
