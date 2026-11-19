@@ -17,6 +17,8 @@ import (
 	"github.com/tupss/f-game/server/internal/games/line"
 	"github.com/tupss/f-game/server/internal/modules/friend"
 	"github.com/tupss/f-game/server/internal/modules/leaderboard"
+	"github.com/tupss/f-game/server/internal/modules/admin"
+	"github.com/tupss/f-game/server/internal/modules/adrev"
 	"github.com/tupss/f-game/server/internal/modules/profile"
 )
 
@@ -203,6 +205,22 @@ func main() {
 		}
 		auth.POST("/debug/jump", line.DebugJumpHandler(db, cfg.Debug.Enabled))
 	}
+
+	// ── 数据后台 ──
+	//
+	// 独立路由树（`/admin/*` 页面 + `/api/admin/*` 接口），
+	// 用**独立的管理员令牌**，与玩家令牌互不通用。
+	//
+	// `cfg.Admin.Enabled` 为 false 时整个后台不注册 ——
+	// 连 404 都不给，免得被从响应差异上判断出「这里本来有个后台」。
+	//
+	// 广告数据同步器也在这里创建：它需要两套平台凭证，
+	// 而凭证只在配置里。mock 模式下同步器会跳过外部请求。
+	adSyncer := adrev.New(db,
+		adrev.Creds{AppID: cfg.Wechat.AppID, Secret: cfg.Wechat.Secret, Mock: cfg.Wechat.Mock},
+		adrev.Creds{AppID: cfg.Douyin.AppID, Secret: cfg.Douyin.Secret, Mock: cfg.Douyin.Mock},
+	)
+	admin.Register(r, cfg, issuer, db, adSyncer)
 
 	srv := &http.Server{
 		Addr:         cfg.Server.Addr,

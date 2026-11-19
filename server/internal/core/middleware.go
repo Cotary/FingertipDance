@@ -140,3 +140,49 @@ func uidFromContext(c *gin.Context) int64 {
 
 // UIDFromContext 导出上下文的用户 ID，供 handler 使用。
 func UIDFromContext(c *gin.Context) int64 { return uidFromContext(c) }
+
+// ContextAdmin 是上下文里管理员用户名的 key。
+const ContextAdmin = "admin_user"
+
+// AdminAuthMiddleware 校验**后台**令牌。
+//
+// ## 与 AuthMiddleware 的关系：互不通用
+//
+// 两条中间件调的是不同的解析函数（`Parse` vs `ParseAdmin`），
+// 而那两个函数各自校验 `scope`。于是：
+//
+//   - 玩家 token 打 `/api/admin/*` → `ParseAdmin` 拒绝（scope 不是 admin）→ 401
+//   - 后台 token 打 `/api/*`（玩家接口）→ `Parse` 拒绝（scope 不是 player）→ 401
+//
+// 这不是"多加一层保险"，而是**唯一的边界**：后台接口若误用了
+// `AuthMiddleware`，任何一个玩家的 token 就能拉全站数据。
+func AdminAuthMiddleware(issuer *TokenIssuer) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		header := c.GetHeader("Authorization")
+		if !strings.HasPrefix(header, "Bearer ") {
+			Fail(c, CodeUnauthorized, "缺少管理员令牌")
+			c.Abort()
+			return
+		}
+		name, err := issuer.ParseAdmin(strings.TrimPrefix(header, "Bearer "))
+		if err != nil {
+			// 不把具体原因写进响应 —— 免得帮攻击者区分
+			// 「令牌格式错」和「令牌合法但权限不够」。
+			Fail(c, CodeUnauthorized, "管理员令牌无效")
+			c.Abort()
+			return
+		}
+		c.Set(ContextAdmin, name)
+		c.Next()
+	}
+}
+
+// AdminFromContext 读取管理员用户名。
+func AdminFromContext(c *gin.Context) string {
+	v, ok := c.Get(ContextAdmin)
+	if !ok {
+		return ""
+	}
+	s, _ := v.(string)
+	return s
+}

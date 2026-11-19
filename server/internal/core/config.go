@@ -16,6 +16,8 @@ type Config struct {
 	Redis  RedisConfig  `yaml:"redis"`
 	JWT    JWTConfig    `yaml:"jwt"`
 	Wechat WechatConfig `yaml:"wechat"`
+	Douyin DouyinConfig `yaml:"douyin"`
+	Admin  AdminConfig  `yaml:"admin"`
 	CORS   CORSConfig   `yaml:"cors"`
 	Debug  DebugConfig  `yaml:"debug"`
 }
@@ -48,6 +50,39 @@ type WechatConfig struct {
 	AppID  string `yaml:"appid"`
 	Secret string `yaml:"secret"`
 	Mock   bool   `yaml:"mock"`
+}
+
+// DouyinConfig 是抖音小游戏配置。Mock 为真时不请求抖音服务器。
+//
+// 与微信**分开配置**：两端的 appid/secret 完全独立，
+// 广告位 ID、域名白名单也各自一套。合成一个配置块的话，
+// 部署时极易把微信的 secret 填到抖音那栏。
+type DouyinConfig struct {
+	AppID  string `yaml:"appid"`
+	Secret string `yaml:"secret"`
+	Mock   bool   `yaml:"mock"`
+}
+
+// AdminConfig 是数据后台的配置。
+//
+// ## 为什么后台鉴权要单独一套
+//
+// 后台能看到**全部玩家的全部数据**。如果复用玩家的 JWT，
+// 那么任何一个玩家 token 泄露（截图、日志、中间人）都等于后台沦陷。
+//
+// 这里用独立的账号密码 + 独立签发、`scope=admin` 的令牌，
+// 玩家的 token 拿到后台接口一律 401。
+type AdminConfig struct {
+	// Enabled 是否启用后台。默认关闭 —— 后台不是给线上所有人开的，
+	// 而且它比游戏接口更不该暴露在公网。
+	Enabled bool `yaml:"enabled"`
+	// User / Password 是后台登录凭据。
+	//
+	// 明文写在 yaml 里是可以接受的：这是**内网/本机**运维工具，
+	// 生产环境请用环境变量 `ADMIN_USER` / `ADMIN_PASSWORD` 覆盖，
+	// 而不是把它们提交进仓库。
+	User     string `yaml:"user"`
+	Password string `yaml:"password"`
 }
 
 // CORSConfig 是跨域白名单配置。
@@ -132,6 +167,28 @@ func (c *Config) overrideFromEnv() {
 		if b, err := strconv.ParseBool(v); err == nil {
 			c.Wechat.Mock = b
 		}
+	}
+	if v := os.Getenv("DOUYIN_APPID"); v != "" {
+		c.Douyin.AppID = v
+	}
+	if v := os.Getenv("DOUYIN_SECRET"); v != "" {
+		c.Douyin.Secret = v
+	}
+	if v := os.Getenv("DOUYIN_MOCK"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			c.Douyin.Mock = b
+		}
+	}
+	if v := os.Getenv("ADMIN_ENABLED"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			c.Admin.Enabled = b
+		}
+	}
+	if v := os.Getenv("ADMIN_USER"); v != "" {
+		c.Admin.User = v
+	}
+	if v := os.Getenv("ADMIN_PASSWORD"); v != "" {
+		c.Admin.Password = v
 	}
 	// CORS 白名单：逗号分隔
 	if v := os.Getenv("CORS_ALLOWED_ORIGINS"); v != "" {

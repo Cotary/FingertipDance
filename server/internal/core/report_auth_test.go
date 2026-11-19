@@ -73,8 +73,12 @@ func TestOptionalAuthMiddlewareExists(t *testing.T) {
 	// 它必须**不**拒绝匿名请求 —— 没有 Authorization 头时也要放行
 	fnStart := strings.Index(src, "func OptionalAuthMiddleware")
 	fn := src[fnStart:]
-	if end := strings.Index(fn, "\n}\n"); end >= 0 {
-		fn = fn[:end]
+	// 先把 CRLF 归一，否则 `\n}\n` 匹配不到 Windows 换行，
+	// fn 会一路吃到文件末尾 —— 后面的 AdminAuthMiddleware 里的 Abort()
+	// 就会被误判成本函数的。
+	norm := strings.ReplaceAll(fn, "\r\n", "\n")
+	if end := strings.Index(norm, "\n}\n"); end >= 0 {
+		fn = norm[:end]
 	}
 	if strings.Contains(fn, "Abort()") {
 		t.Errorf("OptionalAuthMiddleware 不能 Abort（它是可选鉴权，匿名必须放行）：\n  %s", fn)
