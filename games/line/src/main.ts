@@ -1,4 +1,4 @@
-import { platform } from './platform';
+import { platform, type ShareChannel } from './platform';
 import { ApiError } from './platform/apiError';
 import { configureAds } from './platform/wechat';
 import { fetchFriends, fetchLeaderboard, fetchProfile, fetchStars, login, fetchConfig, reportCoverProgress, reportCoverSkip, reportCoverChallenge, createShareChallenge, fetchChallengeInfo, fetchCoverHint, reportEvent, debugJump, type ServerConfig, type CoverChallengeOutcome } from './net/api';
@@ -528,8 +528,12 @@ let challengeResult: { win: boolean; myUndos: number; bestUndos: number; fromNam
  * 直接用 `rect.width`（CSS 像素）只做一次换算就够了。
  */
 function toDesign(clientX: number, clientY: number): { x: number; y: number } {
-  if (platform.name === 'wechat') {
-    // 微信的 clientX 已经是 CSS 像素，且画布铺满屏幕，无需再按 rect 换算。
+  // 小游戏端（微信 / 抖音）的 clientX 已经是 CSS 像素，
+  // 且画布铺满屏幕，无需再按 rect 换算。
+  //
+  // 抖音同样适用：`tt.getSystemInfoSync()` 给的 windowWidth/Height
+  // 与实际触摸坐标同一坐标系，和微信一致。
+  if (platform.name === 'wechat' || platform.name === 'douyin') {
     return viewport.toDesign(clientX, clientY);
   }
   const rect = canvas.getBoundingClientRect();
@@ -1503,7 +1507,7 @@ async function buildShareQueryWithToken(): Promise<string> {
  *
  * @param channel `friend` / `timeline`
  */
-async function sendInvite(channel: 'friend' | 'timeline') {
+async function sendInvite(channel: ShareChannel) {
   const poster = buildInvitePoster();
   // 微信卡片最佳比例是 5:4，9:16 的海报直接当 imageUrl 会被裁得很难看。
   // 这里**不传** imageUrl：宁可让微信用它自己的默认图，也不要传一张会被裁坏的。
@@ -1569,8 +1573,8 @@ function saveInvitePoster() {
     a.download = `invite-${sharePanel.levelIdx}.png`;
     a.click();
     showToast('海报已保存');
-  } else if (platform.name === 'wechat' && poster.toDataURL) {
-    // 微信小游戏保存到相册要 canvasToTempFilePath + saveImageToPhotosAlbum，
+  } else if ((platform.name === 'wechat' || platform.name === 'douyin') && poster.toDataURL) {
+    // 小游戏端保存到相册要 temp 文件 + saveImageToPhotosAlbum，
     // 且都需要用户授权。这里先如实告知，不乱承诺。
     showToast('请长按海报保存到相册');
   } else {
@@ -1940,8 +1944,9 @@ function onUp() {
       return;
     }
     if (id === 'shareNewCopy') { rollShareCopy(); return; }
-    if (id === 'shareWechat') { void sendInvite('friend'); return; }
+    if (id === 'shareFriend') { void sendInvite('friend'); return; }
     if (id === 'shareTimeline') { void sendInvite('timeline'); return; }
+    if (id === 'shareDouyin') { void sendInvite('douyin'); return; }
     if (id === 'shareCopyLink') { void copyInviteLink(); return; }
     if (id === 'shareSavePoster') { saveInvitePoster(); return; }
 
@@ -2813,6 +2818,9 @@ async function boot() {
   // ② 服务器配置（失败用默认值）
   try {
     config = await fetchConfig();
+    // 广告位 ID 两端**不共用**：各自后台创建，混填会导致加载失败。
+    // 服务端 `/api/config` 目前只下发一套 ad 字段，抖音侧
+    // 等平台配置就绪后再扩（届时按 platform 分字段下发）。
     if (platform.name === 'wechat' && config.ad) {
       configureAds({
         rewardedVideoId: config.ad.rewardedVideoId,

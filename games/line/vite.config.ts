@@ -20,7 +20,19 @@ const PORT = Number(process.env.PORT ?? 50002);
 const API_BASE = process.env.API_BASE ?? 'http://127.0.0.1:50001';
 
 export default defineConfig(({ command, mode }) => {
+  // ── 三端构建目标 ──
+  //
+  //   npm run dev               → web（浏览器调试）
+  //   npm run build             → web
+  //   npm run build:wx          → 微信小游戏（--mode wx）
+  //   npm run build:douyin      → 抖音小游戏（--mode douyin）
+  //
+  // 后两者产出 **CommonJS 单文件**（小游戏不支持 ESM），
+  // 分别落到 ../line-wx/dist/game.js 与 ../line-dy/dist/game.js。
   const isWx = mode === 'wx';
+  const isDy = mode === 'douyin';
+  // 「小游戏端」：产物形态相同（CJS + 单文件），只是平台实现不同
+  const isMiniGame = isWx || isDy;
   // ── 调试模式 ──
   //
   // 「点任意一关」的调试入口只在**开发服务器**（`vite` dev）里打开。
@@ -42,18 +54,19 @@ export default defineConfig(({ command, mode }) => {
   return {
     server: { port: PORT, host: '0.0.0.0', strictPort: true },
     define: {
-      __TARGET__: JSON.stringify(isWx ? 'wechat' : 'web'),
+      __TARGET__: JSON.stringify(isWx ? 'wechat' : isDy ? 'douyin' : 'web'),
       __API_BASE__: JSON.stringify(API_BASE),
       __DEBUG__: JSON.stringify(debugEnabled ? 'true' : 'false'),
     },
     build: {
       target: 'es2017',
-      outDir: isWx ? '../line-wx/dist' : 'dist',
+      outDir: isWx ? '../line-wx/dist' : isDy ? '../line-dy/dist' : 'dist',
       assetsInlineLimit: 0,
-      rollupOptions: isWx
+      rollupOptions: isMiniGame
         ? {
             output: {
-              // 微信小游戏不支持 ESM，打包成 CommonJS 单文件，由 game.js require
+              // 小游戏（微信 / 抖音）都不支持 ESM，
+              // 打包成 CommonJS 单文件，由 game.js require
               format: 'cjs',
               entryFileNames: 'game.js',
               inlineDynamicImports: true,

@@ -16,6 +16,7 @@
 import { DESIGN_W, DESIGN_H } from '../render/layout';
 import { roundRect } from '../render/board';
 import { trackedText, trackedWidth, SERIF_FONT, type Button } from './hud';
+import { platform } from '../platform';
 
 /** 面板状态。 */
 export interface SharePanelState {
@@ -55,12 +56,37 @@ const P = {
 } as const;
 
 /** 四个渠道，顺序即从左到右。 */
-const CHANNELS: Array<{ id: string; label: string }> = [
-  { id: 'shareWechat', label: '微 信' },
-  { id: 'shareTimeline', label: '朋 友 圈' },
-  { id: 'shareCopyLink', label: '复 制 链 接' },
-  { id: 'shareSavePoster', label: '保 存 海 报' },
-];
+/**
+ * 渠道清单：**按平台能力动态生成**，不是写死的四格。
+ *
+ * ## 为什么不能写死
+ *
+ * 微信有「朋友圈」，抖音**没有**（它有「分享到抖音」）。
+ * 写死四格的话，抖音端会多出一个点不动的朋友圈按钮 ——
+ * 玩家会以为游戏坏了，而不是「这个平台不支持」。
+ *
+ * 前两个槽位由 `platform.shareChannels` 决定（好友 / 朋友圈 / 抖音），
+ * 后两个（复制链接 / 保存海报）是纯客户端能力，两端都有。
+ *
+ * ## 为什么「复制链接」在抖音也留着
+ *
+ * 抖音的 `tt.shareAppMessage` 虽然支持 query，但分享到站外
+ * （比如发到微信群）仍然需要一条链接。复制链接是个兜底，
+ * 成本几乎为零，不该因为「当前平台有原生分享」就砍掉。
+ */
+function channelsFor(): Array<{ id: string; label: string }> {
+  const out: Array<{ id: string; label: string }> = [];
+
+  for (const ch of platform.shareChannels) {
+    if (ch === 'friend') out.push({ id: 'shareFriend', label: '好 友' });
+    else if (ch === 'timeline') out.push({ id: 'shareTimeline', label: '朋 友 圈' });
+    else if (ch === 'douyin') out.push({ id: 'shareDouyin', label: '抖 音' });
+  }
+
+  out.push({ id: 'shareCopyLink', label: '复 制 链 接' });
+  out.push({ id: 'shareSavePoster', label: '保 存 海 报' });
+  return out;
+}
 
 /**
  * 抽屉几何。
@@ -232,12 +258,13 @@ export function drawSharePanel(ctx: CanvasRenderingContext2D, st: SharePanelStat
   // ③ 四渠道：从「海报底」与「信息区底」里取更低者往下排
   const infoBottom = chipY + chipH;
   const chTop = Math.max(pY + pH, infoBottom) + SHEET.gapToChannels;
-  const slotW = innerW / CHANNELS.length;
+  const chs = channelsFor();
+  const slotW = innerW / chs.length;
   const boxS = SHEET.chBox;
 
   const buttons: Button[] = [];
 
-  CHANNELS.forEach((ch, i) => {
+  chs.forEach((ch, i) => {
     const slotCx = x + slotW * (i + 0.5);
     const bx = slotCx - boxS / 2;
 
@@ -392,7 +419,7 @@ function drawChannelIcon(ctx: CanvasRenderingContext2D, id: string, cx: number, 
     ctx.stroke();
   };
 
-  if (id === 'shareWechat') {
+  if (id === 'shareFriend') {
     // 两个交叠对话气泡（简化）
     ctx.beginPath();
     ctx.ellipse(cx - 6 * s, cy - 3 * s, 8 * s, 6.4 * s, 0, 0, Math.PI * 2);

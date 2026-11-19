@@ -18,7 +18,8 @@
     "level:sync": "powershell -ExecutionPolicy Bypass -File scripts/sync-levels.ps1",
     "level:inspect": "vite --open /tools/level-inspector.html",
     "ui:gallery": "tsx tools/ui-gallery.ts",
-    "audio:check": "bash scripts/audio-check.sh"
+    "audio:check": "bash scripts/audio-check.sh",
+    "build:douyin": "tsc --noEmit && vite build --mode douyin && node scripts/copy-dy-assets.mjs"
   },
   "devDependencies": {
     "typescript": "^5.5.4",

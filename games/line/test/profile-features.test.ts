@@ -124,10 +124,22 @@ describe('我的页接线（源码断言）', () => {
     expect(body, 'openSharePanel 不该读 session.state').not.toContain('session.state');
   });
 
-  it('分享抽屉有四个渠道 + 换一条 + 取消', () => {
-    for (const id of ['shareWechat', 'shareTimeline', 'shareCopyLink', 'shareSavePoster', 'shareNewCopy', 'shareDismiss']) {
+  it('分享抽屉的渠道由平台能力决定，不写死', () => {
+    // 平台通道：好友 / 朋友圈 / 抖音 —— 三端各自报自己的
+    for (const id of ['shareFriend', 'shareTimeline', 'shareDouyin']) {
       expect(MAIN, `缺少 ${id} 的处理`).toMatch(new RegExp(`id === '${id}'`));
     }
+    // 纯客户端渠道：两端都有
+    for (const id of ['shareCopyLink', 'shareSavePoster', 'shareNewCopy', 'shareDismiss']) {
+      expect(MAIN, `缺少 ${id} 的处理`).toMatch(new RegExp(`id === '${id}'`));
+    }
+
+    // 关键：渠道列表必须**从 platform.shareChannels 派生**，
+    // 不能在面板里写死四格 —— 否则抖音端会多出一个点不动的朋友圈按钮。
+    const panel = readFileSync(resolve(__dirname, '../src/ui/sharePanel.ts'), 'utf8');
+    expect(panel).toContain('platform.shareChannels');
+    // 旧的写死常量不该还在
+    expect(panel, '不要写死 CHANNELS 常量').not.toMatch(/const CHANNELS\s*=/);
   });
 
   it('分享有三个入口：我的页(邀请) / 首页选关 / 通关结算(带成绩)', () => {

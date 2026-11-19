@@ -1,6 +1,6 @@
 /** 平台适配层接口。Web 与微信各自实现一份。 */
 export interface Platform {
-  readonly name: 'web' | 'wechat';
+  readonly name: 'web' | 'wechat' | 'douyin';
   /** 取登录凭证。Web 端返回 mock。 */
   login(): Promise<{ code: string }>;
   /** 发起网络请求。 */
@@ -67,10 +67,26 @@ export interface Platform {
   onResize?(cb: () => void): () => void;
   /** 开放数据域是否可用（微信端）。 */
   readonly openDataAvailable: boolean;
+  /**
+   * 该平台支持的分享通道。
+   *
+   * ## 为什么是「查询能力」而不是「假设能力」
+   *
+   * 两平台的分享差异很大：
+   *   - 微信：好友 + 朋友圈（且朋友圈自 2022 起不可定制内容）
+   *   - 抖音：好友 + 分享到抖音，**没有朋友圈**
+   *
+   * 如果 UI 写死「好友 / 朋友圈 / 复制链接 / 保存海报」四格，
+   * 那抖音端就会画出两个点不动的按钮 —— 玩家会以为坏了。
+   *
+   * 所以分享面板只渲染平台报上来的通道。
+   * 代价是面板布局要能吃 2~4 格（用等分槽位，见 ui/sharePanel.ts）。
+   */
+  readonly shareChannels: readonly ShareChannel[];
 }
 
 /** 分享通道。 */
-export type ShareChannel = 'friend' | 'timeline';
+export type ShareChannel = 'friend' | 'timeline' | 'douyin';
 
 /** 分享参数。 */
 export interface ShareOptions {

@@ -187,6 +187,15 @@ export const wechatPlatform: Platform = {
   },
 
   openDataAvailable: true,
+
+  /**
+   * 微信支持的分享通道。
+   *
+   * `timeline`（朋友圈）自 2022 起**不可定制内容**，只能把右上角菜单的
+   * 入口放出来（见 share 的实现）。仍然列在这里，是因为对玩家来说
+   * 「能发到朋友圈」这件事是真的，只是内容不由我们决定。
+   */
+  shareChannels: ['friend', 'timeline'] as const,
 };
 
 /** 广告位 ID，从 /api/config 的 ad 字段获取后写入这里。 */

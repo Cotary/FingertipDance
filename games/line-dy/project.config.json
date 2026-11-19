@@ -1,0 +1,10 @@
+{
+  "setting": {
+    "urlCheck": true,
+    "es6": true,
+    "minified": true
+  },
+  "appid": "tt0000000000000000",
+  "projectname": "fingertip-dance",
+  "compileType": "game"
+}

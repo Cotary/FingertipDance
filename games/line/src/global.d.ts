@@ -1,4 +1,4 @@
-declare const __TARGET__: 'web' | 'wechat';
+declare const __TARGET__: 'web' | 'wechat' | 'douyin';
 declare const __API_BASE__: string;
 /**
  * 调试模式开关（`'true'` / `'false'`）。

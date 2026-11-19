@@ -199,4 +199,10 @@ export const webPlatform: Platform = {
   },
 
   openDataAvailable: false,
+
+  /**
+   * Web 只有「分享」一个通道 —— 走 `navigator.share`，由系统面板
+   * 决定能发给谁（微信 / 消息 / 邮件…）。没有朋友圈这个概念。
+   */
+  shareChannels: ['friend'] as const,
 };
