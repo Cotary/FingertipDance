@@ -1,4 +1,5 @@
 import type { Platform } from './types';
+import { ApiError } from './apiError';
 
 /**
  * Web 端的 mock 存储。
@@ -71,7 +72,7 @@ export const webPlatform: Platform = {
         signal: ctrl?.signal,
       });
       const json = (await res.json()) as { code: number; msg: string; data: T };
-      if (json.code !== 0) throw new Error(`${json.code}: ${json.msg}`);
+      if (json.code !== 0) throw new ApiError(json.code, json.msg);
       return json.data;
     } catch (e) {
       // 超时和网络错误分开报，否则日志里只剩一句 "AbortError"，看不出是哪个接口
@@ -102,10 +103,46 @@ export const webPlatform: Platform = {
     hideBanner() { console.log('[mock ad] banner hide'); },
   },
 
+  /**
+   * 分享（Web 端）。
+   *
+   * 浏览器里没有"好友 / 朋友圈"这两个目标，但有两级能力可以借用：
+   *
+   * 1. **系统分享面板** —— `navigator.share`（移动端 Safari / Chrome 支持）。
+   *    它把链接交给系统的分享目标（微信、消息、邮件…），是最接近
+   *    「分享给好友」的等价物。用户取消会抛 `AbortError`，要当作失败，
+   *    不能算成分享成功。
+   * 2. **复制链接** —— 没有系统分享时的兜底。链接进剪贴板，
+   *    玩家自己粘到任何地方。
+   *
+   * 注意 `navigator.share` 必须在**用户手势**的调用栈里才可用，
+   * 异步链路太长（先拉数据再分享）会被浏览器拒绝 —— 这里已经是
+   * 按钮回调的同步尾巴，暂时安全，将来加异步前置要重新评估。
+   */
   async share(opts) {
-    console.log('[mock share]', opts);
-    const url = `${location.origin}${location.pathname}?${opts.query ?? ''}`;
-    try { await navigator.clipboard.writeText(url); } catch { /* noop */ }
+    const url = `${location.origin}${location.pathname}${opts.query ? `?${opts.query}` : ''}`;
+
+    // 系统分享面板：只有真能分享时才走，避免每次都弹一个假的
+    const nav = navigator as Navigator & {
+      share?: (data: { title?: string; text?: string; url?: string }) => Promise<void>;
+    };
+    if (typeof nav.share === 'function') {
+      try {
+        await nav.share({ title: opts.title, url });
+        return 'sent';
+      } catch (e) {
+        // 用户主动取消 ≠ 失败，但也不该报「已分享」。
+        // 两条路都落到剪贴板兜底：链接已经在手里了，别让他空手走。
+        if ((e as DOMException)?.name === 'AbortError') return 'failed';
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      return 'copied';
+    } catch {
+      return 'failed';
+    }
   },
 
   vibrate(pattern: number | number[] = 15) {

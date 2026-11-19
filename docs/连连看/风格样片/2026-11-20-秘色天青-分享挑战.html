@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>秘色·天青 · 分享挑战 全链路设计</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --serif: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  --sans: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --c050: #E4EDE6; --c100: #D5E3D8; --c200: #B8CFC0; --c300: #93B3A2;
+  --c400: #6E9180; --c500: #4F7A66; --c600: #2E5444; --c700: #1D3A2E;
+  --i050: #F2EEE6; --i100: #EDE8DD; --i300: #B9B2A4; --i500: #7A7468;
+  --i700: #454038; --i900: #141210;
+  --g100: #FFF3D6; --g200: #F2DCA8; --g300: #D4AF6A; --g400: #B8945A; --g500: #8A6B3C;
+  --seal: #C04B33; --seal-deep: #8C2F1E;
+  --violet: #8B7EC8;
+  --well: #16241E; --well-deep: #0F1915;
+  --page: #0C1310; --phone-bg: #0E1815;
+}
+body {
+  background: var(--page);
+  background-image:
+    radial-gradient(1100px 500px at 50% -10%, rgba(212,175,106,.05), transparent 60%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+  color: var(--i050); font-family: var(--sans); font-weight: 300;
+}
+.wrap { max-width: 1280px; margin: 0 auto; padding: 54px 36px 80px; }
+
+.head { text-align: center; margin-bottom: 46px; }
+.head .kicker { font-family: var(--serif); font-size: 11px; letter-spacing: .55em; color: var(--g300); margin-bottom: 16px; font-weight: 600; }
+.head h1 { font-family: var(--serif); font-size: 42px; font-weight: 900; letter-spacing: .16em; }
+.head h1 em { font-style: normal; color: var(--g200); }
+.head .sub { margin-top: 14px; font-family: var(--serif); font-size: 13px; letter-spacing: .18em; color: var(--i500); line-height: 2; }
+.rule { width: 56px; height: 1px; background: var(--g400); margin: 24px auto 0; opacity: .7; }
+
+.sec { margin-bottom: 58px; }
+.sec-no { font-family: var(--serif); font-size: 12px; font-weight: 600; letter-spacing: .32em; color: var(--g300); }
+.sec-title { font-family: var(--serif); font-size: 23px; font-weight: 700; letter-spacing: .16em; color: var(--i050); margin: 6px 0 14px; }
+.sec-title small { font-family: var(--sans); font-size: 11px; letter-spacing: .12em; color: var(--i500); font-weight: 300; margin-left: 14px; }
+.sec-lead { font-size: 11.5px; line-height: 2.15; letter-spacing: .05em; color: var(--i300); margin-bottom: 22px; max-width: 920px; }
+.sec-lead b { color: var(--i050); font-weight: 500; }
+
+/* 链路四段 */
+.flow { display: flex; align-items: stretch; margin-bottom: 16px; }
+.flow-step {
+  flex: 1; background: rgba(22,36,30,.72); border: 1px solid rgba(212,175,106,.14);
+  border-radius: 14px; padding: 15px 18px;
+}
+.flow-step b { display: block; font-family: var(--serif); font-size: 11px; letter-spacing: .32em; color: var(--g300); margin-bottom: 6px; font-weight: 600; }
+.flow-step span { font-size: 10.5px; letter-spacing: .06em; color: var(--i300); line-height: 1.95; }
+.flow-arrow { width: 36px; display: flex; align-items: center; justify-content: center; color: var(--g500); font-size: 15px; flex-shrink: 0; }
+
+/* 功能对照 */
+.fix-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.fix-card {
+  background: rgba(22,36,30,.72); border: 1px solid rgba(212,175,106,.14);
+  border-radius: 14px; padding: 18px 22px;
+}
+.fix-card h4 { font-family: var(--serif); font-size: 13px; letter-spacing: .22em; color: var(--g200); margin-bottom: 8px; font-weight: 600; }
+.fix-card p { font-size: 11px; line-height: 2; color: var(--i300); letter-spacing: .04em; }
+.fix-card p b { color: var(--i050); font-weight: 500; }
+.fix-note {
+  font-size: 11px; letter-spacing: .08em; color: var(--i500); line-height: 2;
+  padding: 12px 20px; border-left: 2px solid var(--g500);
+}
+.fix-note b { color: var(--g200); font-weight: 500; }
+
+/* 手机 */
+.phones { display: flex; flex-wrap: wrap; gap: 40px 34px; justify-content: center; }
+.phone-wrap { display: flex; flex-direction: column; align-items: center; }
+.phone {
+  width: 375px; height: 812px; border-radius: 42px; overflow: hidden;
+  background: var(--phone-bg); position: relative; display: flex; flex-direction: column;
+  box-shadow: 0 30px 70px rgba(0,0,0,.55), 0 0 0 8px #1B2420, 0 0 0 9px rgba(212,175,106,.18);
+}
+.phone-tag {
+  margin-top: 18px; font-family: var(--serif); font-size: 11.5px; letter-spacing: .32em; color: var(--i500);
+}
+.phone-tag b { color: var(--g300); font-weight: 600; margin-right: 10px; }
+.status {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 26px 6px; font-size: 11px; letter-spacing: .12em; color: var(--i300); flex-shrink: 0;
+}
+.status .brand { color: var(--g300); letter-spacing: .24em; font-family: var(--serif); }
+.pbody { flex: 1; padding: 10px 22px 0; overflow: hidden; position: relative; }
+.pbody.bleed { padding: 0; }
+.nav {
+  display: flex; justify-content: space-around; align-items: center;
+  padding: 10px 8px 22px; border-top: 1px solid rgba(212,175,106,.12); flex-shrink: 0;
+  background: rgba(12,19,16,.6);
+}
+.nav-item { text-align: center; font-size: 9.5px; letter-spacing: .2em; color: var(--i500); }
+.nav-item .ico { width: 22px; height: 22px; margin: 0 auto 4px; }
+.nav-item .ico svg { width: 22px; height: 22px; stroke: var(--i500); fill: none; stroke-width: 1.5; }
+.nav-item.on { color: var(--g200); }
+.nav-item.on .ico svg { stroke: var(--g200); }
+
+/* 通用按钮 */
+.btn-gold {
+  display: block; width: 100%;
+  background: linear-gradient(180deg, var(--g200), var(--g400) 82%);
+  color: #2A2114; font-family: var(--serif); font-weight: 700; letter-spacing: .3em;
+  border-radius: 16px; text-align: center; border: none;
+  box-shadow: 0 4px 0 var(--g500), 0 12px 26px rgba(212,175,106,.22);
+}
+.btn-ghost {
+  display: block; width: 100%;
+  background: rgba(22,36,30,.85); color: var(--c100); border: 1px solid rgba(147,179,162,.28);
+  border-radius: 14px; text-align: center; font-family: var(--serif); letter-spacing: .26em;
+}
+.btn-line {
+  display: block; width: 100%;
+  background: transparent; color: var(--i300); border: 1px solid rgba(185,178,164,.22);
+  border-radius: 14px; text-align: center; font-family: var(--serif); letter-spacing: .26em;
+}
+
+/* ============ 01 分享面板 ============ */
+.share-bg { position: absolute; inset: 0; padding: 26px 22px 0; opacity: .38; }
+.share-bg .set-seal-s {
+  width: 72px; height: 72px; margin: 12px auto 0; border-radius: 13px;
+  background: linear-gradient(155deg, var(--seal), var(--seal-deep));
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 36px; font-weight: 900; color: rgba(255,240,228,.94);
+  transform: rotate(-3deg);
+}
+.share-bg .t { text-align: center; font-family: var(--serif); font-size: 18px; letter-spacing: .3em; color: var(--i050); margin-top: 16px; font-weight: 700; }
+.share-bg .s { text-align: center; font-family: var(--serif); font-size: 10px; letter-spacing: .42em; color: var(--g300); margin-top: 12px; }
+.share-bg .st { display: flex; justify-content: center; gap: 12px; margin-top: 14px; }
+.share-bg .st i { width: 24px; height: 24px; display: block; }
+.share-scrim { position: absolute; inset: 0; background: rgba(6,10,8,.55); }
+.share-sheet {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(180deg, #17271F, #122019 40%, #0F1B15);
+  border-radius: 26px 26px 0 0;
+  border-top: 1px solid rgba(212,175,106,.3);
+  padding: 12px 22px 18px;
+}
+.sheet-handle { width: 38px; height: 4px; border-radius: 2px; background: rgba(185,178,164,.28); margin: 0 auto 14px; }
+.sheet-title { font-family: var(--serif); font-size: 17px; letter-spacing: .32em; color: var(--i050); font-weight: 700; }
+.sheet-sub { font-size: 9.5px; letter-spacing: .22em; color: var(--i500); margin-top: 5px; }
+.sheet-body { display: flex; gap: 16px; margin-top: 14px; }
+.sheet-r { flex: 1; display: flex; flex-direction: column; }
+.copy-quote {
+  font-family: var(--serif); font-size: 13px; letter-spacing: .12em; line-height: 1.95;
+  color: var(--g100); border-left: 2px solid var(--g400); padding-left: 12px;
+}
+.copy-refresh {
+  margin-top: 10px; align-self: flex-start;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 999px;
+  border: 1px solid rgba(212,175,106,.3); background: rgba(212,175,106,.07);
+  font-family: var(--serif); font-size: 9.5px; letter-spacing: .22em; color: var(--g200);
+}
+.copy-refresh svg { width: 11px; height: 11px; stroke: var(--g200); fill: none; stroke-width: 1.8; }
+.sheet-note {
+  margin-top: auto; padding: 10px 12px; border-radius: 11px;
+  border: 1px dashed rgba(212,175,106,.32); background: rgba(212,175,106,.05);
+  font-size: 9px; letter-spacing: .12em; line-height: 1.95; color: var(--i300);
+}
+.sheet-note b { color: var(--g200); font-weight: 500; }
+.query-chip {
+  margin-top: 9px; display: inline-block;
+  font-family: monospace; font-size: 8.5px; letter-spacing: .08em;
+  color: var(--g300); background: rgba(212,175,106,.08);
+  border: 1px solid rgba(212,175,106,.18); border-radius: 7px; padding: 4px 9px;
+}
+.channels { display: flex; justify-content: space-between; margin-top: 16px; padding: 0 6px; }
+.ch-item { text-align: center; font-size: 8.5px; letter-spacing: .16em; color: var(--i500); }
+.ch-item .ic {
+  width: 46px; height: 46px; border-radius: 15px; margin: 0 auto 6px;
+  background: rgba(22,36,30,.9); border: 1px solid rgba(147,179,162,.2);
+  display: flex; align-items: center; justify-content: center;
+}
+.ch-item .ic svg { width: 21px; height: 21px; stroke: var(--c200); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.sheet-cancel { margin-top: 14px; height: 44px; line-height: 42px; font-size: 11px; }
+
+/* 海报（双尺寸共用零件） */
+.poster {
+  position: relative; overflow: hidden; border-radius: 14px;
+  display: flex; flex-direction: column;
+  background:
+    radial-gradient(90% 60% at 82% 4%, rgba(212,175,106,.16), transparent 62%),
+    linear-gradient(165deg, #1A2B23, #122019 55%, #0D1712);
+  border: 1px solid rgba(212,175,106,.26);
+  box-shadow: 0 18px 40px rgba(0,0,0,.4);
+}
+.poster::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  opacity: .1; mix-blend-mode: overlay;
+}
+.poster * { position: relative; z-index: 1; }
+.p-kicker { font-family: var(--serif); letter-spacing: .34em; color: var(--g300); font-weight: 600; }
+.p-brand { font-family: var(--serif); letter-spacing: .32em; color: var(--c050); font-weight: 700; }
+.p-lvline { display: flex; align-items: baseline; justify-content: center; gap: 8px; font-family: var(--serif); color: var(--g300); letter-spacing: .3em; }
+.p-lvline .n { font-size: 60px; font-weight: 900; color: var(--g200); letter-spacing: .05em; line-height: 1; }
+.p-rule { width: 52px; height: 1px; background: var(--g400); opacity: .8; }
+.p-stats { display: flex; align-items: center; justify-content: center; gap: 9px; font-family: var(--serif); color: var(--i300); letter-spacing: .12em; }
+.p-stats b { color: var(--g100); font-weight: 700; }
+.p-stats .star { color: var(--g300); letter-spacing: .18em; }
+.p-stats i { font-style: normal; color: var(--g500); }
+.p-copy { font-family: var(--serif); color: var(--g100); letter-spacing: .14em; line-height: 1.95; text-align: center; }
+.p-div { border-top: 1px dashed rgba(212,175,106,.3); }
+.p-foot { display: flex; align-items: center; justify-content: space-between; }
+.p-ava {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  background: radial-gradient(circle at 32% 26%, var(--c200), var(--c500) 60%, var(--c700));
+  box-shadow: inset 0 2px 4px rgba(255,255,255,.3), inset 0 -4px 8px rgba(0,0,0,.35), 0 6px 12px rgba(0,0,0,.4);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 12px; color: var(--c700); font-weight: 900;
+}
+.p-user { font-family: var(--serif); color: var(--c050); letter-spacing: .16em; }
+.p-user small { display: block; font-family: var(--sans); font-size: 7.5px; letter-spacing: .18em; color: var(--i500); margin-top: 2px; font-weight: 300; }
+.p-slogan { text-align: center; font-family: var(--serif); letter-spacing: .32em; color: var(--i700); }
+.p-qr {
+  border-radius: 6px; background: #EDE8DD; padding: 3px; flex-shrink: 0;
+}
+.p-qr svg { display: block; }
+
+/* 分享面板里的海报缩样 */
+.poster-mini { width: 128px; height: 228px; border-radius: 12px; padding: 12px 10px; flex-shrink: 0; }
+.poster-mini .p-kicker { font-size: 5.5px; }
+.poster-mini .p-brand { font-size: 8.5px; margin-top: 3px; }
+.poster-mini .p-lvline { gap: 4px; margin-top: 12px; }
+.poster-mini .p-lvline .n { font-size: 34px; }
+.poster-mini .p-lvline span { font-size: 7px; }
+.poster-mini .p-rule { width: 30px; margin: 8px auto 0; }
+.poster-mini .p-stats { font-size: 7px; gap: 5px; margin-top: 7px; }
+.poster-mini .p-copy { font-size: 8px; letter-spacing: .08em; margin-top: 12px; padding: 0 2px; }
+.poster-mini .p-div { margin: 12px 0 9px; }
+.poster-mini .p-foot { gap: 6px; }
+.poster-mini .p-ava { width: 20px; height: 20px; font-size: 9px; }
+.poster-mini .p-user { font-size: 8px; }
+.poster-mini .p-slogan { font-size: 5.5px; margin-top: 9px; }
+
+/* ============ 02 挑战中 ============ */
+.g-hud { display: flex; justify-content: space-between; align-items: flex-end; margin: 6px 2px 10px; }
+.g-count { display: flex; align-items: baseline; gap: 12px; }
+.g-count .big { font-family: var(--serif); font-size: 34px; font-weight: 900; color: var(--i050); letter-spacing: .03em; }
+.g-count .big i { font-style: normal; color: var(--i500); font-size: 18px; letter-spacing: .12em; }
+.g-count .rest { font-size: 11px; letter-spacing: .22em; color: var(--i500); }
+.g-count .star-next { font-size: 10px; letter-spacing: .16em; color: var(--g300); margin-top: 4px; }
+.g-lv { font-family: var(--serif); font-size: 12px; letter-spacing: .32em; color: var(--g300); text-align: right; }
+.g-lv .n { font-size: 26px; letter-spacing: .06em; color: var(--g200); display: block; }
+
+.chal-banner {
+  display: flex; align-items: center; gap: 11px;
+  margin-bottom: 12px; padding: 10px 13px; border-radius: 13px;
+  border: 1px dashed rgba(212,175,106,.35); background: rgba(212,175,106,.06);
+}
+.cb-ava {
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  background: radial-gradient(circle at 32% 26%, var(--g100), var(--g300) 55%, var(--g500));
+  box-shadow: inset 0 2px 4px rgba(255,255,255,.4), 0 6px 12px rgba(0,0,0,.35);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 13px; color: #2A2114; font-weight: 900;
+}
+.cb-t { font-family: var(--serif); font-size: 12px; letter-spacing: .22em; color: var(--g100); font-weight: 600; }
+.cb-s { font-size: 8.5px; letter-spacing: .16em; color: var(--i500); margin-top: 3px; }
+.cb-goal {
+  margin-left: auto; flex-shrink: 0;
+  font-family: var(--serif); font-size: 9px; letter-spacing: .22em; color: var(--g200);
+  border: 1px solid rgba(212,175,106,.4); border-radius: 999px; padding: 4px 10px;
+  background: rgba(212,175,106,.08);
+}
+
+.board-well {
+  border-radius: 18px; padding: 16px; position: relative; overflow: hidden;
+  background: linear-gradient(158deg, var(--well), var(--well-deep) 60%, var(--well));
+  box-shadow: inset 0 3px 18px rgba(0,0,0,.55), inset 0 -8px 20px rgba(0,0,0,.35);
+  border: 1px solid rgba(147,179,162,.1);
+}
+.board-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 7px; position: relative; z-index: 2; }
+.board-well svg.gpath { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 3; overflow: visible; }
+.pc {
+  aspect-ratio: 1; border-radius: 10px; position: relative; overflow: hidden;
+  background: radial-gradient(120% 110% at 30% 22%, #4D7A74, #35574F 48%, #26423C);
+  box-shadow: 0 3px 7px rgba(0,0,0,.4), inset 0 1px 2px rgba(255,255,255,.22), inset 0 -3px 6px rgba(0,0,0,.3);
+}
+.pc.pale {
+  background: radial-gradient(120% 110% at 30% 22%, #2E4740, #22362F 50%, #1B2B25);
+  box-shadow: 0 2px 5px rgba(0,0,0,.3), inset 0 1px 1px rgba(255,255,255,.1);
+  opacity: .82;
+}
+.pc .glint {
+  position: absolute; top: 8%; left: 12%; width: 52%; height: 28%;
+  border-radius: 50%; background: linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,0));
+  filter: blur(2.5px);
+}
+.pc .glyph { position: absolute; inset: 22%; opacity: .85; }
+.pc .glyph svg { width: 100%; height: 100%; }
+.pc.frost {
+  background: radial-gradient(120% 110% at 30% 22%, #9FC4BC, #7FA8A0 48%, #628A82);
+}
+.pc.dark { background: radial-gradient(120% 110% at 30% 22%, #3A4A52, #26333B 50%, #1B252C); }
+.pc.violet {
+  background: radial-gradient(120% 110% at 30% 22%, #7C70B8, #5C5192 50%, #443A72);
+}
+.pc.gold-star {
+  background: radial-gradient(120% 110% at 30% 22%, #D9B86A, #B89045 50%, #8A6B3C);
+}
+.pc.key {
+  background: radial-gradient(120% 110% at 30% 22%, #C8A45E, #A07E3C 50%, #7A5E2C);
+}
+.pc .num {
+  position: absolute; right: 3px; bottom: 2px;
+  font-family: var(--serif); font-size: 9px; font-weight: 900; color: rgba(42,30,10,.85);
+}
+.g-tip {
+  margin-top: 12px; height: 52px; line-height: 48px; font-size: 15px; position: relative;
+}
+.g-tip .ad {
+  position: absolute; right: 10px; top: 11px; background: var(--seal); color: var(--i050);
+  font-family: var(--sans); font-size: 8.5px; letter-spacing: .12em; padding: 3px 9px;
+  border-radius: 8px; font-weight: 500; white-space: nowrap;
+}
+.g-legend { margin-top: 12px; display: flex; justify-content: space-between; padding: 0 2px; }
+.g-legend .li { text-align: center; font-size: 8.5px; letter-spacing: .12em; color: var(--i500); }
+.g-legend .li .sw {
+  width: 26px; height: 26px; margin: 0 auto 5px; border-radius: 7px; position: relative; overflow: hidden;
+}
+.g-retry { margin-top: 11px; text-align: center; font-size: 9.5px; letter-spacing: .26em; color: var(--i500); }
+.g-retry b { color: var(--c200); font-weight: 500; }
+.g-retry em { font-style: normal; color: var(--g200); font-weight: 500; }
+
+/* ============ 03/04 挑战结算 ============ */
+.set-wrap { text-align: center; padding-top: 30px; }
+.set-seal {
+  width: 96px; height: 96px; margin: 0 auto; border-radius: 16px;
+  background: linear-gradient(155deg, var(--seal), var(--seal-deep));
+  box-shadow: 0 10px 26px rgba(140,47,30,.45), inset 0 2px 4px rgba(255,210,190,.35), inset 0 -6px 12px rgba(90,25,10,.4);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 48px; font-weight: 900; color: rgba(255,240,228,.94);
+  transform: rotate(-3deg);
+}
+.set-medal {
+  width: 96px; height: 96px; margin: 0 auto; border-radius: 50%;
+  background:
+    radial-gradient(38% 30% at 28% 18%, rgba(255,255,255,.14), transparent 72%),
+    linear-gradient(150deg, #3C423E, #232925 52%, #12160F);
+  box-shadow: 0 10px 24px rgba(0,0,0,.4), inset 0 2px 4px rgba(255,255,255,.12), inset 0 -6px 12px rgba(0,0,0,.5),
+    0 0 0 1px rgba(185,178,164,.18);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 42px; font-weight: 900; color: rgba(185,178,164,.6);
+}
+.set-title { font-family: var(--serif); font-size: 24px; letter-spacing: .3em; color: var(--i050); margin-top: 22px; font-weight: 700; }
+.set-sub { font-family: var(--serif); font-size: 11px; letter-spacing: .32em; color: var(--i500); margin-top: 10px; }
+.set-sub em { font-style: normal; color: var(--g300); }
+.set-phrase { font-family: var(--serif); font-size: 12px; letter-spacing: .42em; color: var(--g300); margin: 18px 0 22px; }
+
+.cmp { display: flex; align-items: stretch; justify-content: center; gap: 10px; margin-bottom: 14px; }
+.cmp-cell {
+  width: 118px; padding: 13px 0 12px; border-radius: 13px;
+  background: rgba(22,36,30,.85); border: 1px solid rgba(147,179,162,.18);
+}
+.cmp-cell.me {
+  border-color: rgba(212,175,106,.42); background: rgba(212,175,106,.08);
+  box-shadow: 0 0 18px rgba(212,175,106,.12);
+}
+.cmp-cell .v { font-family: var(--serif); font-size: 21px; color: var(--i050); letter-spacing: .05em; }
+.cmp-cell.me .v { color: var(--g100); }
+.cmp-cell .k { font-size: 8.5px; letter-spacing: .28em; color: var(--i500); margin-top: 4px; }
+.cmp-vs {
+  align-self: center; font-family: var(--serif); font-size: 11px;
+  letter-spacing: .18em; color: var(--g500);
+}
+.cmp-note { font-size: 9.5px; letter-spacing: .22em; color: var(--i500); margin-bottom: 16px; }
+.cmp-note b { color: var(--g200); font-weight: 500; }
+.chip-row { display: flex; justify-content: center; gap: 8px; margin-bottom: 24px; }
+.chip {
+  font-family: var(--serif); font-size: 9px; letter-spacing: .24em;
+  padding: 5px 13px; border-radius: 999px;
+  border: 1px solid rgba(212,175,106,.4); color: var(--g200); background: rgba(212,175,106,.08);
+}
+.chip.hot { border-color: var(--g300); background: var(--g300); color: #2A2114; font-weight: 700; }
+.set-btns .b1 { height: 56px; line-height: 52px; font-size: 15px; }
+.set-btns .row2 { display: flex; gap: 10px; margin-top: 10px; }
+.set-btns .row2 .b { flex: 1; height: 44px; line-height: 42px; font-size: 11px; }
+.set-btns .b3 { height: 42px; line-height: 40px; font-size: 10.5px; margin-top: 10px; }
+
+/* ============ 海报定稿 ============ */
+.poster-row { display: flex; gap: 26px; align-items: flex-start; flex-wrap: wrap; }
+.poster-col { display: flex; flex-direction: column; align-items: center; }
+.poster-col .poster { width: 300px; height: 534px; padding: 26px 22px 20px; }
+.poster-col .poster .p-kicker { font-size: 8px; }
+.poster-col .poster .p-brand { font-size: 15px; margin-top: 6px; }
+.poster-col .poster .p-lvline { margin-top: 30px; }
+.poster-col .poster .p-rule { margin: 18px auto 0; }
+.poster-col .poster .p-stats { font-size: 11px; margin-top: 12px; }
+.poster-col .poster .p-path { margin: 22px auto 0; display: block; }
+.poster-col .poster .p-copy { font-size: 13px; margin-top: 20px; padding: 0 6px; }
+.poster-col .poster .p-div { margin: auto 0 16px; }
+.poster-col .poster .p-ava { width: 34px; height: 34px; font-size: 14px; }
+.poster-col .poster .p-user { font-size: 12px; }
+.poster-col .poster .p-slogan { font-size: 7.5px; margin-top: 14px; }
+.poster-cap { margin-top: 14px; font-family: var(--serif); font-size: 11px; letter-spacing: .26em; color: var(--i500); }
+.poster-cap b { color: var(--g300); font-weight: 600; margin-right: 10px; }
+
+/* 丹青色样（同构图换肤） */
+.poster.danqing {
+  background:
+    radial-gradient(90% 55% at 84% 2%, rgba(201,155,63,.18), transparent 62%),
+    linear-gradient(165deg, #F2EDE2, #E9E0CE 55%, #DFD2B8);
+  border-color: rgba(122,94,50,.3);
+}
+.poster.danqing .p-kicker { color: #B5472E; }
+.poster.danqing .p-brand { color: #141118; }
+.poster.danqing .p-lvline { color: #8A6B3C; }
+.poster.danqing .p-lvline .n { color: #141118; }
+.poster.danqing .p-rule { background: #B5472E; opacity: .7; }
+.poster.danqing .p-stats { color: #6B6152; }
+.poster.danqing .p-stats b { color: #141118; }
+.poster.danqing .p-stats .star { color: #B5472E; }
+.poster.danqing .p-copy { color: #1C1822; }
+.poster.danqing .p-div { border-top-color: rgba(122,94,50,.35); }
+.poster.danqing .p-ava {
+  background: radial-gradient(circle at 32% 26%, #8FB89B, #5E8C6E 60%, #3E5E4A);
+  box-shadow: inset 0 2px 4px rgba(255,255,255,.35), inset 0 -4px 8px rgba(0,0,0,.3), 0 6px 12px rgba(0,0,0,.25);
+}
+.poster.danqing .p-user { color: #141118; }
+.poster.danqing .p-user small { color: #6B6152; }
+.poster.danqing .p-slogan { color: #A2947C; }
+.poster.danqing .p-qr { background: #FFFDF6; }
+
+.poster-spec {
+  flex: 1; min-width: 300px;
+  background: rgba(22,36,30,.72); border: 1px solid rgba(255,255,255,.06);
+  border-radius: 16px; padding: 24px 26px;
+}
+.poster-spec h4 { font-family: var(--serif); font-size: 12px; letter-spacing: .3em; color: var(--g300); margin-bottom: 14px; font-weight: 700; }
+.spec-list { font-family: monospace; font-size: 10px; line-height: 2.15; color: var(--i300); letter-spacing: .04em; }
+.spec-list b { color: var(--g200); font-weight: 500; }
+.copy-pool { margin-top: 20px; }
+.copy-pool li {
+  list-style: none; font-family: var(--serif); font-size: 11px; letter-spacing: .12em;
+  color: var(--i300); line-height: 2.1; padding-left: 18px; position: relative;
+}
+.copy-pool li::before { content: '○'; position: absolute; left: 0; color: var(--g500); font-size: 9px; top: 2px; }
+.copy-pool li b { color: var(--g200); font-weight: 500; }
+
+/* token 表 */
+.token-wrap {
+  background: rgba(22,36,30,.72); border: 1px solid rgba(255,255,255,.06);
+  border-radius: 16px; padding: 24px 28px;
+}
+.token-table { width: 100%; border-collapse: collapse; }
+.token-table th {
+  text-align: left; font-family: var(--serif); font-size: 10.5px; letter-spacing: .26em;
+  color: var(--g300); font-weight: 700; padding: 10px 12px;
+  border-bottom: 1px solid rgba(212,175,106,.25);
+}
+.token-table td {
+  padding: 11px 12px; border-bottom: 1px solid rgba(255,255,255,.05);
+  font-size: 11px; letter-spacing: .04em; color: var(--i300); line-height: 1.8; vertical-align: top;
+}
+.token-table td:first-child { font-family: var(--serif); color: var(--i050); letter-spacing: .16em; font-size: 11px; width: 120px; }
+.token-table td b { color: var(--g200); font-weight: 500; font-family: monospace; font-size: 10.5px; }
+
+/* 页脚 */
+.foot {
+  margin-top: 60px; padding-top: 24px; border-top: 1px solid rgba(255,255,255,.06);
+  display: flex; justify-content: space-between; font-size: 10px; letter-spacing: .3em; color: var(--i700);
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="head">
+    <div class="kicker">MISE CELADON · SHARE &amp; CHALLENGE</div>
+    <h1>秘色 · 天青 <em>分享挑战</em></h1>
+    <div class="sub">
+      分享带关卡号 + 重来数 · 好友打开直达同关 · 重来次数少者胜（平手算赢）<br>
+      四屏定稿：分享面板 / 挑战中 / 挑战成功 / 惜败 · 另附 750×1334 海报双色样
+    </div>
+    <div class="rule"></div>
+  </header>
+
+  <!-- 链路 -->
+  <section class="sec">
+    <div class="sec-no">链路说明</div>
+    <div class="sec-title">四段闭环 <small>从「通关」到「再来一局」，中间不许断</small></div>
+    <div class="sec-lead">
+      分享挑战不是一个按钮，是一条<b>完整闭环</b>：通关 → 分享 → 好友同关 → 比重来。
+      本稿把此前只有信息条的「分享挑战」展开成可点可用的整条链路，
+      口径与实现（<b>challenge.ts / share.ts / 18-社交裂变设计.md</b>）逐字对齐，不发明新功能。
+    </div>
+
+    <div class="flow">
+      <div class="flow-step">
+        <b>壹 · 通关落印</b>
+        <span>结算页点「分享」——成绩就是关卡号 + 重来次数，星级同源（0 重来 = ★★★）</span>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <b>贰 · 海报出窑</b>
+        <span>程序化渲染 750×1334 海报 + 文案池随机一条；链接带 l / undos / uid / name</span>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <b>叁 · 好友应战</b>
+        <span>点开直达第 N 关，不经过大厅；盘上横幅「X 的挑战」；不推进我的主线</span>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <b>肆 · 以印定音</b>
+        <span>我的重来 ≤ 他的重来 = 胜（平手算赢）；胜落「胜」印，惜败不落印</span>
+      </div>
+    </div>
+
+    <div class="fix-grid">
+      <div class="fix-card">
+        <h4>分享 · 只带两样</h4>
+        <p><s>步数 / 分数 / 道具（虚构）</s> → 只带<b>关卡号 + 重来数（undos）</b>。cover 模式步数恒为 required−1，没有区分度；重来次数才是成绩，也是星级的口径。</p>
+      </div>
+      <div class="fix-card">
+        <h4>入口 · 直达同关</h4>
+        <p>好友点开 <b>parseChallenge 命中即进第 N 关</b>，不经过大厅、不弹前置页。横幅只说一件事：<b>「谁的挑战 · 第几关」</b>，目标写在横幅右侧。</p>
+      </div>
+      <div class="fix-card">
+        <h4>判定 · 平手算赢</h4>
+        <p>对比维度是<b>双方重来次数</b>（优先跟分享链接里那位好友比，不是跟全服最佳比）。<b>我 ≤ 他即胜</b>——「跟好友一样好」也是赢。挑战成绩不推进主线。</p>
+      </div>
+      <div class="fix-card">
+        <h4>印 · 落与不落</h4>
+        <p>通关落「过」，挑战成功落「胜」，<b>惜败不落印</b>——朱印是通关与胜利的专利。惜败只给石色圆章「惜」，无回弹、无欢呼，重量来自克制。</p>
+      </div>
+    </div>
+    <div class="fix-note">
+      埋点四枚：<b>share_click / share_success / challenge_start / challenge_result</b>（18-社交裂变设计.md 已落盘）。
+      海报零图片素材、纯程序化 canvas，取色随当前主题六通道——天青与丹青同构图换肤（见海报定稿）。
+      裂变健康度：分享率 &gt; 5% · 点击→首局完成 &gt; 50%。
+    </div>
+  </section>
+
+  <!-- 四屏 -->
+  <section class="sec">
+    <div class="sec-no">全链路</div>
+    <div class="sec-title">四屏定稿 <small>375 × 812 · 天青质感 · 一屏一金</small></div>
+
+    <div class="phones">
+
+      <!-- 01 分享面板 -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="brand">秘色 · 天青</span></div>
+          <div class="pbody bleed">
+            <div class="share-bg">
+              <div class="set-seal-s">过</div>
+              <div class="t">第 047 关 通关</div>
+              <div class="s">一 气 呵 成</div>
+              <div class="st">
+                <i><svg viewBox="0 0 34 34"><path d="M17 3 L20.2 11.8 L29.5 11.8 L22 17.6 L24.8 26.5 L17 21.2 L9.2 26.5 L12 17.6 L4.5 11.8 L13.8 11.8 Z" fill="#F2DCA8" stroke="#B8945A" stroke-width="1.6"/></svg></i>
+                <i><svg viewBox="0 0 34 34"><path d="M17 3 L20.2 11.8 L29.5 11.8 L22 17.6 L24.8 26.5 L17 21.2 L9.2 26.5 L12 17.6 L4.5 11.8 L13.8 11.8 Z" fill="#F2DCA8" stroke="#B8945A" stroke-width="1.6"/></svg></i>
+                <i><svg viewBox="0 0 34 34"><path d="M17 3 L20.2 11.8 L29.5 11.8 L22 17.6 L24.8 26.5 L17 21.2 L9.2 26.5 L12 17.6 L4.5 11.8 L13.8 11.8 Z" fill="#F2DCA8" stroke="#B8945A" stroke-width="1.6"/></svg></i>
+              </div>
+            </div>
+            <div class="share-scrim"></div>
+            <div class="share-sheet">
+              <div class="sheet-handle"></div>
+              <div class="sheet-title">分 享 挑 战</div>
+              <div class="sheet-sub">带关卡 + 重来数 · 好友同关竞速</div>
+              <div class="sheet-body">
+                <div class="poster poster-mini">
+                  <div class="p-kicker">SHARE CHALLENGE</div>
+                  <div class="p-brand">秘色 · 天青</div>
+                  <div class="p-lvline"><span>第</span><span class="n">047</span><span>关</span></div>
+                  <div class="p-rule"></div>
+                  <div class="p-stats"><span>重来 <b>0</b> 次</span><i>·</i><span class="star">★★★</span></div>
+                  <div class="p-copy">「第 047 关，<br>我不信你过得去」</div>
+                  <div class="p-div"></div>
+                  <div class="p-foot">
+                    <div class="p-ava">瓷</div>
+                    <div class="p-user">瓷生<small>无尽征途</small></div>
+                  </div>
+                  <div class="p-slogan">COVER THE BOARD</div>
+                </div>
+                <div class="sheet-r">
+                  <div class="copy-quote">「第 047 关，我不信你过得去」</div>
+                  <div class="copy-refresh">
+                    <svg viewBox="0 0 24 24"><path d="M20 12 A8 8 0 1 1 18.4 7"/><path d="M20 4 V8 H16"/></svg>
+                    换 一 条
+                  </div>
+                  <div class="sheet-note">
+                    好友打开即达<b>第 047 关</b><br>
+                    按<b>重来次数</b>比胜负 · 平手算赢
+                  </div>
+                  <div class="query-chip">?l=47&amp;undos=0&amp;uid=88214</div>
+                </div>
+              </div>
+              <div class="channels">
+                <div class="ch-item">
+                  <div class="ic">
+                    <svg viewBox="0 0 24 24"><path d="M9 4 C5 4, 2 6.6, 2 9.8 C2 11.7 3.1 13.4 4.8 14.5 L4.2 17.2 L7 15.7 C7.7 15.9 8.3 16 9 16"/><path d="M15 9 C18.9 9, 22 11.6, 22 14.8 C22 18 18.9 20.6 15 20.6 C14.2 20.6 13.4 20.5 12.7 20.3 L9.5 22 L10.2 19 C8.2 18 7 16.2 7 14.2 C7 11 10.1 9 15 9 Z"/></svg>
+                  </div>
+                  微 信
+                </div>
+                <div class="ch-item">
+                  <div class="ic">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 3.5 V6.5"/><path d="M12 17.5 V20.5"/><path d="M3.5 12 H6.5"/><path d="M17.5 12 H20.5"/></svg>
+                  </div>
+                  朋 友 圈
+                </div>
+                <div class="ch-item">
+                  <div class="ic">
+                    <svg viewBox="0 0 24 24"><path d="M10 14 A4 4 0 0 0 14 14 L18 10 A4 4 0 0 0 14 6 L12.5 7.5"/><path d="M14 10 A4 4 0 0 0 10 10 L6 14 A4 4 0 0 0 10 18 L11.5 16.5"/></svg>
+                  </div>
+                  复 制 链 接
+                </div>
+                <div class="ch-item">
+                  <div class="ic">
+                    <svg viewBox="0 0 24 24"><path d="M12 4 V15"/><path d="M7.5 11 L12 15.5 L16.5 11"/><path d="M5 19 H19"/></svg>
+                  </div>
+                  保 存 海 报
+                </div>
+              </div>
+              <button class="btn-line sheet-cancel">取 消</button>
+            </div>
+          </div>
+          <div class="nav" id="nav-share"></div>
+        </div>
+        <div class="phone-tag"><b>01</b>SHARE · 分享面板</div>
+      </div>
+
+      <!-- 02 挑战中 -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="brand">秘色 · 天青</span></div>
+          <div class="pbody">
+            <div class="g-hud">
+              <div class="g-count">
+                <div>
+                  <div class="big">52 <i>/ 86</i></div>
+                  <div class="rest">剩 34　·　下一个 ★2</div>
+                </div>
+              </div>
+              <div class="g-lv"><span class="n">047</span>关</div>
+            </div>
+            <div class="chal-banner">
+              <div class="cb-ava">瓷</div>
+              <div>
+                <div class="cb-t">瓷 生 的挑战</div>
+                <div class="cb-s">第 047 关 · 他重来 0 次</div>
+              </div>
+              <div class="cb-goal">平手即胜</div>
+            </div>
+            <div class="board-well">
+              <div class="board-grid" id="gameBoard"></div>
+              <svg class="gpath" viewBox="0 0 311 311" id="gamePath"></svg>
+            </div>
+            <button class="btn-gold g-tip">提 示<span class="ad">首提示 · 看视频</span></button>
+            <div class="g-legend" id="gLegend"></div>
+            <div class="g-retry">我的重来 <b>0</b> 次 · 不超过 <em>0</em> 次即胜</div>
+          </div>
+          <div class="nav" id="nav-game"></div>
+        </div>
+        <div class="phone-tag"><b>02</b>CHALLENGE · 挑战中</div>
+      </div>
+
+      <!-- 03 挑战成功 -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="brand">秘色 · 天青</span></div>
+          <div class="pbody">
+            <div class="set-wrap">
+              <div class="set-seal">胜</div>
+              <div class="set-title">挑战成功</div>
+              <div class="set-sub">瓷生 的挑战 · <em>第 047 关</em></div>
+              <div class="set-phrase">平 手 亦 胜</div>
+              <div class="cmp">
+                <div class="cmp-cell me">
+                  <div class="v">0 次</div>
+                  <div class="k">我 · 重来</div>
+                </div>
+                <div class="cmp-vs">VS</div>
+                <div class="cmp-cell">
+                  <div class="v">0 次</div>
+                  <div class="k">瓷生 · 重来</div>
+                </div>
+              </div>
+              <div class="cmp-note">跟好友<b>一样好</b>也是赢</div>
+              <div class="chip-row">
+                <div class="chip">平手算赢</div>
+                <div class="chip hot">刷新最佳纪录！</div>
+              </div>
+              <div class="set-btns">
+                <button class="btn-gold b1">再 试 一 次</button>
+                <div class="row2">
+                  <button class="btn-ghost b">分 享</button>
+                  <button class="btn-ghost b">主 题</button>
+                </div>
+                <button class="btn-line b3">返 回 大 厅</button>
+              </div>
+            </div>
+          </div>
+          <div class="nav" id="nav-win"></div>
+        </div>
+        <div class="phone-tag"><b>03</b>WIN · 挑战成功</div>
+      </div>
+
+      <!-- 04 惜败 -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="brand">秘色 · 天青</span></div>
+          <div class="pbody">
+            <div class="set-wrap">
+              <div class="set-medal">惜</div>
+              <div class="set-title">惜 败</div>
+              <div class="set-sub">瓷生 的挑战 · <em>第 047 关</em></div>
+              <div class="set-phrase">差 一 步 · 再 来</div>
+              <div class="cmp">
+                <div class="cmp-cell me">
+                  <div class="v">1 次</div>
+                  <div class="k">我 · 重来</div>
+                </div>
+                <div class="cmp-vs">VS</div>
+                <div class="cmp-cell">
+                  <div class="v">0 次</div>
+                  <div class="k">瓷生 · 重来</div>
+                </div>
+              </div>
+              <div class="cmp-note">差 <b>1</b> 次 · 平手即胜</div>
+              <div class="chip-row">
+                <div class="chip">不落朱印 · 印是胜利的专利</div>
+              </div>
+              <div class="set-btns">
+                <button class="btn-gold b1">再 试 一 次</button>
+                <div class="row2">
+                  <button class="btn-ghost b">分 享</button>
+                  <button class="btn-ghost b">主 题</button>
+                </div>
+                <button class="btn-line b3">返 回 大 厅</button>
+              </div>
+            </div>
+          </div>
+          <div class="nav" id="nav-lose"></div>
+        </div>
+        <div class="phone-tag"><b>04</b>LOSE · 惜败</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 海报定稿 -->
+  <section class="sec">
+    <div class="sec-no">海报定稿</div>
+    <div class="sec-title">750 × 1334 <small>程序化渲染 · 零图片素材 · 随主题换肤</small></div>
+    <div class="sec-lead">
+      海报是这条链路里<b>唯一出圈的资产</b>——它出现在聊天流里，不是游戏里。
+      构图固定五段：<b>品牌眉 → 大关号 → 金缮光迹 → 文案 → 落款与码</b>。
+      取色走主题六通道：默认「秘色·天青」（深釉底 + 鎏金），里程碑「鸣沙·丹青」（纸底 + 矿彩），
+      同构图换肤——程序化渲染的代价就是换肤免费。
+    </div>
+
+    <div class="poster-row">
+
+      <!-- 天青海报 -->
+      <div class="poster-col">
+        <div class="poster">
+          <div class="p-kicker">SHARE CHALLENGE · 同关竞速</div>
+          <div class="p-brand">秘色 · 天青</div>
+          <div class="p-lvline"><span>第</span><span class="n">047</span><span>关</span></div>
+          <div class="p-rule"></div>
+          <div class="p-stats">
+            <span>重来 <b>0</b> 次</span><i>·</i><span class="star">★★★</span><i>·</i><span>62.4s</span>
+          </div>
+          <svg class="p-path" width="240" height="58" viewBox="0 0 240 58">
+            <defs>
+              <linearGradient id="pg1" x1="0" y1="1" x2="1" y2="0">
+                <stop offset="0" stop-color="#8A6B3C"/><stop offset="1" stop-color="#F2DCA8"/>
+              </linearGradient>
+            </defs>
+            <path d="M 20 44 L 84 44 L 84 20 L 156 20 L 156 38 L 220 38" fill="none" stroke="rgba(212,175,106,.3)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M 20 44 L 84 44 L 84 20 L 156 20 L 156 38 L 220 38" fill="none" stroke="url(#pg1)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M 20 44 L 84 44 L 84 20 L 156 20 L 156 38 L 220 38" fill="none" stroke="rgba(255,243,214,.5)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="20" cy="44" r="4.2" fill="#B8945A" stroke="#F2DCA8" stroke-width="1.2"/>
+            <circle cx="220" cy="38" r="4.2" fill="#F2DCA8"/>
+          </svg>
+          <div class="p-copy">「第 047 关，我不信你过得去」</div>
+          <div class="p-div"></div>
+          <div class="p-foot">
+            <div class="p-ava">瓷</div>
+            <div class="p-user">瓷生<small>无尽征途 · ID 88214</small></div>
+            <div class="p-qr"><svg class="qr" width="42" height="42" viewBox="0 0 29 29"></svg></div>
+          </div>
+          <div class="p-slogan">COVER THE BOARD · ONE GOLD TRAIL</div>
+        </div>
+        <div class="poster-cap"><b>01</b>秘色 · 天青 · 默认主题</div>
+      </div>
+
+      <!-- 丹青海报 -->
+      <div class="poster-col">
+        <div class="poster danqing">
+          <div class="p-kicker">SHARE CHALLENGE · 同关竞速</div>
+          <div class="p-brand">鸣沙 · 丹青</div>
+          <div class="p-lvline"><span>第</span><span class="n">047</span><span>关</span></div>
+          <div class="p-rule"></div>
+          <div class="p-stats">
+            <span>重来 <b>0</b> 次</span><i>·</i><span class="star">★★★</span><i>·</i><span>62.4s</span>
+          </div>
+          <svg class="p-path" width="240" height="58" viewBox="0 0 240 58">
+            <defs>
+              <linearGradient id="pg2" x1="0" y1="1" x2="1" y2="0">
+                <stop offset="0" stop-color="#8A6B3C"/><stop offset="1" stop-color="#E2B558"/>
+              </linearGradient>
+            </defs>
+            <path d="M 20 44 L 84 44 L 84 20 L 156 20 L 156 38 L 220 38" fill="none" stroke="rgba(181,71,46,.22)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M 20 44 L 84 44 L 84 20 L 156 20 L 156 38 L 220 38" fill="none" stroke="url(#pg2)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M 20 44 L 84 44 L 84 20 L 156 20 L 156 38 L 220 38" fill="none" stroke="rgba(255,248,230,.55)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="20" cy="44" r="4.2" fill="#C99B3F" stroke="#E2B558" stroke-width="1.2"/>
+            <circle cx="220" cy="38" r="4.2" fill="#E2B558"/>
+          </svg>
+          <div class="p-copy">「第 047 关，我不信你过得去」</div>
+          <div class="p-div"></div>
+          <div class="p-foot">
+            <div class="p-ava">瓷</div>
+            <div class="p-user">瓷生<small>无尽征途 · ID 88214</small></div>
+            <div class="p-qr"><svg class="qr" width="42" height="42" viewBox="0 0 29 29"></svg></div>
+          </div>
+          <div class="p-slogan">COVER THE BOARD · ONE GOLD TRAIL</div>
+        </div>
+        <div class="poster-cap"><b>02</b>鸣沙 · 丹青 · 同构图换肤</div>
+      </div>
+
+      <!-- 规格 -->
+      <div class="poster-spec">
+        <h4>海报规格</h4>
+        <div class="spec-list">
+          <b>尺寸</b>　750 × 1334（9:16）· 微信卡片裁切安全区四周留白 48<br>
+          <b>渲染</b>　离屏 canvas 程序化 · 零图片素材 · 微信 offscreen / Web 双分支<br>
+          <b>取色</b>　随当前主题六通道（棋盘 / 机制 / 路径 / 音效 / 动效 / 触感同一套 token）<br>
+          <b>必带</b>　关卡号 · 重来数 · 星级 · 用时 · 昵称 · 主题名 · 二维码<br>
+          <b>文案</b>　与分享链接同文（文案池 4 条随机，A/B 淘汰最差）<br>
+          <b>禁</b>　　照片素材 · 二维码以外的外部图 · 除 slogan 外的英文 · 动效
+        </div>
+        <div class="copy-pool">
+          <h4>分享文案池 · COPY_POOL</h4>
+          <ul>
+            <li>我卡在第 <b>{lv}</b> 关，你能连过去吗？</li>
+            <li>这关我重来 <b>{undos}</b> 次，你呢？</li>
+            <li>敢不敢试试我的<b>主题</b>？</li>
+            <li>第 <b>{lv}</b> 关，我不信你过得去</li>
+          </ul>
+        </div>
+        <div class="copy-pool">
+          <h4>链接 · buildShareQuery</h4>
+          <ul>
+            <li><b>?l=47</b>　关卡号（必带）</li>
+            <li><b>&amp;undos=0</b>　重来数（对比维度）</li>
+            <li><b>&amp;uid=88214&amp;name=瓷生</b>　让好友知道是谁在挑战</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 动效音效 -->
+  <section class="sec">
+    <div class="sec-no">动效 · 音效</div>
+    <div class="sec-title">事件对轴 <small>沿用四通道细化稿的六幕 · 不新造动效</small></div>
+    <div class="sec-lead">
+      分享挑战不引入新的动效语言——每个事件都挂到已定稿的六幕上：
+      面板与转场走<b>釉光抹开</b>，按压走<b>涟漪金环</b>，挑战成功走<b>朱印落绢</b>（全主题唯一回弹），
+      <b>惜败不落印</b>：只走釉落落定，单声瓷轻叩，无欢呼尾音。声音与触感仍与接触帧对齐。
+    </div>
+
+    <div class="token-wrap">
+      <table class="token-table">
+        <tr><th>事件</th><th>动效</th><th>时长 · 缓动</th><th>音效 · 触感</th></tr>
+        <tr><td>分享面板弹出</td><td>转场 · 釉光抹开</td><td><b>520ms</b> · 缮线</td><td>釉息轻点 5ms</td></tr>
+        <tr><td>换一条文案</td><td>釉落（文案换位）</td><td><b>240ms</b> · 釉落</td><td>釉息轻点 5ms</td></tr>
+        <tr><td>渠道按压</td><td>按压 · 涟漪金环</td><td><b>120 / 500ms</b> · 釉落</td><td>瓷轻叩 8ms</td></tr>
+        <tr><td>海报出窑</td><td>缮线（自上而下抹出）</td><td><b>520ms</b> · 缮线</td><td>—（留白）</td></tr>
+        <tr><td>挑战成功</td><td>盖印 · 朱印落绢「胜」</td><td><b>320ms</b> · 印顿（回弹 ≤3px）</td><td>印落纸 45ms 重震</td></tr>
+        <tr><td>惜败</td><td>釉落落定（<b>不落印</b>）</td><td><b>240ms</b> · 釉落</td><td>瓷轻叩 · 单声</td></tr>
+        <tr><td>再试一次</td><td>转场 · 釉光抹开</td><td><b>520ms</b> · 缮线</td><td>—（留白）</td></tr>
+        <tr><td>挑战横幅入场</td><td>釉落（自上沉入）</td><td><b>240ms</b> · 釉落</td><td>釉息轻点 5ms</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <div class="foot">
+    <span>秘色 · 天青 · 分享挑战 全链路</span>
+    <span>SHARE THE LEVEL · CHALLENGE THE UNDOS</span>
+  </div>
+</div>
+
+<script>
+/* ===== 底部导航（真实 5 Tab） ===== */
+const TAB_ICONS = {
+  home: '<svg viewBox="0 0 24 24"><path d="M4 11 L12 4 L20 11 V20 H14 V15 H10 V20 H4 Z"/></svg>',
+  map:  '<svg viewBox="0 0 24 24"><path d="M9 4 L3 6 V20 L9 18 L15 20 L21 18 V4 L15 6 Z"/><path d="M9 4 V18"/><path d="M15 6 V20"/></svg>',
+  skin: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4 A8 8 0 0 1 12 20 A5.5 5.5 0 0 0 12 4"/></svg>',
+  rank: '<svg viewBox="0 0 24 24"><path d="M6 20 V12 H10 V20"/><path d="M10 20 V7 H14 V20"/><path d="M14 20 V10 H18 V20"/><path d="M4 20 H20"/></svg>',
+  prof: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20 Q5 13, 12 13 Q19 13, 19 20"/></svg>'
+};
+const TABS = [['home','主页'],['map','地图'],['skin','主题'],['rank','排行'],['prof','我的']];
+function buildNav(id, active) {
+  const el = document.getElementById(id);
+  el.innerHTML = TABS.map(([k, nm]) =>
+    `<div class="nav-item ${k === active ? 'on' : ''}"><div class="ico">${TAB_ICONS[k]}</div>${nm}</div>`).join('');
+}
+buildNav('nav-share','map'); buildNav('nav-game','map'); buildNav('nav-win','map'); buildNav('nav-lose','map');
+
+/* ===== 02 游戏内棋盘（与定稿 Demo 同盘：真实机制示意） ===== */
+(function () {
+  const g = document.getElementById('gameBoard');
+  const K = [
+    'd','d','d','p','p','d','s','p',
+    'p','d','a','d','d','d','d','p',
+    'p','d','d','p','k','p','d','p',
+    'i','i','d','d','d','d','d','D',
+    'p','p','d','p','t','d','p','p',
+    'p','d','d','d','d','d','d','p',
+    's','d','p','p','a','p','d','d',
+    'p','d','d','p','t','d','d','p'
+  ];
+  const glyph = (inner, stroke = 'rgba(255,240,210,.85)', w = 1.4) =>
+    `<div class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${inner}</svg></div>`;
+  g.innerHTML = K.map((k, i) => {
+    if (k === 'd') return `<div class="pc"><div class="glint"></div></div>`;
+    if (k === 'p') return `<div class="pc pale"></div>`;
+    if (k === 'a') return `<div class="pc dark"><div class="glint"></div>${glyph('<path d="M5 12 H15"/><path d="M11 7 L17 12 L11 17"/>', '#F2DCA8', 2)}</div>`;
+    if (k === 's') {
+      const n = i === 6 ? '1' : '2';
+      return `<div class="pc gold-star"><div class="glint"></div>${glyph('<path d="M12 3.5 L14.2 9.8 L21 9.8 L15.6 13.8 L17.7 20 L12 16.2 L6.3 20 L8.4 13.8 L3 9.8 L9.8 9.8Z"/>', '#4A3510', 0)}</div><div class="num">★${n}</div>`;
+    }
+    if (k === 'k') return `<div class="pc key"><div class="glint"></div>${glyph('<circle cx="9" cy="9" r="3.4"/><path d="M11.4 11.4 L18 18"/><path d="M15.5 15.5 L17.5 13.5"/>', '#2A2114', 1.8)}</div>`;
+    if (k === 'D') return `<div class="pc dark"><div class="glint"></div>${glyph('<rect x="7" y="4" width="10" height="16" rx="1.5"/><circle cx="14.2" cy="12" r="1.2" fill="rgba(255,240,210,.8)" stroke="none"/>', 'rgba(255,240,210,.75)', 1.5)}</div>`;
+    if (k === 't') return `<div class="pc violet"><div class="glint"></div>${glyph('<circle cx="10" cy="12" r="5.2"/><circle cx="15.5" cy="12" r="5.2"/>', 'rgba(240,235,255,.85)', 1.5)}</div>`;
+    return `<div class="pc frost"><div class="glint"></div>${glyph('<path d="M6 16 L10 8 L14 16"/><path d="M8.2 13 H11.8"/><path d="M15 16 L18 8"/>', 'rgba(20,50,45,.7)', 1.6)}</div>`;
+  }).join('');
+
+  // 金色光迹（三层画法 · 与定稿 Demo 一致）
+  const svg = document.getElementById('gamePath');
+  const P = 'M 39,39 L 125,39 L 125,82 L 211,82 L 211,125 L 125,125 L 125,168 L 254,168';
+  svg.innerHTML = `
+    <path d="${P}" fill="none" stroke="rgba(212,175,106,.35)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="${P}" fill="none" stroke="#B89045" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="${P}" fill="none" stroke="#F2DCA8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="${P}" fill="none" stroke="#fff" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" opacity=".5"/>
+    <circle cx="254" cy="168" r="4.5" fill="#F2DCA8"/>`;
+
+  const L = [
+    ['单向门', '#26333B', '<svg viewBox="0 0 24 24" fill="none" stroke="#F2DCA8" stroke-width="2"><path d="M5 12 H15"/><path d="M11 7 L17 12 L11 17"/></svg>'],
+    ['星屑 序', '#B89045', '<svg viewBox="0 0 24 24" fill="#2A2114"><path d="M12 4 L14 10 L20 10 L15 13.6 L17 20 L12 16.2 L7 20 L9 13.6 L4 10 L10 10Z"/></svg>'],
+    ['钥匙', '#A07E3C', '<svg viewBox="0 0 24 24" fill="none" stroke="#2A2114" stroke-width="1.8"><circle cx="9" cy="9" r="3"/><path d="M11 11 L17 17"/><path d="M14.6 14.6 L16.6 12.6"/></svg>'],
+    ['门', '#26333B', '<svg viewBox="0 0 24 24" fill="none" stroke="rgba(240,235,220,.8)" stroke-width="1.5"><rect x="7" y="5" width="10" height="14" rx="1.5"/><circle cx="14" cy="12" r="1" fill="rgba(240,235,220,.8)" stroke="none"/></svg>'],
+    ['传送门', '#5C5192', '<svg viewBox="0 0 24 24" fill="none" stroke="rgba(240,235,255,.85)" stroke-width="1.5"><circle cx="10" cy="12" r="4.6"/><circle cx="15" cy="12" r="4.6"/></svg>'],
+    ['冰面', '#7FA8A0', '<svg viewBox="0 0 24 24" fill="none" stroke="rgba(20,50,45,.75)" stroke-width="1.6"><path d="M6 16 L10 8 L14 16"/><path d="M8.2 13 H11.8"/><path d="M15 16 L18 8"/></svg>']
+  ];
+  document.getElementById('gLegend').innerHTML = L.map(([nm, bg, ico]) =>
+    `<div class="li"><div class="sw" style="background:${bg}">${ico}</div>${nm}</div>`).join('');
+})();
+
+/* ===== 海报二维码占位（伪 QR：定位角 + 稳定散点） ===== */
+(function () {
+  document.querySelectorAll('svg.qr').forEach(svg => {
+    const N = 29;
+    let s = 47; // 固定种子 → 两张海报纹样一致
+    const rnd = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    let h = `<rect width="${N}" height="${N}" fill="#EDE8DD"/>`;
+    const finder = (x, y) =>
+      `<rect x="${x}" y="${y}" width="7" height="7" fill="#141210"/>` +
+      `<rect x="${x + 1}" y="${y + 1}" width="5" height="5" fill="#EDE8DD"/>` +
+      `<rect x="${x + 2}" y="${y + 2}" width="3" height="3" fill="#141210"/>`;
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        const inFinder = (x < 8 && y < 8) || (x > N - 9 && y < 8) || (x < 8 && y > N - 9);
+        if (!inFinder && rnd() > 0.52) h += `<rect x="${x}" y="${y}" width="1" height="1" fill="#141210"/>`;
+      }
+    }
+    h += finder(0, 0) + finder(N - 7, 0) + finder(0, N - 7);
+    svg.innerHTML = h;
+  });
+})();
+</script>
+</body>
+</html>

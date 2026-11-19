@@ -159,6 +159,18 @@ export function reportCoverSkip(levelIdx: number): Promise<{ maxLevel: number }>
  *
  * 走独立接口 —— 经典的 `/api/challenge` 用 `ValidatePath`（起终点连线），
  * cover 的路径用它校验**必然失败**（长度都对不上）。
+ *
+ * ## `token` 是挑战的**唯一**凭据
+ *
+ * 服务端按 token 从 `challenges` 表取出「发起人当时的重来次数」来判胜负，
+ * 不看我们报的任何对手分数（我们也不该报 —— 请求体里根本没有这个字段）。
+ *
+ * 这解决了旧实现的一个真问题：此前对手成绩来自分享链接的 `?undos=`
+ * 参数，好友把 URL 改一改就能「赢」。现在改 URL 没用，
+ * 因为 URL 里只有一个猜不到的 token。
+ *
+ * 返回的 `challenge` 字段是**服务端判定的结果**，客户端必须用它，
+ * 不要自己再比 `myUndos <= fromUndos`。
  */
 export function reportCoverChallenge(
   levelIdx: number,
@@ -166,10 +178,125 @@ export function reportCoverChallenge(
   timeMs: number,
   undos: number,
   path: number[],
-): Promise<{ passed: boolean; best: { undos: number; timeMs: number }; isNewBest: boolean }> {
+  token?: string,
+): Promise<{
+  passed: boolean;
+  best: { undos: number; timeMs: number };
+  isNewBest: boolean;
+  challenge?: CoverChallengeOutcome;
+}> {
   return authed('/api/cover/challenge', 'POST', {
     levelIdx, steps, timeMs, undos, path, skipped: false,
+    ...(token ? { token } : {}),
   });
+}
+
+/** 服务端判定的挑战结果（响应里的 `challenge` 字段）。 */
+export interface CoverChallengeOutcome {
+  /** 服务端判的胜负。客户端必须用它，不能自己算。 */
+  win: boolean;
+  /** 我的重来次数（服务端记录） */
+  myUndos: number;
+  /** 对手的重来次数（服务端记录） */
+  rivalUndos: number;
+  /** 发起人昵称（分享那一刻的快照） */
+  fromName: string;
+  /** false = 这条分享是纯邀请（发起人没宣称成绩），不比输赢。 */
+  hasScore: boolean;
+}
+
+/** 分享挑战的上下文（好友打开分享链接时查）。 */
+export interface ChallengeInfo {
+  token: string;
+  levelIdx: number;
+  fromUid: number;
+  fromName: string;
+  /** -1 表示「这条分享不带成绩」（纯邀请）。 */
+  fromUndos: number;
+  hasScore: boolean;
+}
+
+/**
+ * 发起分享：把这次分享记到服务端，拿回挑战 token。
+ *
+ * ## 为什么分享要请求服务端
+ *
+ * 胜负判定需要一个**服务端可信**的对手成绩。如果分享只是客户端拼个
+ * query，那对手分就只能是链接参数 —— 而链接参数谁都能改。
+ *
+ * `undos` 不传 = 纯邀请（不宣称成绩）。**不要传 0 代替** ——
+ * 0 次重来是最好的成绩（三星），传 0 等于宣称「我零重来通关」。
+ *
+ * 同一人重复分享同一关同一成绩时，服务端会复用已有 token（`reused: true`），
+ * 所以这个接口可以放心重复调用。
+ */
+export function createShareChallenge(
+  levelIdx: number,
+  undos?: number,
+): Promise<{ token: string; levelIdx: number; undos: number; reused: boolean }> {
+  return authed('/api/cover/share', 'POST', {
+    levelIdx,
+    ...(undos === undefined ? {} : { undos }),
+  });
+}
+
+/**
+ * 按 token 查挑战上下文（**不需要登录**）。
+ *
+ * 好友点开分享链接时可能还没完成登录，所以这个接口不走 `authed` ——
+ * 服务端那边也刻意不挂鉴权（见 ChallengeInfoHandler 的注释）。
+ * 拿不到（token 无效 / 已失效）时返回 `null`，调用方退回「好友」这种默认称呼。
+ */
+export async function fetchChallengeInfo(token: string): Promise<ChallengeInfo | null> {
+  try {
+    return await platform.request<ChallengeInfo>(
+      `${API}/api/cover/challenge/${encodeURIComponent(token)}`,
+      'GET',
+    );
+  } catch {
+    // 查不到不是错误 —— 老链接 / 被改坏的链接都走这里
+    return null;
+  }
+}
+
+
+/**
+ * 服务端通关判定：把玩家画出的整条路径上送，由服务端按**完整规则**回放。
+ *
+ * ## 为什么要这个接口
+ *
+ * 客户端 `isCoverSolved` 只判「覆盖全部格 + 线头在终点」——
+ * 那是给即时反馈用的（抖动、音效、通关动画），**不能作为成绩依据**：
+ * 改内存就能过；而且冰面滑行、单向门、星星顺序、钥匙门、传送门
+ * 这些规则一旦两边有分歧，客户端说通了、服务端说没通，成绩就不可信。
+ *
+ * ## 失败不是异常
+ *
+ * `valid: false` 是**正常的业务结果**（路径不合法），不会 reject，
+ * 调用方直接把 `reason` 显示给玩家。只有网络/鉴权错误才 reject。
+ *
+ * @param levelIdx 关卡号
+ * @param path     完整路径（拍平索引序列，含起终点）
+ */
+export function verifyCoverPath(
+  levelIdx: number,
+  path: number[],
+): Promise<{ valid: boolean; reason: string; steps?: number }> {
+  return authed('/api/cover/verify', 'POST', { levelIdx, path });
+}
+
+/**
+ * 取提示：服务端按参考解切片返回**剩余的整条路线**（拍平索引序列）。
+ *
+ * @param walked 玩家已走过的格（拍平索引，含线头）
+ * @returns `cells` 是后续该走的格（不含线头）；`fromReference=false` 表示
+ *          玩家走岔了，参考解接不回来 —— 客户端应提示「这条线走不通了」。
+ */
+export function fetchCoverHint(
+  levelIdx: number,
+  walked: number[],
+): Promise<{ idx: number; cells: number[]; fromReference: boolean }> {
+  return authed('/api/cover/hint', 'POST', { levelIdx, walked });
 }
 
 /**

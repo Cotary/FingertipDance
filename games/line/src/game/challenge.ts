@@ -19,6 +19,20 @@ export interface Challenge {
    * 用 0 当哨兵的话，好友 0 次的成绩会被当成缺失，输赢判反。
    */
   fromUndos: number | null;
+  /**
+   * 服务端挑战 token（`?c=`）。
+   *
+   * ## 它是胜负的**唯一**凭据
+   *
+   * `fromUndos` 只用来显示（横幅写「他重来 0 次」），
+   * 真正的判定发生在服务端：结算时把这个 token 一起上送，
+   * 服务端按 token 取出对手成绩来判输赢。
+   *
+   * 没有 token 的老链接仍然能玩（`fromUndos` 还在），
+   * 但胜负会退回「跟自己的历史最佳比」—— 这是之前的退化行为，
+   * 比读一个可篡改的 URL 参数强。
+   */
+  token: string | null;
 }
 
 /** 微信启动参数最小类型。 */
@@ -66,6 +80,9 @@ export function parseChallenge(): Challenge | null {
     fromUid: parseInt(query.uid ?? '0', 10) || 0,
     fromName: query.name ? decodeURIComponent(query.name) : '好友',
     fromUndos,
+    // 服务端挑战 token。形状校验不在这里做 ——
+    // 服务端对非法形状会直接返回「挑战不存在」，客户端不必重复实现一份。
+    token: query.c && query.c.length > 0 ? query.c : null,
   };
 }
 
@@ -96,11 +113,24 @@ export function buildShareQuery(challenge: {
   undos?: number;
   uid?: number;
   name?: string;
+  /**
+   * 服务端挑战 token。
+   *
+   * ## 为什么要有它
+   *
+   * `undos` 是给**显示**用的（横幅写「他重来 0 次」），
+   * 但**胜负不能靠它判** —— 链接参数谁都能改。
+   * 真正的对手成绩由服务端按 token 取（见 `/api/cover/challenge`）。
+   *
+   * 所以带上 token 之后，`undos` 只是文案，判定走 token。
+   */
+  token?: string;
 }): string {
   const parts = [`l=${challenge.levelIdx}`];
   // 0 次重来必须带上 —— 那是最好的成绩（三星）。
   // 早前的写法是 `if (challenge.steps)`，0 会被当成「没有」丢掉。
   if (challenge.undos !== undefined) parts.push(`undos=${challenge.undos}`);
+  if (challenge.token) parts.push(`c=${challenge.token}`);
   if (challenge.uid) parts.push(`uid=${challenge.uid}`);
   if (challenge.name) parts.push(`name=${encodeURIComponent(challenge.name)}`);
   return parts.join('&');

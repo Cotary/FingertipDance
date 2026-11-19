@@ -35,4 +35,26 @@ describe('challenge', () => {
     expect(parsed.get('l')).toBe('27');
     expect(parsed.get('undos')).toBe('3');
   });
+
+  it('分享 query 带服务端 token（胜负由服务端判，不靠链接里的 undos）', () => {
+    const token = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    const q = buildShareQuery({ levelIdx: 47, undos: 0, token });
+    // 必须是 `c=` —— 服务端路由与 parseChallenge 都按这个键读
+    expect(new URLSearchParams(q).get('c')).toBe(token);
+    // undos 仍然带上：它负责**显示**（横幅写「他重来 0 次」），
+    // 但不再是判定依据
+    expect(new URLSearchParams(q).get('undos')).toBe('0');
+  });
+
+  it('不带 token 时不产生空 c=（老链接兼容）', () => {
+    const q = buildShareQuery({ levelIdx: 5, undos: 2 });
+    expect(new URLSearchParams(q).has('c')).toBe(false);
+  });
+
+  it('token 与 undos 可以同时缺席（纯邀请）', () => {
+    const q = buildShareQuery({ levelIdx: 9 });
+    expect(new URLSearchParams(q).get('l')).toBe('9');
+    expect(new URLSearchParams(q).has('undos')).toBe(false);
+    expect(new URLSearchParams(q).has('c')).toBe(false);
+  });
 });

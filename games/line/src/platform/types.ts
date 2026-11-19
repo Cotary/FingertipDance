@@ -17,9 +17,26 @@ export interface Platform {
     showBanner(): void;
     hideBanner(): void;
   };
-  share(opts: { title: string; imageUrl?: string; query?: string }): Promise<void>;
   /**
-   * 短振动反馈。
+   * 分享。
+   *
+   * `opts.channel` 决定走哪条通道：
+   *
+   * - `friend`（默认）—— 主动指派：微信 `wx.shareAppMessage` 直接拉起
+   *   通讯录选择面板，卡片文案与 `query` 全由我们定。**这是唯一能
+   *   定制分享内容的通道。**
+   * - `timeline` —— 朋友圈。微信从 2022 年（基础库 ≥ 2.25）起**下线了
+   *   朋友圈分享的自定义能力**：标题、图片、query 全部被忽略，强制用
+   *   小游戏后台配置的昵称 + 图标。所以这条通道实际做的是「打开右上角
+   *   菜单，让玩家自己点『分享到朋友圈』」—— 我们只能把按钮放出，
+   *   内容改不了。这不是实现偷懒，是平台的能力边界。
+   *
+   * 两个通道返回 `ShareResult`，调用方据此决定给什么反馈
+   * （`timeline` 在微信端永远是 `menu`，因为真正的分享发生在系统菜单里）。
+   */
+  share(opts: ShareOptions): Promise<ShareResult>;
+  /**
+   * 召唤短振动反馈。
    *
    * `pattern` 与 Web 的 `navigator.vibrate` 同一套语义：数字 = 振多少毫秒，
    * 数组 = 振/停交替（`[10,25,10,25,18]` 是四下短震夹三段停）。
@@ -51,3 +68,36 @@ export interface Platform {
   /** 开放数据域是否可用（微信端）。 */
   readonly openDataAvailable: boolean;
 }
+
+/** 分享通道。 */
+export type ShareChannel = 'friend' | 'timeline';
+
+/** 分享参数。 */
+export interface ShareOptions {
+  /** 卡片标题。`timeline` 通道下微信会忽略它。 */
+  title: string;
+  /**
+   * 卡片配图。
+   *
+   * 微信卡片的最佳显示比例是 **5:4**（500×400 / 1080×864），
+   * 别的比例会被裁。所以海报（9:16）不能直接当 `imageUrl` 用 ——
+   * 真实接入时要另出一张 5:4 的卡片图。
+   */
+  imageUrl?: string;
+  /** 启动参数，形如 `l=47&undos=0`。 */
+  query?: string;
+  /** 通道，默认 `friend`。 */
+  channel?: ShareChannel;
+}
+
+/**
+ * 分享结果。
+ *
+ * - `sent` —— 微信好友通道：面板已拉起（微信**不告诉我们用户有没有真发**，
+ *   这是平台限制，不能当成"分享成功"上报）。
+ * - `menu` —— 朋友圈通道：已把右上角菜单的「分享到朋友圈」放出来，
+ *   真正的分享要玩家自己去点。文案里必须说清这件事，不能假装分享了。
+ * - `copied` —— Web 端：链接已进剪贴板。
+ * - `failed` —— 失败了（无剪贴板权限 / 用户取消系统分享面板等）。
+ */
+export type ShareResult = 'sent' | 'menu' | 'copied' | 'failed';

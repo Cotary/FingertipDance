@@ -1,4 +1,5 @@
-import type { Platform } from './types';
+import type { Platform, ShareResult } from './types';
+import { ApiError } from './apiError';
 
 /** 声明微信全局对象，避免类型报错。 */
 declare const wx: any;
@@ -28,7 +29,7 @@ export const wechatPlatform: Platform = {
         success: (res: any) => {
           const body = res.data as { code: number; msg: string; data: T };
           if (!body || body.code !== 0) {
-            reject(new Error(`${body?.code ?? 'unknown'}: ${body?.msg ?? '请求失败'}`));
+            reject(new ApiError(body?.code ?? -1, body?.msg ?? '请求失败'));
             return;
           }
           resolve(body.data);
@@ -81,11 +82,52 @@ export const wechatPlatform: Platform = {
     hideBanner() { /* 由 banner 引用统一管理，此处留空 */ },
   },
 
+  /**
+   * 分享。
+   *
+   * ## 两条通道的能力完全不同，不要混为一谈
+   *
+   * **好友（friend）** —— `wx.shareAppMessage` 主动拉起通讯录面板，
+   * `title` / `imageUrl` / `query` 全部由我们控制，这是唯一能定制内容的通道。
+   *
+   * **朋友圈（timeline）** —— 微信自 2022 年（基础库 ≥ 2.25）起
+   * **下线了朋友圈分享的自定义能力**：所有 `shareTimeline` 钩子与
+   * `shareAppMessage` 的相关配置对朋友圈一律无效，强制使用小游戏后台
+   * 配置的昵称 + 图标。所以这里能做的最多是 `wx.showShareMenu` 把
+   * 「分享到朋友圈」按钮放到右上角菜单里，然后引导玩家自己去点。
+   *
+   * 返回 `'menu'` 而不是 `'sent'`：**我们没分享，只是把门打开了。**
+   * 调用方不能把这个当成分享成功上报，界面上也要说清。
+   *
+   * （`menus` 里的 `shareTimeline` 是 Beta，官方文档写明只有 Android 支持；
+   * iOS 上不生效 —— 这是平台限制，不做假动作。）
+   */
   async share(opts) {
-    wx.shareAppMessage({
-      title: opts.title,
-      imageUrl: opts.imageUrl,
-      query: opts.query,
+    if (opts.channel === 'timeline') {
+      try {
+        wx.showShareMenu({
+          withShareTicket: false,
+          menus: ['shareAppMessage', 'shareTimeline'],
+        });
+      } catch {
+        return 'failed';
+      }
+      return 'menu';
+    }
+
+    return new Promise<ShareResult>((resolve) => {
+      try {
+        wx.shareAppMessage({
+          title: opts.title,
+          imageUrl: opts.imageUrl,
+          query: opts.query,
+          // 微信不回调「用户是否真的发出去了」——成功只代表面板已拉起。
+          success: () => resolve('sent'),
+          fail: () => resolve('failed'),
+        });
+      } catch {
+        resolve('failed');
+      }
     });
   },
 
