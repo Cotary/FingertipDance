@@ -370,7 +370,24 @@ const PAINTERS: Record<
       }
     }
     ctx.strokeStyle = pal.ink;
-    ctx.lineWidth = px(0.14, half);
+    /**
+     * 线宽：默认 0.14，可用 `pal.lineW` 覆盖。
+     *
+     * ## 为什么需要这个覆盖（2026-11-19 星屑）
+     *
+     * 原先这里写死 `px(0.14, half)`，`GlyphPalette.lineW` 在 porcelain 上**完全无效**
+     * —— 于是给某个图标调细线宽时，改了 pal 却看不出变化，很容易误以为是缓存问题。
+     *
+     * 星屑是第一个真正需要它的情况：四芒星的腰很细（约 1.2 单位宽），
+     * 0.14 的边会把两个尖角之间的腰部糊死，整颗星变成一坨。
+     * 设计稿的 `sparkAt` 根本没有描边，这里只是为留住錾刻的立体感才补一道**细的**。
+     *
+     * 其余图标不填 `lineW`（或填 0.9 之类）时按 0.14 走，行为不变 ——
+     * 只有显式写了更小的值才收细，避免"改一个图标顺手改了全盘"。
+     */
+    ctx.lineWidth = pal.lineW !== undefined && pal.lineW < 0.9
+      ? px(0.14 * (pal.lineW / 0.9), half)
+      : px(0.14, half);
     for (const p of parts) {
       // **所有**图元都要描边，不只是标了 `stroke` 的。
       //

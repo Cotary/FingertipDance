@@ -59,5 +59,8 @@ docs/连连看/复刻SOP/scripts/shots/
 docs/连连看/复刻SOP/scripts/report/
 docs/连连看/复刻SOP/scripts/*.png
 
+# 游戏侧出图（shoot.mjs 生成，可重新跑）
+games/line/shots/
+
 # 闸门临时输出目录
 /out/

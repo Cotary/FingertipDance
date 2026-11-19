@@ -81,7 +81,15 @@ function verdict(r) {
 }
 
 async function main() {
-  const basePath = path.join(BASELINE, 'tile.pale.png');
+  // 基线文件名带主题前缀（两套主题各建一份）。
+  // 优先用天青；没有就扫 baseline/ 里第一张，避免换主题就挂掉。
+  let basePath = path.join(BASELINE, 'mise__tile.pale.png');
+  if (!fs.existsSync(basePath)) {
+    const first = fs.existsSync(BASELINE)
+      ? fs.readdirSync(BASELINE).find((f) => f.endsWith('.png'))
+      : null;
+    basePath = first ? path.join(BASELINE, first) : basePath;
+  }
   if (!fs.existsSync(basePath)) {
     console.error('先跑 baseline.mjs --build');
     process.exit(1);

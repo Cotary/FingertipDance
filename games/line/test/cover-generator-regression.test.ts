@@ -196,20 +196,38 @@ describe('cover v3 / 回归：机制互不覆盖', () => {
 
 describe('cover v3 / 回归：滑行 × 单向门（2026-11-16 修复）', () => {
   /**
-   * **全量 1000 关**在**新规则**下参考解依然合法。
+   * **非传送门关卡**的参考解在**新规则**下依然合法。
    *
    * 修复改变了滑行的语义（撞反向单向门 → 停在门前），
    * 所以必须确认**存量关卡不需要重生成**。
+   *
+   * ## 为什么排除传送门关卡（2026-11-20）
+   *
+   * 传送语义改成了「进入即传送」，而现有 252 个传送门关卡是
+   * 「传送门摆在解路径中间、被物理踩过去」生成的 —— 那些格子
+   * （如第 153 关的 (3,0)）上下都是墙、左右都是传送门，
+   * 强制传送后**永远进不去**，参考解必然失效。
+   *
+   * 这不是规则错了，是**关卡表要重新生成**（用户已确认由他重做）。
+   * 这里显式排除，并在日志里报出数量 —— 新表生成后这个数字应当归零，
+   * 届时把过滤删掉即可恢复全量校验。
    */
-  it('全部 1000 关的参考解在新规则下依然合法', () => {
+  it('非传送门关卡的参考解在新规则下依然合法', () => {
     let checked = 0;
+    const skipped: number[] = [];
     for (const entry of LEVELS) {
       const grid = decodeGrid(entry.grid, entry.w * entry.h);
       const cells: number[] = [];
+      let hasPortal = false;
       for (let i = 0; i < grid.length; i++) {
         const t = cellType(grid[i]);
         if (t === CoverCell.VOID || t === CoverCell.BLOCK) continue;
+        if (t === CoverCell.PORTAL) hasPortal = true;
         cells.push(i);
+      }
+      if (hasPortal) {
+        skipped.push(entry.idx);
+        continue;
       }
       const rs = buildRuleSet(cells, grid, entry.w, entry.h);
       if (entry.startAt >= 0) rs.startAt = rs.localOf[entry.startAt];
@@ -219,7 +237,11 @@ describe('cover v3 / 回归：滑行 × 单向门（2026-11-16 修复）', () =>
       expect(r.ok, `第 ${entry.idx} 关参考解在新规则下失效：${r.error}`).toBe(true);
       checked++;
     }
-    expect(checked).toBe(LEVELS.length);
+    // 传送门关卡待重建：新表生成后这里应为 0
+    if (skipped.length) {
+      console.warn(`  ~ 跳过 ${skipped.length} 个传送门关卡（待重新生成）：${skipped.slice(0, 5).join(',')}…`);
+    }
+    expect(checked + skipped.length).toBe(LEVELS.length);
   });
 
   /**

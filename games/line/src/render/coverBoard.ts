@@ -41,6 +41,7 @@ import { roundRect } from './board';
 import { fillGrain } from './grain';
 import { BOARD_BOTTOM, BOARD_TOP, DESIGN_W, type BoardLayout } from './layout';
 import { paintSkin, paletteOf, type Skin } from './skins';
+import { portalEntrance } from './themes/kit';
 
 /** 机制筹码的底盘：纸白，衬在皮肤色上也读得出符号。 */
 const CHIP: ClayColor = { base: '#FFF8EC', light: '#FFFFFF', dark: '#E2D3BE', shade: '#BCA78C' };
@@ -550,20 +551,55 @@ export function drawCoverMarks(
           break;
         }
         case CoverCell.PORTAL: {
+          // 入口实环 / 出口虚环（设计稿 `MARKS['portal-a'] / ['portal-b']`）。
+          //
+          // ## 为什么要分实虚
+          //
+          // 传送门的线**不在盘上连过去**：线在入口中心断掉、在出口中心重新出现。
+          // 那么"谁进谁出"就必须由格子自己说清楚 —— 否则玩家只看到两段断线，
+          // 不知道它们是一条路。实环 = 钻进去，虚环 = 冒出来，这个区分不需要图例。
+          //
+          // ## 为什么去掉数字徽章
+          //
+          // 编号徽章是给**星屑**用的（顺序必经：第 1 颗、第 2 颗……）。
+          // 传送门不参与排序，两个格子却都标 `1`（同组号），
+          // 读起来像"这两格都是第 1 个"，是纯粹的错误信息。
+          const isEntrance = portalEntrance(board.grid, group) === idx;
           const tint = group % 2 === 0 ? CLAY.blue : CLAY.terracotta;
           chip(ctx, cx, cy, chipR * 0.96, idx, (r) => {
+            // 外环：入口实、出口虚。
+            //
+            // 虚线的**段长必须按半径算**，不能写死比例然后乘小值 ——
+            // 第一版用 `r*0.34 / r*0.26`，在小格上节奏变成 6px 一段、
+            // 5px 一空，绕一圈 9 段，缩略图里读作"一圈噪点"而不是虚线。
+            // 现在段长的下限跟半径挂钩，小格上会自然变成 6~7 段长划。
+            const dash = Math.max(3, r * 0.52);
+            const gap = Math.max(2.4, r * 0.42);
             ctx.strokeStyle = tint.shade;
             ctx.lineWidth = Math.max(2, r * 0.30);
+            if (!isEntrance) ctx.setLineDash([dash, gap]);
             ctx.beginPath();
             ctx.arc(0, 0, r * 0.86, 0, Math.PI * 2);
             ctx.stroke();
+            ctx.setLineDash([]);
+
+            // 内环：两态都画成实线（只差粗细色阶）。
+            // 设计稿里内环也是虚的，但在 chip 这个尺寸上再叠一圈虚线，
+            // 两圈虚线会互相穿插成一团麻 —— 入口/出口的区分交给外环和芯点就够了。
             ctx.strokeStyle = tint.base;
-            ctx.lineWidth = Math.max(1.5, r * 0.18);
+            ctx.lineWidth = Math.max(1.5, r * (isEntrance ? 0.18 : 0.14));
             ctx.beginPath();
             ctx.arc(0, 0, r * 0.50, 0, Math.PI * 2);
             ctx.stroke();
+
+            // 芯点：只有入口有。线正是从这个点钻进去的。
+            if (isEntrance) {
+              ctx.fillStyle = tint.base;
+              ctx.beginPath();
+              ctx.arc(0, 0, r * 0.14, 0, Math.PI * 2);
+              ctx.fill();
+            }
           });
-          if (withBadge) badge(ctx, cx + chipR * 0.78, cy + chipR * 0.78, chipR * 0.38, group);
           break;
         }
         default:

@@ -59,8 +59,6 @@ const PROFILE: ProfilePageState = {
   totalSteps: 123,
   totalTimeMs: 456000,
   adWatchCnt: 2,
-  unlockedSkins: ['wood', 'mint', 'graphite'],
-  totalSkins: 16,
   soundOn: true,
   vibrateOn: false,
   starCount: 42,
@@ -71,11 +69,13 @@ const PROFILE: ProfilePageState = {
 };
 
 describe('大厅绘制冒烟', () => {
-  it('主页大厅能画完并返回开始按钮', () => {
+  it('主页大厅能画完并返回开始按钮 + 分享挑战条', () => {
     const ctx = fakeCtx();
     const buttons = drawHomePage(ctx, HOME, 1000);
-    expect(buttons.length).toBe(1);
+    // 两个：金 CTA + 「分享挑战」条（后者可点，点了去地图选关）
+    expect(buttons.length).toBe(2);
     expect(buttons[0].id).toBe('homeStart');
+    expect(buttons[1].id).toBe('homeSharePick');
     expect(ctx.__calls.length).toBeGreaterThan(50);
   });
 
@@ -123,10 +123,16 @@ describe('大厅绘制冒烟', () => {
     const ctx = fakeCtx();
     const buttons = drawProfilePage(ctx, PROFILE, 1000);
     const ids = buttons.map((b) => b.id);
-    expect(ids).toContain('shareGame');
-    expect(ids).toContain('toggleSound');
-    expect(ids).toContain('toggleVibrate');
-    expect(ids).toContain('clearCache');
+    expect(ids).toEqual(['toggleSound', 'toggleVibrate', 'shareGame', 'profileStats']);
+  });
+
+  it('我的页不再有「清除缓存」空转按钮', () => {
+    // 该行唯一的作用是 `storage.remove('levels_cache')`，但那个 key 早已无人写入
+    // （写它的 `LevelStore` 已无实例，主入口用的是不落盘的 `CoverLevelStore`）。
+    // 点下去零效果零反馈 = 假功能，2026-11-20 删除。
+    const ctx = fakeCtx();
+    const ids = drawProfilePage(ctx, PROFILE, 1000).map((b) => b.id);
+    expect(ids).not.toContain('clearCache');
   });
 
   it('主题页能画完并返回按钮（大卡 = 展签，货架 = 卡片）', () => {

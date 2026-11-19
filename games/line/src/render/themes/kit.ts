@@ -315,7 +315,6 @@ export function composeTheme(meta: {
       const mo = kit.motion;
 
       ctx.save();
-
       // 盖印：石章砸到墙上的那一下，**整面墙**抖三帧（设计稿 `wallShake`）。
       // 只让印自己抖是"贴纸在动"，墙抖才是"砸进去了"
       if (mo?.seal && st.wonAt) {
@@ -323,7 +322,9 @@ export function composeTheme(meta: {
         if (sx !== 0 || sy !== 0) ctx.translate(sx, sy);
       }
 
-      kit.plate(ctx, layout);
+      // 出图台要单颗棋子时跳过底板：设计稿的 `.pc.*` 元素没有展柜，
+      // 而 plate 是绝对坐标铺满整卡，裁切挡不住（详见 ThemeDrawCtx.cellsOnly）
+      if (!c.cellsOnly) kit.plate(ctx, layout);
 
       const dropMs = mo?.drop?.ms ?? 260;
       const settleMs = mo?.settle?.ms ?? 260;
@@ -332,9 +333,12 @@ export function composeTheme(meta: {
       // 幕（剥壁）还在退的 480ms 里格子就开始落了 —— 同向，读起来是
       // "墙被抹开，沙面上一块块砖跟着拍下来"，不是两件事
       const en = mo?.enter;
-      const gate: EnterGate | undefined = en
-        ? {
-            at: (x, y) => enterProgress(st, en, x, y, board.w, board.h, now),
+      // 节奏算**一次**：下面每格都要用，逐格再调 `enterTempo` 是盘面积 × 帧率的浪费
+      const enterTempoArg = en ? enterTempo(en, board.w, board.h) : undefined;
+      const gate: EnterGate | undefined =
+        en && enterTempoArg
+          ? {
+              at: (x, y) => enterProgress(st, en, enterTempoArg, x, y, now),
             // drop 落得远（0.62 格）、settle 只沉一点点（0.16 格）：
             // 釉水是"渗进槽里"，不是从天上掉下来
             form: en.form ?? 'drop',
@@ -344,7 +348,7 @@ export function composeTheme(meta: {
         : undefined;
       // 第一行是从盘沿**上方**掉进来的，所以进场期间要裁到盘子里。
       // 裁切只罩住格子这一层，plate 在它外面 —— 不然盘沿自己的磕口会被削平
-      const enterLive = !!(en && st.enter && now - st.enter < enterTotalMs(en, board.w, board.h));
+      const enterLive = !!(enterTempoArg && st.enter && now - st.enter < enterTempoArg.total);
       ctx.save();
       if (enterLive) kit.clip?.(ctx, layout);
 
@@ -476,10 +480,13 @@ export function composeTheme(meta: {
       if (mo?.settle?.pulse) settlePulse(ctx, layout, board.w, board.h, st.settle, mo.settle.pulse, now);
       // 进场的末格：整盘亮一记（天青 420ms）。
       // 和"铺满"的末粒是同一段光，只是时刻不同 —— 一个在开局、一个在通关。
-      // 末格时刻 = 进场起点 + 全盘扫掠时长（最后一行最后一格落定的那一刻）
-      if (en?.pulse && st.enter) {
-        const total = enterTotalMs(en, board.w, board.h);
-        boardPulse(ctx, layout, board.w, board.h, st.enter + total - Math.max(60, en.ms ?? 300), en.pulse, now);
+      // 末格时刻 = 进场起点 + 全盘扫掠时长（最后一行最后一格**落定**的那一刻）：
+      // 脉冲、玉磬（`main.armEnterCue` 按同一个 `total` 排）都跟在落定上，
+      // 设计稿「末行落地全盘金光脉冲 + 玉磬」说的就是这一帧。
+      // 早先写的是 `total - Math.max(60, en.ms)`（末格**起步**那一刻）——
+      // 光在最后一格还在下沉时就亮完退掉了，落定那一下反而没有光，玉磬也对不上。
+      if (en?.pulse && st.enter && enterTempoArg) {
+        boardPulse(ctx, layout, board.w, board.h, st.enter + enterTempoArg.total, en.pulse, now);
       }
       // 解除进场裁切：`overlay` 是整屏的扫描线/暗角，不该被盘沿裁
       ctx.restore();
@@ -614,8 +621,12 @@ export interface EnterGate {
  * 先等上一行**整行走完**再加行距（锯齿扫掠）。鸣沙一旦把 `row` 调到 220，
  * 5×8 就膨胀到 2470ms（超 1.7s 的框），而且和 `enterProgress` 的实际排期
  * 对不上：格子按行序起步、总时长却按锯齿算，"末格沙光"会迟到近一秒。
+ *
+ * **导出给 `main` 的音效排期共用**（`armEnterCue`）。音画各写一套公式
+ * 迟早会走偏 —— 那个坑真的踩过：`armEnterCue` 当年抄的就是上面这个
+ * 锯齿旧版，结果"逐格音还在下、玉磬还没响"，画面里盘却已经落完了。
  */
-function enterTempo(
+export function enterTempo(
   en: NonNullable<ThemeMotion['enter']>,
   w: number,
   h: number,
@@ -635,6 +646,70 @@ function enterTempo(
 }
 
 /**
+ * 这一格的进场**起步**时刻（相对 `enterAt`）。
+ *
+ * 与 `enterTempo` 的 sweep0 完全同构：行内 `x·step`、行间 `y·row`，再乘压缩比 `k`。
+ * 画面（`enterProgress`）和声音（`main.armEnterCue` 的逐格音）都从这里取时刻 ——
+ * 落定 = 这里 + `enterTempo` 的 `ms`。**别在调用点重抄这个公式**，
+ * 音画各算一套迟早会走偏（见 `enterTempo` 的注释）。
+ *
+ * 这个版本自己算节奏（适合一次性排期，如 `armEnterCue`）。逐帧逐格调用的
+ * 画布路径请用 `enterDelayOf` —— 那里已经有一份算好的 `tempo`，
+ * 别每格再算一遍。
+ */
+export function enterCellDelay(
+  en: NonNullable<ThemeMotion['enter']>,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): number {
+  return enterDelayOf(enterTempo(en, w, h), en, x, y);
+}
+
+/** 用**已算好**的节奏取这一格的起步时刻（逐帧路径用这个）。 */
+export function enterDelayOf(
+  tempo: { k: number },
+  en: NonNullable<ThemeMotion['enter']>,
+  x: number,
+  y: number,
+): number {
+  const step = en.step ?? 24;
+  return (x * step + y * (en.row ?? 0)) * tempo.k;
+}
+
+/**
+ * 进场揭幕的**逐格音时刻表**（每格落定的那一刻）。
+ *
+ * 和画面同源：格子 `enterProgress` 用 `enterCellDelay` 起步、`ms` 后落定，
+ * 这里取的就是"落定"点，所以沙雨最后一粒必然和画面最后一个落定同帧。
+ *
+ * `isVoid(x,y)` 用来跳过不画的格（VOID 不落，也就没有落定这一声）。
+ *
+ * ## 为什么单独抽出来
+ *
+ * 这段排期原来内联在 `main.armEnterCue` 里，而且自己抄了一份扫掠公式 ——
+ * 于是音画两套时间轴，正是"动画完了音效还在下"的根因。
+ * 抽成纯函数后：`main` 只负责播，公式只有这一份，单测能直接验。
+ */
+export function enterSettleDelays(
+  en: NonNullable<ThemeMotion['enter']>,
+  w: number,
+  h: number,
+  isVoid?: (x: number, y: number) => boolean,
+): number[] {
+  const tempo = enterTempo(en, w, h);
+  const out: number[] = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (isVoid?.(x, y)) continue;
+      out.push(enterDelayOf(tempo, en, x, y) + tempo.ms);
+    }
+  }
+  return out;
+}
+
+/**
  * 这一格的进场进度：-1 = 还没轮到它，0..1 = 正在落，1 = 已落定。
  *
  * 顺序是**行优先**（`x` 快、`y` 慢），行与行之间额外压一段 `row` 停顿 ——
@@ -643,22 +718,15 @@ function enterTempo(
 function enterProgress(
   st: { enter?: number },
   en: NonNullable<ThemeMotion['enter']> | undefined,
+  tempo: { k: number; ms: number },
   x: number,
   y: number,
-  w: number,
-  h: number,
   now: number,
 ): number {
   // 没有 `enter` 参数 = 这套主题没有进场语言，必须整盘立刻在场。
   // 注意不能只判 `st.enter`：`main` 对每套主题都传时刻，判漏了天青会一起落格
   if (!en || !st.enter) return 1;
-  const { k, ms } = enterTempo(en, w, h);
-  const step = en.step ?? 24;
-  // 与 `enterTempo` 的 sweep0 完全同构：行内 x·step，行间 y·row。
-  // 两者不同构的话，压缩比 k 会把行序压歪 —— 末格迟迟不落定，
-  // 而"末行沙光"是按 total 算的，于是光先亮、格后落。
-  const delay = (x * step + y * (en.row ?? 0)) * k;
-  const t = (now - st.enter - delay) / ms;
+  const t = (now - st.enter - enterDelayOf(tempo, en, x, y)) / tempo.ms;
   if (t <= 0) return -1;
   return t >= 1 ? 1 : t;
 }

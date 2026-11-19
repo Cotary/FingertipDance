@@ -17,7 +17,7 @@ func TestCoverLevelsLoad(t *testing.T) {
 	}
 }
 
-// TestCoverReferenceSolutionsValid 验证**全部 1000 关**的参考解都能通过完整规则校验。
+// TestCoverReferenceSolutionsValid 验证**非传送门关卡**的参考解都能通过完整规则校验。
 //
 // 这是 Go 侧与 TypeScript 侧「同一份规则」的交叉验证：
 // Go 独立实现了冰块滑行 / 单向门 / 钥匙门 / 传送门 / 星星顺序，
@@ -25,10 +25,20 @@ func TestCoverLevelsLoad(t *testing.T) {
 //
 // 全量跑（不是抽样）—— 因为规则判定漂移往往只出现在**少数关卡**上，
 // 抽样会漏掉。1000 关的回放是 O(n)，总共几毫秒。
+//
+// ## 为什么排除传送门关卡（2026-11-20）
+//
+// 传送语义改成了「进入即传送」，而现有 252 个传送门关卡是
+// 「传送门摆在解路径中间、被物理踩过去」生成的 —— 强制传送后
+// 夹在中间的那些格（如第 153 关的 (3,0)）永远进不去，参考解必然失效。
+//
+// 这不是规则错了，是**关卡表要重新生成**（用户已确认由他重做）。
+// 新表生成后 skipped 应为 0，届时把过滤删掉即可恢复全量校验。
 func TestCoverReferenceSolutionsValid(t *testing.T) {
 	if err := CoverLevels.Load("testdata/nonexistent"); err != nil {
 		t.Fatalf("加载 cover 关卡表失败: %v", err)
 	}
+	skipped := 0
 	for idx := 1; idx <= CoverLevels.Count(); idx++ {
 		lv := CoverLevels.Get(idx)
 		if lv == nil {
@@ -42,6 +52,10 @@ func TestCoverReferenceSolutionsValid(t *testing.T) {
 		if err != nil {
 			t.Fatalf("第 %d 关盘面解码失败: %v", idx, err)
 		}
+		if coverGridHasPortal(grid) {
+			skipped++
+			continue
+		}
 		cells := grid.Walkable()
 		if len(sol) != len(cells) {
 			t.Fatalf("第 %d 关参考解长度 %d != 可走格数 %d", idx, len(sol), len(cells))
@@ -50,6 +64,19 @@ func TestCoverReferenceSolutionsValid(t *testing.T) {
 			t.Fatalf("第 %d 关参考解校验失败: %v", idx, err)
 		}
 	}
+	if skipped > 0 {
+		t.Logf("跳过 %d 个传送门关卡（待重新生成）", skipped)
+	}
+}
+
+// coverGridHasPortal 盘面上是否有传送门格。
+func coverGridHasPortal(g *CoverGrid) bool {
+	for i := range g.Bytes {
+		if coverCellType(g.Bytes[i]) == CoverPortal {
+			return true
+		}
+	}
+	return false
 }
 
 // TestCoverRejectsIncompletePath 短路径（没铺满）必须被拒绝。
@@ -428,11 +455,12 @@ func TestCoverMoveCarriesState(t *testing.T) {
 	}
 }
 
-// TestCoverIceSlideStopsAtPortal 验证滑行遇到传送门格时**停在门上**（传送门打断滑行）。
+// TestCoverIceSlideTransportsAtPortal 验证滑行撞上传送门时**立刻传走**。
 //
-// 传送门不是墙 —— 它要被吃掉（滑行到它上面就停），
-// 而不是「停在它前面」。玩家站在上面可以主动传送到搭档。
-func TestCoverIceSlideStopsAtPortal(t *testing.T) {
+// 2026-11-20 语义变更：传送是「进入即发生」，所以滑进入口的那一步
+// 就把出口一起吃掉，线头落在出口上。旧行为是「停在门上、等玩家主动传」，
+// 那个中间态已经取消 —— 它让玩家以为传送门只是块砖。
+func TestCoverIceSlideTransportsAtPortal(t *testing.T) {
 	// 4x1：普通 | 冰块 | 传送门(0) | 传送门(0)   ← 同一 group → 配成一对
 	bytes := []byte{
 		packCoverCell(CoverBrick, 0, 0),
@@ -447,27 +475,24 @@ func TestCoverIceSlideStopsAtPortal(t *testing.T) {
 	visited := make([]bool, 4)
 	visited[0] = true
 	consumed := coverStepMove(rs, 0, CoverDirRight, visited, 0, 0)
-	// 冰块 + 传送门（传送门被吃掉，滑行到此为止）
-	if len(consumed) != 2 || consumed[0] != 1 || consumed[1] != 2 {
-		t.Fatalf("滑行应停在传送门上，实际消耗 %v，期望 [1 2]", consumed)
+	// 冰块(1) → 进传送门(2) → 连带出口(3)
+	want := []int{1, 2, 3}
+	if len(consumed) != len(want) {
+		t.Fatalf("滑行应连带出口，实际消耗 %v，期望 %v", consumed, want)
 	}
-	if consumed[1] != 2 {
-		t.Fatal("线头应停在传送门上")
-	}
-
-	// 站在传送门上 → 有传送边（跳到搭档）
-	moves := coverCandidateMoves(rs, 2, visited, 0, 0)
-	var portal *coverMove
-	for i := range moves {
-		if moves[i].ViaPortal {
-			portal = &moves[i]
-			break
+	for i := range want {
+		if consumed[i] != want[i] {
+			t.Fatalf("滑行应连带出口，实际消耗 %v，期望 %v", consumed, want)
 		}
 	}
-	if portal == nil {
-		t.Fatal("站在传送门上应有传送边")
+	if consumed[len(consumed)-1] != 3 {
+		t.Fatal("线头应落在出口")
 	}
-	if len(portal.Consumed) != 1 || portal.Consumed[0] != 3 {
-		t.Errorf("传送应落到搭档格 3，实际 %v", portal.Consumed)
+
+	// 传送门**不再提供额外边**
+	for _, mv := range coverCandidateMoves(rs, 2, visited, 0, 0) {
+		if mv.ViaPortal {
+			t.Fatal("传送门不应再有额外边")
+		}
 	}
 }

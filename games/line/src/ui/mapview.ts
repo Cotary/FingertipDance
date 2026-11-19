@@ -492,6 +492,20 @@ export interface MapViewState {
   scrub: boolean;
   /** 调试模式：所有关卡都可点。见 `debugUnlockAll` 的说明。 */
   debugUnlockAll: boolean;
+  /**
+   * 分享选关模式。
+   *
+   * ## 为什么要一个模式而不是另开一页
+   *
+   * 「挑一关发给好友」需要的东西和地图**完全一样**：全部关卡、已过关/未过关、
+   * 能滚能拖能跳。另做一个选择器等于把这套几何再实现一遍，还得担着
+   * 两份坐标漂移的风险。所以只加一个布尔量：同样的地图，读法换一套 ——
+   *
+   * - 节点点击 = 选中这一关并弹分享面板（不是进关）
+   * - 未解锁的关**也能分享**（分享不是玩，不该被进度限制）
+   * - 页面顶部出一条说明带 + 取消，让玩家随时知道自己在什么模式里
+   */
+  shareMode: boolean;
 }
 
 /**
@@ -569,6 +583,7 @@ export function createMapState(
     fling: 0,
     scrub: false,
     debugUnlockAll: DEBUG_ENABLED && debugUnlockAll,
+    shareMode: false,
   };
 }
 

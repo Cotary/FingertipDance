@@ -240,9 +240,12 @@ describe('滑行 × 传送门', () => {
     expect(consumed!.includes(3), '不能滑过传送门').toBe(false);
   });
 
-  it('滑行停止后仍站在传送门上：可以传送到搭档', () => {
+  it('滑行撞上传送门 → 立刻传走，线头落在出口（不再「停在门上」）', () => {
     // 一行：普通 | 冰块 | 传送门(A) | 传送门(B)
-    //                        ↑ 滑行停在这里，玩家可主动传送到 B
+    //
+    // 2026-11-20 语义变更：传送是「进入即发生」，所以滑进 A 的那一步
+    // 就把 B 一起吃掉，线头落在 B 上。旧行为是「停在 A、等玩家主动传」，
+    // 那个中间态已经取消 —— 它让玩家以为传送门只是块砖。
     const rs = line(
       [CoverCell.BRICK, CoverCell.ICE, CoverCell.PORTAL, CoverCell.PORTAL],
       [0, 0, 0, 0],
@@ -252,13 +255,8 @@ describe('滑行 × 传送门', () => {
     visited[0] = 1;
 
     const consumed = stepMove(rs, 0, DIR.RIGHT, visited, 0)!;
-    const head = consumed[consumed.length - 1];
-    expect(head, '线头应停在传送门上').toBe(2);
-
-    // 站上传送门 → 额外一条「跳到搭档」的边
-    const moves = candidateMoves(rs, head, visited, 0, 0);
-    const portal = moves.find((mv) => mv.viaPortal);
-    expect(portal, '站在传送门上应有传送边').toBeTruthy();
-    expect(portal!.consumed).toEqual([rs.portalOf[head]]);
+    // 滑行：吃掉冰块(1) → 进 A(2) → 连带 B(3)
+    expect(consumed, '滑进 A 应连带 B').toEqual([1, 2, 3]);
+    expect(consumed[consumed.length - 1], '线头应落在出口 B').toBe(3);
   });
 });

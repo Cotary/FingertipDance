@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>复刻出图台</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <canvas id="shot"></canvas>
+  <script type="module">
+    /**
+     * 出图台入口。走 URL 参数，供 shoot.mjs 无头驱动。
+     *
+     *   ?theme=mise&cell=tile.pale&w=64&pad=62
+     *
+     * 参数：
+     *   theme  主题 id（mise / mingsha）
+     *   cell   格子 id（见 core.ts 的 CELL_SPECS）
+     *   w      内容区逻辑边长 —— **必须从 baseline/manifest.json 读**
+     *   pad    外扩量 —— 同上
+     *   now    时刻 ms（默认 0 = 静止）
+     *   list   传 1 则输出清单 JSON
+     */
+    import { CELL_SPECS, pickSpec, shootCell } from './core';
+
+    const q = new URLSearchParams(location.search);
+
+    if (q.get('list') === '1') {
+      window.__list = CELL_SPECS.map((s) => ({
+        id: s.id, note: s.note, cell: s.cell,
+        dir: s.dir ?? null, group: s.group ?? null,
+      }));
+      const pre = document.createElement('pre');
+      pre.id = 'list-json';
+      pre.textContent = JSON.stringify(window.__list, null, 2);
+      document.body.appendChild(pre);
+    } else {
+      const canvas = document.getElementById('shot');
+      const themeId = q.get('theme') ?? 'mise';
+      const cellId = q.get('cell');
+      const w = Number(q.get('w') ?? '0');
+      const pad = Number(q.get('pad') ?? '62');
+      const now = Number(q.get('now') ?? '0');
+
+      const spec = pickSpec(cellId);
+      if (!spec) {
+        document.title = 'ERR: unknown cell';
+        console.error('未知 cell:', cellId);
+      } else if (!w) {
+        document.title = 'ERR: missing w';
+        window.__error = '缺少 w 参数（内容区逻辑边长，必须从 manifest 读）';
+      } else {
+        try {
+          const r = shootCell(canvas, themeId, spec, w, pad, now);
+          window.__done = { logical: r.logical, id: cellId, theme: themeId, piece: r.pieceSize };
+          document.title = 'DONE ' + cellId;
+        } catch (e) {
+          document.title = 'ERR';
+          console.error(e);
+          window.__error = String(e);
+        }
+      }
+    }
+  </script>
+</body>
+</html>

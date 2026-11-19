@@ -16,6 +16,8 @@ import { drawMapView } from '../src/ui/mapdraw';
 import { createMapState, scrollToLevel } from '../src/ui/mapview';
 import { drawRankPage, createRankState } from '../src/ui/leaderboard';
 import { drawProfilePage, type ProfilePageState } from '../src/ui/profile';
+import { drawStatsPanel } from '../src/ui/statsPanel';
+import { drawSharePanel, type SharePanelState } from '../src/ui/sharePanel';
 import { drawSkinsPage, type SkinsPageState } from '../src/ui/skins';
 import { drawNav, type NavTab } from '../src/ui/nav';
 import { drawBoard, drawEndpoints } from '../src/render/board';
@@ -102,8 +104,6 @@ export const profileState: ProfilePageState = {
   totalSteps: 1284,
   totalTimeMs: 2_460_000,
   adWatchCnt: 9,
-  unlockedSkins: ['wood', 'mint', 'graphite', 'slate', 'blush', 'amber', 'marble'],
-  totalSkins: 16,
   soundOn: true,
   vibrateOn: true,
   starCount: 96,
@@ -111,6 +111,17 @@ export const profileState: ProfilePageState = {
   threeStarCount: 12,
   currentLevel: 38,
   uid: 88214,
+};
+
+// ── 战绩弹层 / 分享抽屉 ──
+export const sharePanelState: SharePanelState = {
+  levelIdx: 47,
+  undos: 0,
+  nickname: '瓷生',
+  uid: 88214,
+  copy: '第 047 关，我不信你过得去',
+  copyIndex: 3,
+  query: 'l=47&uid=88214&name=%E7%93%B7%E7%94%9F',
 };
 
 // ── 皮肤 ──
@@ -291,6 +302,38 @@ export const PAGES: PageDef[] = [
   { key: 'map', title: '关卡地图', nav: 'map', draw: (c) => void drawMapView(c, mapState, NOW, MAP_THEME) },
   { key: 'rank', title: '排行榜', nav: 'rank', draw: (c) => void drawRankPage(c, rankState, NOW) },
   { key: 'profile', title: '我的', nav: 'profile', draw: (c) => void drawProfilePage(c, profileState, NOW) },
+  { key: 'stats', title: '我的 · 战绩弹层', nav: 'profile', draw: (c) => {
+    void drawProfilePage(c, profileState, NOW);
+    drawStatsPanel(c, {
+      maxLevel: profileState.maxLevel,
+      currentLevel: profileState.currentLevel,
+      starCount: profileState.starCount,
+      threeStarCount: profileState.threeStarCount,
+      totalRetries: profileState.totalRetries,
+      totalSteps: profileState.totalSteps,
+      totalTimeMs: profileState.totalTimeMs,
+      adWatchCnt: profileState.adWatchCnt,
+      levelCount: 1000,
+    });
+  } },
+  { key: 'share', title: '我的 · 分享抽屉', nav: 'profile', draw: (c) => {
+    void drawProfilePage(c, profileState, NOW);
+    drawSharePanel(c, sharePanelState);
+  } },
+  // 「分享选关」：地图页的另一个读法 —— 点任意关就发给好友。
+  // 视觉上必须一眼看出是在选关（标题变「挑一关分享」、脚卡变「取消」），
+  // 否则和普通地图长得一样，玩家会以为点下去是进关。
+  { key: 'sharePick', title: '地图 · 分享选关', nav: 'map', draw: (c) => {
+    const st = createMapState(mapLv, 1000, stars);
+    st.scrollY = scrollToLevel(mapLv);
+    st.shareMode = true;
+    void drawMapView(c, st, NOW, MAP_THEME);
+  } },
+  // 「结算页开抽屉」：从通关结果直接分享这一局（带成绩）。
+  { key: 'resultShare', title: '结算 · 分享抽屉', draw: (c) => {
+    resultScreen(c);
+    drawSharePanel(c, sharePanelState);
+  } },
   { key: 'skins', title: '主题', nav: 'skins', draw: (c) => void drawSkinsPage(c, skinsState, NOW) },
   { key: 'themes', title: '棋盘主题', nav: 'skins', draw: (c) => void drawSkinsPage(c, themesState, NOW) },
   { key: 'game', title: '游戏内', draw: gameScreen },

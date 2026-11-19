@@ -146,7 +146,7 @@ else { if (cur.cells.length > 0) out.push(cur); cur = { cells: [cell], kind }; }
 
 - 拐角珠**只在真转弯处**（前后同排/同列则跳过）。旧版每格一颗，11×11 就是一盘麻子。
 - 冰块段：整段叠一层 `rgba(216,238,252,.72)` 细线，表达「滑过去的」。
-- 传送门：虚线弧（起终点不相邻时）。
+- 传送门：**不画连线**。线在入口中心结束、在出口中心重新开始（两端的筹码圆盘压在上面，读作「钻进去 / 冒出来」）。两端靠**入口实环 + 芯点 / 出口虚环**区分 —— 传送是「同一处进、另一处出」，画一条横跨两格的弧线会读成「这里有一条路绕过去」，与规则相反。
 
 ### 3.4 机制筹码
 
@@ -241,7 +241,7 @@ else { if (cur.cells.length > 0) out.push(cur); cur = { cells: [cell], kind }; }
 | 文件 | 改动 |
 |---|---|
 | `src/render/coverBoard.ts` | 重写。拆成 `drawCoverPlate` / `drawCoverCells` / `drawCoverMarks` / `drawCoverHead` / `drawCoverEndpoints` / `drawCoverFreeStartHint` 六个入口，由调用方按序画；底板改「并集膨胀 + 离屏缓存」、格子三态、筹码统一、密度三档 |
-| `src/render/coverTrail.ts` | 重写 `segmentPath`（每段至少 2 格，构造保证）；转折珠只在真转弯处；传送段单独虚线弧 |
+| `src/render/coverTrail.ts` | 重写 `segmentPath`（每段至少 2 格，构造保证）；转折珠只在真转弯处；**传送段不画线**（线在入口中心断、出口中心接） |
 | `src/main.ts` | 画序改为 板 → 格 → 线 → 筹码 → 当前格/提示 → 端点；星屑「下一个」改成「已收集数量」；D=0 补起手提示 |
 | `src/ui/hud.ts` | 进度改双数字（`52 / 86` 加粗 + `剩 34` 弱化 + `下一个 ★N`）；游戏内移除皮肤名 |
 | `test/cover-visual.test.ts` | 新增。锁「每段 ≥ 2 格 + 段能还原原路径」，跑全 1000 关参考解 |

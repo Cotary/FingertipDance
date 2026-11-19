@@ -151,6 +151,22 @@ func (c *CoverLevelDB) DeleteAfter(ctx context.Context, idx int) (int64, error) 
 	return res.RowsAffected()
 }
 
+// ValidatePath 按**完整规则**校验某关的一条路径（拍平索引序列）。
+//
+// 数据从数据库取；这一关不在库里时返回 `ErrLevelNotFound`，
+// 由调用方回落到内置表（本地开发数据库常为空）。
+func (c *CoverLevelDB) ValidatePath(ctx context.Context, idx int, path []int) error {
+	lv, err := c.Get(ctx, idx)
+	if err != nil {
+		return err
+	}
+	grid, err := decodeCoverGrid(lv.Grid, lv.W, lv.H)
+	if err != nil {
+		return fmt.Errorf("第 %d 关盘面解码失败: %w", idx, err)
+	}
+	return ValidateCoverPath(grid.Walkable(), grid, path, lv.StartAt, lv.EndAt)
+}
+
 // HintByReference 按参考解给提示。
 //
 // ## 核心思路

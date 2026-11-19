@@ -891,6 +891,19 @@ export function drawResult(
    * 改成「重玩本关」/「返回大厅」。
    */
   isAllCleared = false,
+  /**
+   * 服务端**拒绝**了这次通关（路径非法）。
+   *
+   * ## 为什么要单独一个状态
+   *
+   * 客户端的 `isCoverSolved` 只是「看起来铺满了」的即时判断；真正作数的是
+   * 服务端按完整规则回放。两边规则一旦漂移（或玩家改了内存），
+   * 会出现「客户端播放通关、服务端说路径非法」。
+   *
+   * 这时**不能假装通关**：不给星、不推进进度，标题写明「未记录」。
+   * 玩家重进这一关还能再打 —— 比"看起来过了但进度没动"清楚得多。
+   */
+  rejected = false,
 ): Button[] {
   const cx = DESIGN_W / 2;
 
@@ -961,9 +974,15 @@ export function drawResult(
 
   // ── 标题：衬线关号。三位补零 —— 刻在铜牌上的编号
   const lv = String(levelIdx).padStart(3, '0');
-  const title = isAllCleared ? '全 部 通 关' : skipped ? `第 ${lv} 关 已跳过` : `第 ${lv} 关 通关`;
+  const title = rejected
+    ? `第 ${lv} 关 未 记 录`
+    : isAllCleared
+      ? '全 部 通 关'
+      : skipped
+        ? `第 ${lv} 关 已跳过`
+        : `第 ${lv} 关 通关`;
   // 设计稿标题行 y = 190（24 CSS），基线 ≈ 216.6 → 361
-  spacedText(ctx, title, cx, 363, 48, '#F2EEE6', 14, 700);
+  spacedText(ctx, title, cx, 363, 48, rejected ? '#C9A45C' : '#F2EEE6', 14, 700);
 
   // ── 星级 / 评语
   //
@@ -974,7 +993,11 @@ export function drawResult(
   const stars = isCover ? starOfCover(coverUndos) : starOf(steps, shortest);
   const starsCy = 445; // 设计稿星行中心 260 CSS（星形墨迹重心比盒子中心低 3px）
   const STAR_R = 28;
-  if (skipped) {
+  if (rejected) {
+    // 服务端拒绝：不画星，说明原因 —— 玩家需要知道「这一笔没算数」，
+    // 而不是盯着零颗星猜自己哪里没做好。
+    spacedText(ctx, '服 务 端 未 记 录 · 请 重 试', cx, starsCy + 30, 26, 'rgba(201,164,92,0.75)', 8, 600);
+  } else if (skipped) {
     // 跳过：不画星 —— 与地图上的「没星」保持一致
     spacedText(ctx, '已 跳 过 · 未 获 星', cx, starsCy + 30, 26, 'rgba(185,178,164,0.6)', 8, 600);
   } else {

@@ -1,5 +1,5 @@
 /**
- * 我的页 —— 「瓷生统计」版式（2026-11-15 定稿，07 屏）。
+ * 我的页 —— 「瓷生统计」版式（2026-11-15 定稿，07 屏；2026-11-20 去掉主题墙）。
  *
  * ## 坐标怎么来的
  *
@@ -18,29 +18,46 @@
  * | 页级出血 | 22 | 44 |
  * | 头行（头像 62 圆） | 24,58 | 48,44 |
  * | 三格统计 | 22,140 高 66 间距 10 | 44,208 高 132 间距 20 |
- * | 主题墙标题 | y224 | y376 |
- * | 主题墙色片 42 间距 8 | 22,247（**左对齐**） | 44,422（84 间距 16） |
- * | 功能行顶线 | y307 | y542 |
+ * | 功能行顶线 | y307 | y537（居中，见下） |
  *
- * ## 为什么主题墙是左对齐而不是均分
+ * ## 主题墙为什么删了（2026-11-20）
  *
- * 六枚色片从左边排到 x=314 就停了，右侧留 39 CSS 的空 —— 那是有意的
- * 「未完待续」：主题还会长，右边永远留着位置。做成 space-between 会
- * 显得像六个已经凑满的勋章。
+ * 设计稿 07 屏原有一条「主题墙」色片行，实际做出来发现三个问题，整块移除：
  *
- * ## 五条功能行 vs 设计稿四条
+ * 1. **不可点** —— 色片不在按钮列表里，玩家点了没反应；而底下每行功能都有去处。
+ * 2. **数字自相矛盾** —— 标题写「2 / 16」，色片只画 `SKINS.slice(0, 6)` 六片，
+ *    读起来像「6 个里解锁 2 个」。剩下 10 个凭空消失。
+ * 3. **名不副实** —— 叫「主题墙」，画的却是皮肤（`SKINS`）；项目里另有 themes
+ *    系统。而且皮肤页（底栏 tab）才是完整的收集 + 装备界面，这里是重复展示。
  *
- * 设计稿只画了音效/振动/分享/战绩。真实功能里还有「清除缓存」
- * （只删 `levels_cache`，不动进度），不能悄悄砍掉 —— 补在第 5 行，
- * 行高与分隔线完全沿用前四条。
+ * ## 功能行从五行回到四行（2026-11-20）
  *
- * 按钮 id 不变（shareGame / toggleSound / toggleVibrate / clearCache
+ * 第 5 行「清除缓存 · 本地关卡」是个**假功能**，已删。原因：
+ *
+ * 它唯一做的事是 `storage.remove('levels_cache')`，但那个 key 现在**没人写**
+ * —— 写它的是 `progressStore.ts` 的 `LevelStore`，而主入口实例化的是
+ * `CoverLevelStore`，全项目已无 `new LevelStore()`。`CoverLevelStore` 更是
+ * 完全不落盘（关卡表要么在 bundle 内置 JSON，要么从服务端实时拉）。
+ * 也就是说：本地根本没有可清的关卡缓存，点下去零效果零反馈。
+ *
+ * 同期一并清掉了 `CoverLevelStore.clearCache()`（删 `cover_levels_cache`，
+ * 同样从未被写入、也从未被调用）。
+ *
+ * 现在正好回到设计稿的四条。
+ *
+ * ## 为什么功能行居中而不是贴顶
+ *
+ * 统计格底 340、底栏顶 1214 → 可用 874。4 行 × 120 = 480，从 537 起
+ * 上下各留 197，整块在可用区里居中。设计稿原值（顶线 542 / 行高 92）
+ * 是五行紧凑贴顶的排法，四行还那样排会在底部留出 300+ 的空白。
+ *
+ * 按钮 id（shareGame / toggleSound / toggleVibrate / profileStats
  * —— main.ts 依赖）。
  */
 import { DESIGN_W, DESIGN_H } from '../render/layout';
 import { roundRect } from '../render/board';
 import { trackedText, trackedTextRight, trackedWidth, SERIF_FONT, type Button } from './hud';
-import { SKINS, paletteOf } from '../render/skins';
+import { getAvatarImage, drawAvatarImage } from './avatar';
 
 /** 我的页状态。 */
 export interface ProfilePageState {
@@ -50,8 +67,6 @@ export interface ProfilePageState {
   totalSteps: number;
   totalTimeMs: number;
   adWatchCnt: number;
-  unlockedSkins: string[];
-  totalSkins: number;
   soundOn: boolean;
   vibrateOn: boolean;
   /** 星星总数。 */
@@ -105,20 +120,34 @@ const M = {
   statsH: 132,
   statGap: 20,
   statsR: 28,
-  /** 主题墙标题基线（盒顶 224 → 376，22px 字） */
-  wallLabelBase: 394,
-  /** 主题墙色片 */
-  wallY: 422,
-  sw: 84,
-  swGap: 16,
-  swR: 22,
-  /** 功能行顶线 */
-  fnTop: 542,
-  rowH: 92,
+  /**
+   * 功能行顶线。
+   *
+   * 统计格底 340、底栏顶 1214 → 可用 874。4 行 × 120 = 480，
+   * 从 537 起正好上下各留 197，整块在可用区里居中。
+   *
+   * （设计稿原值 542/92 是「4 行紧凑贴顶 + 底部空 304」，删掉主题墙后
+   * 那样排会留下过大空白，所以这里改成居中。）
+   */
+  fnTop: 537,
+  rowH: 120,
 } as const;
 
-/** 玉青渐变头像球 + 衬线首字（定稿 pf-ava）。 */
-function drawAva(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, name: string): void {
+/**
+ * 玉青渐变头像球。
+ *
+ * 有头像图（服务端下发的微信头像）就画图，没有就画昵称首字。
+ * 首字不是「兜底凑数」而是**正常形态** —— 大量玩家没设头像，
+ * 玉球 + 首字的观感比一个灰色占位图好得多。
+ */
+function drawAva(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+  name: string,
+  avatarUrl: string,
+): void {
   // box-shadow: inset 0 2px 5px 高光、inset 0 -6px 12px 暗部、外投影 —— Canvas 没有 inset，
   // 用「径向渐变 + 底部叠一层暗弧」模拟：光从左上来，底部吃阴影。
   const g = ctx.createRadialGradient(cx - r * 0.34, cy - r * 0.44, r * 0.04, cx, cy, r * 1.12);
@@ -137,7 +166,26 @@ function drawAva(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: numbe
   ctx.fill();
   ctx.restore();
 
-  // 底部内侧暗弧（inset 阴影）
+  // ── 内容层：有图贴图，无图画首字 ──
+  //
+  // 这一步必须在「底部暗弧 + 顶缘高光」**之前**：那两层是玉球的釉面，
+  // 要压在头像图上面才有「嵌在玉里」的观感。反过来先画釉面再贴图，
+  // 头像会把高光盖掉，看起来像一张贴纸糊在球上。
+  const img = getAvatarImage(avatarUrl);
+  if (img) {
+    drawAvatarImage(ctx, cx, cy, r - 1, img);
+  } else {
+    const ch = (name || '玩').trim().slice(0, 1) || '玩';
+    ctx.save();
+    ctx.font = `900 46px ${SERIF_FONT}`;
+    ctx.fillStyle = '#1D3A2E';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(ch, cx, cy);
+    ctx.restore();
+  }
+
+  // ── 釉面：底部内侧暗弧 + 顶缘高光 ──
   ctx.save();
   ctx.beginPath();
   ctx.arc(cx, cy, r - 1, 0, Math.PI * 2);
@@ -154,15 +202,6 @@ function drawAva(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: numbe
   ctx.strokeStyle = 'rgba(255,255,255,0.26)';
   ctx.lineWidth = 7;
   ctx.stroke();
-  ctx.restore();
-
-  const ch = (name || '玩').trim().slice(0, 1) || '玩';
-  ctx.save();
-  ctx.font = `900 46px ${SERIF_FONT}`;
-  ctx.fillStyle = '#1D3A2E';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(ch, cx, cy);
   ctx.restore();
 }
 
@@ -189,7 +228,7 @@ export function drawProfilePage(ctx: CanvasRenderingContext2D, st: ProfilePageSt
   const right = DESIGN_W - M.pad;
 
   // ── 1. 头行：玉青头像球 + 昵称 + 征途读数 ──
-  drawAva(ctx, M.avaCX, M.avaCY, M.avaR, st.nickname || '旅人');
+  drawAva(ctx, M.avaCX, M.avaCY, M.avaR, st.nickname || '旅人', st.avatar);
 
   // 昵称只靠字距撑开（设计稿 letter-spacing .3em），不插空格 ——
   // 插空格会让「两字名」看起来像四个字符，而且宽度不可控。
@@ -232,41 +271,7 @@ export function drawProfilePage(ctx: CanvasRenderingContext2D, st: ProfilePageSt
     trackedText(ctx, k, x + (cellW - kW) / 2, M.statsY + 101, 17, P.muted, 4.7, 400);
   });
 
-  // ── 3. 主题墙（定稿：单行色片，左对齐，右侧留白给「未完待续」）──
-  trackedText(
-    ctx,
-    `主 题 墙 · ${st.unlockedSkins.length} / ${st.totalSkins}`,
-    M.pad + 2,
-    M.wallLabelBase,
-    22,
-    P.gold,
-    7.3,
-    600,
-  );
-
-  const owned = new Set(st.unlockedSkins);
-  const cols = 6;
-  SKINS.slice(0, cols).forEach((skin, i) => {
-    const x = M.pad + i * (M.sw + M.swGap);
-    const has = owned.has(skin.id);
-
-    ctx.save();
-    if (!has) ctx.globalAlpha = 0.35;
-    roundRect(ctx, x, M.wallY, M.sw, M.sw, M.swR);
-    const pal = paletteOf(skin);
-    // 定稿 sw：150° 线性渐变（light → dark）
-    const g = ctx.createLinearGradient(x, M.wallY, x + M.sw, M.wallY + M.sw);
-    g.addColorStop(0, pal.light);
-    g.addColorStop(1, pal.dark);
-    ctx.fillStyle = g;
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    ctx.restore();
-  });
-
-  // ── 4. 功能行（定稿 pf-funcs：衬线标签 + 右值 / 玉青开关）──
+  // ── 3. 功能行（定稿 pf-funcs：衬线标签 + 右值 / 玉青开关）──
   ctx.fillStyle = P.cellBorder;
   ctx.fillRect(M.pad, M.fnTop, DESIGN_W - M.pad * 2, 1.5);
 
@@ -275,7 +280,6 @@ export function drawProfilePage(ctx: CanvasRenderingContext2D, st: ProfilePageSt
     { id: 'toggleVibrate', label: '振 动', value: st.vibrateOn ? '开' : '关', on: st.vibrateOn },
     { id: 'shareGame', label: '分享挑战', value: '带关卡 + 重来数' },
     { id: 'profileStats', label: '战 绩', value: '', accent: true },
-    { id: 'clearCache', label: '清除缓存', value: '本地关卡' },
   ];
 
   const buttons: Button[] = [];

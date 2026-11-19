@@ -309,24 +309,16 @@ export function tryCoverMove(state: CoverState, target: number): CoverMoveResult
   const dx = tx - lx;
   const dy = ty - ly;
 
-  // 传送：线头站在传送门上时，拖到它的**搭档格** → 传送过去。
+  // 传送门：**进入即传送**，没有「站在门上再拖」这一步。
   //
-  // 复用 `candidateMoves`（它已经判好「搭档能不能进」：已走过 / 未开锁的门 /
-  // 乱序的星星都不许传过去），不自己重写一套判定 —— 免得两处规则漂移。
+  // 走进传送门的那一步，`stepMove` 的 `consumed` 就是 `[入口, 出口]`，
+  // 下面的「相邻走一步」分支会一次吃掉两格，玩家看到线头直接出现在出口。
   //
-  // **优先于相邻 / 同行判断**：搭档可能就在旁边（那也是传送），
-  // 也可能隔着一整片盘（跳过中间格）。规则是「只要是传送，都是传送过去」。
-  if (r.typeOf[last] === CoverCell.PORTAL) {
-    const portalMove = movesFrom(state, last).find((mv) => mv.viaPortal && mv.target === target);
-    if (portalMove) {
-      applyConsumed(state, portalMove.consumed);
-      state.lastConsumed = portalMove.consumed.slice();
-      consumeHintCells(state, portalMove.consumed);
-      return 'moved';
-    }
-  }
+  // 旧实现在这里单独判一条 `viaPortal` 边，但它排在相邻判断之前却要求
+  // 玩家**精确拖到搭档格**（隔一整片盘时指针根本落不到），
+  // 而物理相邻时又总是先命中下面的分支 —— 两头都不通。
 
-  // 相邻 → 走一步
+  // 相邻 → 走一步（走进传送门时这里会一次吃掉入口 + 出口）
   if (Math.abs(dx) + Math.abs(dy) === 1) {
     const dir = dirOfDelta(dx, dy);
     const consumed = stepMove(r, last, dir, state.visited, state.keyMask, state.shardNext);

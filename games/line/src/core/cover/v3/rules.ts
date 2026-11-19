@@ -207,18 +207,50 @@ export function withNoPortal(rs: RuleSet): RuleSet {
  * **注意**：这里**不检查单向门箭头** —— 箭头的检查在两处，
  * 分别是「离开」时（`stepMove` 开头）和「滑行途中进入」时
  * （`slideBlocked`）。合并到一处会漏掉其中一种。
+ *
+ * ## 终点只开在最后一步
+ *
+ * `END` 格子同时也是可走格，但它的语义是**整条线的收尾**。
+ * 早先这里完全不看 `rs.endAt`，于是 END 和普通砖没区别：
+ * 玩家可以中途踩上去、再走开，直到最后才发现"线头不在终点"而白走一整盘。
+ *
+ * 石障（BLOCK）的反馈是**立刻**的 —— 根本进不去，玩家马上换路。
+ * 终点的反馈必须同样早，所以这里把 END 做成一道**只在最后一格才开的门**。
+ *
+ * 判据：`visited` 里已经有 `n-1` 格时（只剩这一格没走），才允许进 END。
+ * 注意 `n` 是**可走格总数**（不可走格不参与 `localOf`），
+ * 而通关要求覆盖全部可走格，两者一致。
+ *
+ * ## `alreadyEaten` 是给滑行用的
+ *
+ * 滑行一次吃掉多格，而 `visited` 只在整步结束后才更新。若滑行途中要判
+ * 「现在是不是最后一步」，就必须把**本步已经吃掉的格**算进来，
+ * 否则会永远算出"还差好几格"，于是滑行永远进不了 END ——
+ * 而"用冰块滑进终点"是一种合法的收尾。
+ *
+ * @param alreadyEaten 本步已吃掉、但还没写进 `visited` 的格数
+ *
+ * 代价：只在 `v === rs.endAt` 时数一次 `visited`，其余情况零开销。
  */
 function enterable(
   rs: RuleSet,
   v: number,
   visited: Uint8Array,
   keyMask: number,
+  alreadyEaten = 0,
 ): boolean {
   if (v < 0) return false;
   if (visited[v]) return false;
   if (rs.typeOf[v] === CoverCell.GATE) {
     const g = rs.groupOf[v];
     if ((keyMask & (1 << g)) === 0) return false;
+  }
+  // 终点：必须是最后一步。`endAt < 0` 是自由终点，不加限制。
+  if (rs.endAt >= 0 && v === rs.endAt) {
+    let seen = alreadyEaten;
+    for (let i = 0; i < rs.n; i++) if (visited[i]) seen++;
+    // 走完这一格就是全覆盖 → 允许
+    if (seen !== rs.n - 1) return false;
   }
   return true;
 }
@@ -303,6 +335,31 @@ export function stepMove(
   if (rs.typeOf[first] === CoverCell.SHARD && rs.groupOf[first] !== shardNext) return null;
 
   const consumed: number[] = [first];
+
+  // ── 传送门：**进入即传送**（2026-11-20）──
+  //
+  // 走上传送门的那一步，搭档格立刻一起被吃掉：玩家没有「站上去再决定」的中间态。
+  //
+  // ## 为什么必须强制
+  //
+  // 旧实现把传送做成一条**可选边**（`candidateMoves` 里额外推一条 viaPortal），
+  // 而交互层里「四邻移动」排在它前面 —— 只要物理上走得通，传送就永远不触发。
+  // 实测：252 个传送门关卡的参考解里，**使用传送跳跃的次数是 0**，
+  // 玩家看到的传送门就是「能踩过去的一块砖」。
+  //
+  // ## 搭档不可进时整步作废
+  //
+  // 搭档已走过 / 是未开锁的门 / 是乱序的星星 → 这一格**根本进不去**。
+  // 不能「进去了但没传」，那会让玩家以为自己踩到了一块普通砖。
+  if (!rs.plain && !rs.noPortal && rs.typeOf[first] === CoverCell.PORTAL) {
+    const partner = rs.portalOf[first];
+    if (partner < 0) return null;
+    if (!enterable(rs, partner, visited, keyMask, consumed.length)) return null;
+    if (rs.typeOf[partner] === CoverCell.SHARD && rs.groupOf[partner] !== shardNext) return null;
+    consumed.push(partner);
+    return consumed;
+  }
+
   // 纯网格模式：冰块不滑行（当普通格走）
   if (rs.plain || rs.typeOf[first] !== CoverCell.ICE) return consumed;
 
@@ -314,16 +371,25 @@ export function stepMove(
   let simShardNext = shardNext;
   for (;;) {
     const nx = rs.nbr[curCell * 4 + dir];
-    if (!enterable(rs, nx, visited, simKeyMask)) break;
+    // `consumed.length` = 本步已经吃掉的格数（`visited` 里还没写）。
+    // 终点判定要用它，否则「滑进终点收尾」永远算成"还差几格"。
+    if (!enterable(rs, nx, visited, simKeyMask, consumed.length)) break;
     if (slideBlocked(rs, nx, dir, simShardNext)) break;
     consumed.push(nx);
     // 沿途的道具立刻生效
     if (rs.typeOf[nx] === CoverCell.KEY) simKeyMask |= 1 << rs.groupOf[nx];
     if (rs.typeOf[nx] === CoverCell.SHARD) simShardNext = rs.groupOf[nx] + 1;
     curCell = nx;
-    // **传送门打断滑行**：滑到传送门格就停 —— 传送门被吃掉，
-    // 玩家站在它上面可以主动传送到搭档（不自动传送）。
-    if (rs.typeOf[nx] === CoverCell.PORTAL) break;
+    // **滑到传送门 → 立刻传送**（和走进去一样，没有中间态）。
+    // 滑行就此结束：搭档被吃掉，线头停在出口格上。
+    if (rs.typeOf[nx] === CoverCell.PORTAL) {
+      const partner = rs.portalOf[nx];
+      if (partner < 0) break;
+      if (!enterable(rs, partner, visited, simKeyMask, consumed.length)) break;
+      if (rs.typeOf[partner] === CoverCell.SHARD && rs.groupOf[partner] !== simShardNext) break;
+      consumed.push(partner);
+      break;
+    }
   }
   return consumed;
 }
@@ -347,21 +413,12 @@ export function candidateMoves(
     if (!consumed) continue;
     out.push(makeMove(rs, dir, consumed, false, keyMask, shardNext));
   }
-  // 传送门额外边：站在传送门上可以传送到搭档
-  // 纯网格模式下禁用（保持剪枝有效，且参考解不需要传送）
-  // `noPortal` 模式同样禁用 —— 保留冰块滑行，但要保住四邻接链的结构。
-  if (!rs.plain && !rs.noPortal && rs.typeOf[cur] === CoverCell.PORTAL) {
-    const partner = rs.portalOf[cur];
-    // 传送落点也要走完整规则：已走过 / 未开锁的门 → 不能传过去；
-    // 落点是乱序的星星 → 也不能传过去（否则可以白捡一颗乱序的星星）。
-    if (
-      partner >= 0 &&
-      enterable(rs, partner, visited, keyMask) &&
-      !(rs.typeOf[partner] === CoverCell.SHARD && rs.groupOf[partner] !== shardNext)
-    ) {
-      out.push(makeMove(rs, -1, [partner], true, keyMask, shardNext));
-    }
-  }
+  // 传送门**没有额外边**：它在 `stepMove` 里就已经完成传送
+  // （走进去的那一步 consumed 是 `[入口, 出口]`）。
+  //
+  // 旧实现在这里额外推一条 `viaPortal` 边，但它排在四邻移动之后，
+  // 只要物理走得通就永不被选中 —— 实测 252 关参考解使用传送 0 次。
+  // 现在传送是「进入即发生」，不再有第二个入口，避免两套语义漂移。
   return out;
 }
 

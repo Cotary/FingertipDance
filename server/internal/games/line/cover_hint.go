@@ -14,13 +14,18 @@ import (
 // 哈密顿搜索。实测冰块关 / 传送门关上会超时（剪枝失效），
 // 表现为「这一关暂时给不出提示」。
 //
-// 现在参考解随关卡一起入库，玩家路径是参考解前缀时
+// 现在参考解随关卡一起下发，玩家路径是参考解前缀时
 // 直接切后缀 —— **O(1)，永远给得出**。
+//
+// ## 数据来源
+//
+// 优先数据库（可热更），没有则回落内置表。数据库为空时（本地开发常见）
+// 必须能落到内置表 —— 否则提示接口在开发环境全线失效。
 //
 // ## 走岔了怎么办
 //
 // 玩家走岔时参考解接不回来（强行回退会让线突然倒退，体验极差）。
-// 这时返回 `fromReference = false`，客户端退回实时求解。
+// 这时返回 `fromReference = false`，由客户端提示「这条线走不通了」。
 //
 // ## 安全
 //
@@ -40,19 +45,43 @@ func CoverHintHandler(db *CoverLevelDB) gin.HandlerFunc {
 		}
 
 		hint, err := db.HintByReference(c.Request.Context(), req.LevelIdx, req.Walked)
-		if err != nil {
-			if err == ErrLevelNotFound {
-				core.Fail(c, core.CodeLevelNotFound, "关卡不存在")
-				return
-			}
+		if err == ErrLevelNotFound {
+			// 数据库没有这一关 → 回落内置表
+			hint = hintFromBuiltin(req.LevelIdx, req.Walked)
+		} else if err != nil {
 			core.Fail(c, core.CodeInternal, "查询提示失败: "+err.Error())
 			return
 		}
 
+		if hint == nil {
+			core.Fail(c, core.CodeLevelNotFound, "关卡不存在")
+			return
+		}
+
 		core.OK(c, gin.H{
-			"idx":          hint.Idx,
-			"cells":        hint.Cells,
+			"idx":           hint.Idx,
+			"cells":         hint.Cells,
 			"fromReference": hint.FromReference,
 		})
 	}
+}
+
+// hintFromBuiltin 用内置表算提示（与 `HintByReference` 同一套纯逻辑）。
+//
+// 关不存在 / 缺参考解时返回 nil。
+func hintFromBuiltin(idx int, walked []int) *CoverDBHint {
+	lv := CoverLevels.Get(idx)
+	if lv == nil {
+		return nil
+	}
+	if lv.Solution == "" {
+		return &CoverDBHint{Idx: idx, Cells: []int{}}
+	}
+	sol, err := DecodeCoverSolution(lv.Solution, lv.W)
+	if err != nil {
+		return nil
+	}
+	hint := HintFromReference(sol, lv.StartAt, walked)
+	hint.Idx = idx
+	return hint
 }

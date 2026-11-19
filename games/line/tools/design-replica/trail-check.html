@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>连线验证台</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #101815; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <canvas id="shot"></canvas>
+  <script type="module">
+    /**
+     * 连线验证台：画一小块真实盘面 + 真实连线，用来目视检查
+     * 「传送门的线是从 A 中心消失、从 B 中心出现」.
+     *
+     *   ?theme=mise&pad=24
+     *
+     * 走的全是生产代码（drawCoverPlate / Cells / Trail / Marks），
+     * 不是另画一份 —— 否则验的就不是真实效果。
+     */
+    import { drawCoverPlate, drawCoverCells, drawCoverMarks } from '../../src/render/coverBoard';
+    import { drawCoverTrail } from '../../src/render/coverTrail';
+    import { computeLayout } from '../../src/render/layout';
+    import { CoverCell } from '../../src/core/cover/v3/types';
+    import { buildRuleSet, stepMove } from '../../src/core/cover/v3/rules';
+    import { CLAY } from '../../src/ui/clay';
+    import { skinById } from '../../src/render/skins';
+
+    const q = new URLSearchParams(location.search);
+    const pad = Number(q.get('pad') ?? '24');
+
+    /** 盘面编码：`type<<4 | dir<<2 | group`（见 core/cover/v3/types.ts）。 */
+    const encode = (type, dir = 0, group = 0) => ((type & 0x0f) << 4) | ((dir & 0x03) << 2) | (group & 0x03);
+
+    // 5×5 盘：左上一段线，右下另一段线，中间用一对传送门接起来。
+    // 关键是两段线在几何上**不相邻** —— 这样连线若还画弧线会非常明显。
+    const W = 5, H = 5;
+    const grid = new Uint8Array(W * H);
+
+    const put = (x, y, type, group = 0) => { grid[y * W + x] = encode(type, 0, group); };
+
+    // 全部铺成普通砖
+    for (let i = 0; i < grid.length; i++) grid[i] = encode(CoverCell.BRICK);
+
+    // 传送门：A 在 (1,1)，B 在 (3,3)，几何上隔着两格
+    put(1, 1, CoverCell.PORTAL, 0);
+    put(3, 3, CoverCell.PORTAL, 0);
+
+    // 起点在 (0,0)
+    put(0, 0, CoverCell.START, 0);
+
+    /**
+     * 路径**由真实规则层算出来**，不是手写坐标。
+     *
+     * 手写坐标只能验证「渲染层怎么画一段给它的路径」，
+     * 而「走进传送门会不会跳」是规则层的事 —— 那才是现在要验的。
+     * 这里按玩家操作顺序喂 `stepMove`，把返回的 consumed 依次拼成整条路径。
+     */
+    const path = (() => {
+      const walkable = [];
+      for (let i = 0; i < grid.length; i++) {
+        const t = (grid[i] >> 4) & 0x0f;
+        if (t !== 0 && t !== 2) walkable.push(i);
+      }
+      const rs = buildRuleSet(walkable, grid, W, H);
+      const DIRS = { D: 1, R: 3 };
+
+      const visited = new Uint8Array(rs.n);
+      const out = [];
+      let cur = rs.localOf[0];           // (0,0)
+      visited[cur] = 1;
+      out.push(rs.flatOf[cur]);
+
+      // 玩家怎么走：(0,0) →右→ (1,0) →下→ 进 A(1,1)（会被弹到 B）→下→ (3,4) →右→ (4,4)
+      const moves = ['R', 'D', 'D', 'R'];
+      const steps = [];
+      for (const m of moves) {
+        const consumed = stepMove(rs, cur, DIRS[m], visited, 0);
+        if (!consumed) break;
+        for (const c of consumed) {
+          visited[c] = 1;
+          out.push(rs.flatOf[c]);
+        }
+        cur = consumed[consumed.length - 1];
+        steps.push(m + '→' + consumed.map((c) => '(' + (rs.flatOf[c] % W) + ',' + Math.floor(rs.flatOf[c] / W) + ')').join(''));
+      }
+      window.__steps = steps;
+      return out;
+    })();
+
+    const layout = computeLayout(W, H);
+
+    const canvas = document.getElementById('shot');
+    const DPR = 3;
+    // computeLayout 用的是设计坐标系（750 宽），所以画布也要按 750 来，
+    // 否则右侧会裁掉 —— 第一版只按「棋盘宽 + pad」算，B 端整个在画外。
+    const LOGICAL = 750;
+    const logicalW = LOGICAL;
+    const logicalH = layout.originY + layout.boardH + pad;
+
+    canvas.width = Math.round(logicalW * DPR);
+    canvas.height = Math.round(logicalH * DPR);
+    canvas.style.width = `${logicalW}px`;
+    canvas.style.height = `${logicalH}px`;
+
+    const ctx = canvas.getContext('2d');
+    ctx.scale(DPR, DPR);
+
+    const shifted = layout;
+
+    const board = { w: W, h: H, grid };
+    const skin = skinById('celadon') ?? skinById('plain');
+    const state = {
+      covered: new Set(path),
+      path,
+      hint: null,
+      keysHeld: new Set(),
+      shardsGot: new Set(),
+      shardNext: 0,
+      shakeCell: -1,
+      shakeAt: 0,
+    };
+
+    drawCoverPlate(ctx, board, shifted, 0, DPR);
+    drawCoverCells(ctx, board, shifted, state, skin, 0);
+    drawCoverTrail(ctx, path, W, grid, shifted, CLAY.terracotta);
+    drawCoverMarks(ctx, board, shifted, state);
+
+    window.__done = { w: W, h: H, path };
+    document.title = 'DONE';
+  </script>
+</body>
+</html>

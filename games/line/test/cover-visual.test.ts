@@ -14,11 +14,12 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { segmentPath } from '../src/render/coverTrail';
+import { segmentPath, drawCoverTrail } from '../src/render/coverTrail';
 import { CoverCell, cellType, packCell } from '../src/core/cover/v3/types';
 import { decodeGrid, decodeSolution, type LevelEntry } from '../src/core/cover/v3/codec';
 import { computeLayout } from '../src/render/layout';
 import { densityOf } from '../src/render/coverBoard';
+import { CLAY } from '../src/ui/clay';
 
 /** 造一张 w×h 的盘面，默认全 BRICK（格子是打包字节，类型在高 4 位）。 */
 function makeGrid(w: number, h: number, cells: Record<number, number> = {}): Uint8Array {
@@ -129,5 +130,118 @@ describe('密度分档', () => {
     expect(densityOf(computeLayout(5, 5).cell)).toBe('rich');
     expect(densityOf(computeLayout(8, 8).cell)).toBe('standard');
     expect(densityOf(computeLayout(11, 11).cell)).toBe('compact');
+  });
+});
+
+/**
+ * 传送门的连线表达。
+ *
+ * ## 规则
+ *
+ * 传送是「从 A 消失、从 B 出现」，**不是「从 A 画一条线到 B」**。
+ * 早先的实现给传送段画了一条二次贝塞尔虚线弧，看图像一条弯着绕过去的路，
+ * 与规则相反：玩家会以为中间那片盘被跨过去了，而实际上中间根本没走。
+ *
+ * ## 锁什么
+ *
+ * `drawCoverTrail` 画出来的所有描边里，**不能有一段同时包含 A 和 B**。
+ * 判据是记录每次 `lineTo` 的目标坐标：若某条 path 里既有 A 的中心又有
+ * B 的中心，说明还在把两格连起来。
+ *
+ * 这条测试不看"画得好不好看"，只钉住一个硬事实 —— 这在纯逻辑测试里能测，
+ * 因为坐标是算出来的，不需要真的渲染。
+ */
+describe('传送段不画跨格连线', () => {
+  /** 极简 canvas 桩：记录每条子路径经过的点。 */
+  function recordingCtx() {
+    const paths: Array<Array<[number, number]>> = [];
+    let cur: Array<[number, number]> | null = null;
+    const target: Record<string, unknown> = {
+      beginPath: () => { cur = []; },
+      moveTo: (x: number, y: number) => { if (cur) cur.push([x, y]); },
+      lineTo: (x: number, y: number) => { if (cur) cur.push([x, y]); },
+      stroke: () => { if (cur) { paths.push(cur); cur = null; } },
+      arc: () => undefined,
+      save: () => undefined,
+      restore: () => undefined,
+      translate: () => undefined,
+      fill: () => undefined,
+      quadraticCurveTo: () => undefined,
+      setLineDash: () => undefined,
+    };
+    const handler: ProxyHandler<Record<string, unknown>> = {
+      get(t, prop: string) {
+        if (prop === '__paths') return paths;
+        if (prop in t) return t[prop];
+        return () => undefined;
+      },
+      set(t, prop: string, value) {
+        t[prop] = value;
+        return true;
+      },
+    };
+    return new Proxy(target, handler) as unknown as CanvasRenderingContext2D & {
+      __paths: Array<Array<[number, number]>>;
+    };
+  }
+
+  it('路径里 A→B 那一步不产生同时经过两格中心的描边', () => {
+    const w = 5;
+    const a = 1 * w + 1;
+    const b = 3 * w + 3;
+    // (1,1) 与 (3,3) 是传送门，几何上隔着两格
+    const grid = makeGrid(w, 5, {
+      [a]: CoverCell.PORTAL,
+      [b]: CoverCell.PORTAL,
+    });
+    const path = [0, 1, a, b, 4 * w + 3, 4 * w + 4];
+
+    const layout = computeLayout(w, 5);
+    const ctx = recordingCtx();
+    drawCoverTrail(ctx, path, w, grid, layout, CLAY.terracotta);
+
+    const center = (idx: number): [number, number] => [
+      layout.originX + (idx % w) * layout.cell + layout.cell / 2,
+      layout.originY + Math.floor(idx / w) * layout.cell + layout.cell / 2,
+    ];
+    const ca = center(a);
+    const cb = center(b);
+    const eq = (p: [number, number], q: [number, number]): boolean =>
+      Math.abs(p[0] - q[0]) < 0.5 && Math.abs(p[1] - q[1]) < 0.5;
+
+    for (const points of ctx.__paths) {
+      const touchesA = points.some((p) => eq(p, ca));
+      const touchesB = points.some((p) => eq(p, cb));
+      // 一条连续描边同时经过 A 和 B = 把两格连起来了
+      expect(touchesA && touchesB, '不应有同时经过 A、B 的连线').toBe(false);
+    }
+  });
+
+  it('线的两段各自停在 A、B 的中心', () => {
+    const w = 5;
+    const a = 1 * w + 1;
+    const b = 3 * w + 3;
+    const grid = makeGrid(w, 5, {
+      [a]: CoverCell.PORTAL,
+      [b]: CoverCell.PORTAL,
+    });
+    const path = [0, 1, a, b, 4 * w + 3, 4 * w + 4];
+
+    const layout = computeLayout(w, 5);
+    const ctx = recordingCtx();
+    drawCoverTrail(ctx, path, w, grid, layout, CLAY.terracotta);
+
+    const center = (idx: number): [number, number] => [
+      layout.originX + (idx % w) * layout.cell + layout.cell / 2,
+      layout.originY + Math.floor(idx / w) * layout.cell + layout.cell / 2,
+    ];
+    const eq = (p: [number, number], q: [number, number]): boolean =>
+      Math.abs(p[0] - q[0]) < 0.5 && Math.abs(p[1] - q[1]) < 0.5;
+
+    // 必须有一段以 A 为终点，另一段以 B 为起点 —— 这就是"消失 / 出现"
+    const endsAtA = ctx.__paths.some((pts) => pts.length >= 2 && eq(pts[pts.length - 1], center(a)));
+    const startsAtB = ctx.__paths.some((pts) => pts.length >= 2 && eq(pts[0], center(b)));
+    expect(endsAtA, '线应终止于 A 的中心').toBe(true);
+    expect(startsAtB, '线应从 B 的中心开始').toBe(true);
   });
 });

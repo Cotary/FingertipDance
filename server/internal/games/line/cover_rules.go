@@ -212,12 +212,39 @@ func buildCoverRuleSet(cells []int, g *CoverGrid) *CoverRuleSet {
 // 分别是「离开」时（coverStepMove 开头）和「滑行途中进入」时
 // （coverSlideBlocked）。合并到一处会漏掉其中一种。
 func coverEnterable(rs *CoverRuleSet, v int, visited []bool, keyMask int) bool {
+	return coverEnterableWith(rs, v, visited, keyMask, 0)
+}
+
+// coverEnterableWith 同 `coverEnterable`，但把「本步已吃掉、尚未写进 visited 的格数」算进来。
+//
+// ## 为什么需要 alreadyEaten
+//
+// 两点都要靠它：
+//  1. **终点只能最后一步踩上** —— 判据是「visited 已覆盖 n-1 格」。
+//     滑行一次吃掉多格，`visited` 只在整步结束后才更新，
+//     不把本步已吃的算进来会永远差几格，「滑进终点收尾」就被误杀。
+//  2. 传送门连带出口时同理（连带的那一格还没写进 visited）。
+//
+// **与 TS 侧 `enterable(rs, v, visited, keyMask, alreadyEaten)` 逐行对应。**
+func coverEnterableWith(rs *CoverRuleSet, v int, visited []bool, keyMask int, alreadyEaten int) bool {
 	if v < 0 || visited[v] {
 		return false
 	}
 	if int(rs.TypeOf[v]) == CoverGate {
 		grp := int(rs.GroupOf[v])
 		if keyMask&(1<<grp) == 0 {
+			return false
+		}
+	}
+	// 终点：必须是最后一步。`EndAt < 0` 是自由终点，不加限制。
+	if rs.EndAt >= 0 && v == rs.EndAt {
+		seen := alreadyEaten
+		for _, b := range visited {
+			if b {
+				seen++
+			}
+		}
+		if seen != len(visited)-1 {
 			return false
 		}
 	}
@@ -277,6 +304,31 @@ func coverStepMove(rs *CoverRuleSet, cur, dir int, visited []bool, keyMask int, 
 		return nil
 	}
 	consumed := []int{first}
+
+	// ── 传送门：**进入即传送**（2026-11-20，与客户端 rules.ts 保持一致）──
+	//
+	// 走上传送门的那一步，搭档格立刻一起被吃掉：没有「站上去再决定」的中间态。
+	// 旧实现把传送做成一条额外边（`coverCandidateMoves` 里推 viaPortal），
+	// 但它排在四邻移动之后 —— 只要物理走得通，传送永远不触发，
+	// 252 个传送门关卡参考解使用传送 0 次，玩家看到的就是「一块能踩过去的砖」。
+	//
+	// 搭档不可进（已走过 / 未开锁的门 / 乱序星星）→ **整步作废**：
+	// 不能「进去了但没传」，那会让玩家以为自己踩到了一块普通砖。
+	if int(rs.TypeOf[first]) == CoverPortal {
+		partner := rs.PortalOf[first]
+		if partner < 0 {
+			return nil
+		}
+		if !coverEnterableWith(rs, partner, visited, keyMask, len(consumed)) {
+			return nil
+		}
+		if int(rs.TypeOf[partner]) == CoverShard && int(rs.GroupOf[partner]) != shardNext {
+			return nil
+		}
+		consumed = append(consumed, partner)
+		return consumed
+	}
+
 	if int(rs.TypeOf[first]) != CoverIce {
 		return consumed
 	}
@@ -288,7 +340,7 @@ func coverStepMove(rs *CoverRuleSet, cur, dir int, visited []bool, keyMask int, 
 	simShardNext := shardNext
 	for {
 		nx := rs.Nbr[curCell*4+dir]
-		if !coverEnterable(rs, nx, visited, simKeyMask) {
+		if !coverEnterableWith(rs, nx, visited, simKeyMask, len(consumed)) {
 			break
 		}
 		if coverSlideBlocked(rs, nx, dir, simShardNext) {
@@ -303,9 +355,20 @@ func coverStepMove(rs *CoverRuleSet, cur, dir int, visited []bool, keyMask int, 
 			simShardNext = int(rs.GroupOf[nx]) + 1
 		}
 		curCell = nx
-		// **传送门打断滑行**：滑到传送门格就停 —— 传送门被吃掉，
-		// 玩家站在它上面可以主动传送到搭档（不自动传送）。
+		// **滑到传送门 → 立刻传送**（和走进去一样，没有中间态）。
+		// 滑行就此结束：搭档被吃掉，线头停在出口格上。
 		if int(rs.TypeOf[nx]) == CoverPortal {
+			partner := rs.PortalOf[nx]
+			if partner < 0 {
+				break
+			}
+			if !coverEnterableWith(rs, partner, visited, simKeyMask, len(consumed)) {
+				break
+			}
+			if int(rs.TypeOf[partner]) == CoverShard && int(rs.GroupOf[partner]) != simShardNext {
+				break
+			}
+			consumed = append(consumed, partner)
 			break
 		}
 	}
@@ -314,26 +377,20 @@ func coverStepMove(rs *CoverRuleSet, cur, dir int, visited []bool, keyMask int, 
 
 // coverCandidateMoves 枚举 cur 的所有候选移动。
 //
-// 除四邻接移动外，传送门格额外提供一条「跳到搭档」的边。
+// 传送门**没有额外边**：它在 `coverStepMove` 里就已经完成传送
+// （走进去的那一步 consumed 是 `[入口, 出口]`）。
+//
+// 旧实现在这里额外推一条 `viaPortal` 边，但它排在四邻移动之后，
+// 只要物理走得通就永不被选中 —— 实测 252 关参考解使用传送 0 次。
+// 现在传送是「进入即发生」，不再有第二个入口，避免两套语义漂移。
 func coverCandidateMoves(rs *CoverRuleSet, cur int, visited []bool, keyMask int, shardNext int) []coverMove {
-	out := make([]coverMove, 0, 5)
+	out := make([]coverMove, 0, 4)
 	for dir := 0; dir < 4; dir++ {
 		consumed := coverStepMove(rs, cur, dir, visited, keyMask, shardNext)
 		if consumed == nil {
 			continue
 		}
 		out = append(out, coverMakeMove(rs, dir, consumed, keyMask, shardNext, false))
-	}
-	if int(rs.TypeOf[cur]) == CoverPortal {
-		partner := rs.PortalOf[cur]
-		if partner >= 0 {
-			// 传送落点也要走完整规则：已走过 / 未开锁的门 → 不能传过去；
-			// 落点是乱序的星星 → 也不能传过去（否则可以白捡一颗乱序的星星）。
-			isShard := int(rs.TypeOf[partner]) == CoverShard && int(rs.GroupOf[partner]) != shardNext
-			if coverEnterable(rs, partner, visited, keyMask) && !isShard {
-				out = append(out, coverMakeMove(rs, -1, []int{partner}, keyMask, shardNext, true))
-			}
-		}
 	}
 	return out
 }

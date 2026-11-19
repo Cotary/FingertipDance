@@ -145,7 +145,12 @@ export function drawHomePage(ctx: CanvasRenderingContext2D, st: HomePageState, n
   drawMilestone(ctx, st);
 
   // ── 分享挑战（纯信息条，不接按钮 —— 不发明功能）──
-  drawShareStrip(ctx);
+  // ── 分享挑战（可点 → 去地图选一关分享）──
+  //
+  // 首页自己不做选关：一屏只有「当前关」，而分享的乐趣在于挑一关
+  // 「我打得漂亮 / 我卡了很久」的关卡。选关交给地图 —— 那里本来就是
+  // 全部关卡的列表，不用另造一个选择器。
+  const shareBtn = drawShareStrip(ctx);
 
   // ── 底注（居中，设计稿全页唯一一条居中文字）──
   const tip = '每关首次「提示」需看激励视频 · 跳过不给星';
@@ -156,7 +161,7 @@ export function drawHomePage(ctx: CanvasRenderingContext2D, st: HomePageState, n
     1167, 17, C.mutedSoft, 3.74, 500,
   );
 
-  return [btn];
+  return [btn, shareBtn];
 }
 
 /** 票券：左「继续 / 047」、右「∞ / 无尽」、撕口下三格读数。 */
@@ -342,8 +347,14 @@ function drawMilestone(ctx: CanvasRenderingContext2D, st: HomePageState): void {
 }
 
 /** 分享挑战条：虚线金框 + 左标题右说明。 */
-function drawShareStrip(ctx: CanvasRenderingContext2D): void {
+/** 分享挑战条：虚线金框 + 左标题右说明 —— **可点**，点了去地图选关。 */
+function drawShareStrip(ctx: CanvasRenderingContext2D): Button {
   const sy = M.share;
+  const btn: Button = {
+    x: M.pad, y: sy, w: M.cardW, h: M.shareH,
+    label: '', kind: 'ghost', id: 'homeSharePick',
+  };
+
   roundRect(ctx, M.pad, sy, M.cardW, M.shareH, 28);
   ctx.fillStyle = 'rgba(212,175,106,0.05)';
   ctx.fill();
@@ -357,5 +368,27 @@ function drawShareStrip(ctx: CanvasRenderingContext2D): void {
 
   const baseline = sy + 53;
   trackedText(ctx, '分享挑战', M.pad + 38, baseline, 24, C.goldFace, 7.2, 600);
-  trackedTextRight(ctx, '带关卡号 + 重来数，好友同关竞速', M.pad + M.cardW - 38, baseline, 18, C.muted, 2.16, 500);
+
+  // 右箭头：这条现在能点了，必须给一个「可以进去」的视觉线索。
+  //
+  // 先量箭头的宽度，再从右缘倒推文字右界 —— 早先直接把箭头画在
+  // 文字右对齐的位置上，结果箭头压住了「好友」两个字。
+  const arrowW = 10;
+  const arrowRight = M.pad + M.cardW - 34;
+  const arrowX = arrowRight - arrowW;
+  const textRight = arrowX - 16;
+
+  trackedTextRight(ctx, '选一关发给好友', textRight, baseline, 18, C.muted, 2.16, 500);
+
+  ctx.strokeStyle = C.goldFaint;
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(arrowX, baseline - 13);
+  ctx.lineTo(arrowX + arrowW, baseline - 6);
+  ctx.lineTo(arrowX, baseline + 1);
+  ctx.stroke();
+
+  return btn;
 }

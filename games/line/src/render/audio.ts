@@ -73,6 +73,8 @@ export class Audio {
   private enabled = true;
   private burstAt = 0;
   private burstN = 0;
+  /** 最近一段逐格音的声源（跳过开场时要停掉还没响的）。 */
+  private settleNodes: AudioScheduledSourceNode[] = [];
 
   // ── 图 ────────────────────────────────────────────────
 
@@ -183,10 +185,11 @@ export class Audio {
 
   // ── 合成一个音符 ──────────────────────────────────────
 
-  private note(ctx: AudioContext, n: SoundNote): void {
+  /** 合成一个音符，返回发声的声源节点（跳过开场时要停掉还没响的）。 */
+  private note(ctx: AudioContext, n: SoundNote): AudioScheduledSourceNode[] {
     const dry = this.dryBus;
     const conv = this.conv;
-    if (!dry || !conv) return;
+    if (!dry || !conv) return [];
 
     const t0 = ctx.currentTime + (n.delay ?? 0) / 1000;
     const dur = Math.max(0.02, n.dur / 1000);
@@ -249,7 +252,7 @@ export class Audio {
       src.connect(amp);
       src.start(t0);
       src.stop(t0 + dur + 0.05);
-      return;
+      return [src];
     }
 
     const osc = ctx.createOscillator();
@@ -262,8 +265,9 @@ export class Audio {
       osc.frequency.exponentialRampToValueAtTime(Math.max(1, n.to), t0 + (n.sweep ?? dur * 0.85));
     }
 
+    let mod: OscillatorNode | undefined;
     if (n.fm) {
-      const mod = ctx.createOscillator();
+      mod = ctx.createOscillator();
       const mg = ctx.createGain();
       mod.type = 'sine';
       mod.frequency.value = Math.max(1, n.freq * n.fm.ratio);
@@ -280,13 +284,14 @@ export class Audio {
     osc.connect(amp);
     osc.start(t0);
     osc.stop(t0 + dur + 0.05);
+    return mod ? [osc, mod] : [osc];
   }
 
-  /** 播一组音符。 */
-  private fire(notes: SoundNote[]): void {
-    if (!this.enabled) return;
+  /** 播一组音符。返回发声的声源节点（`settleAt` 要留着它们，跳过时能停）。 */
+  private fire(notes: SoundNote[]): AudioScheduledSourceNode[] {
+    if (!this.enabled) return [];
     const ctx = this.ensure();
-    if (!ctx) return;
+    if (!ctx) return [];
     // 每次发声前摸一下 —— 页面切走回来、iOS 首次手势后都会是 suspended。
     //
     // 但 `OfflineAudioContext` **不能** resume：它的 state 天生是 suspended，
@@ -295,7 +300,9 @@ export class Audio {
     const offline =
       typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
     if (!offline && ctx.state === 'suspended') void ctx.resume().catch(() => {});
-    for (const n of notes) this.note(ctx, n);
+    const srcs: AudioScheduledSourceNode[] = [];
+    for (const n of notes) srcs.push(...this.note(ctx, n));
+    return srcs;
   }
 
   /**
@@ -406,13 +413,51 @@ export class Audio {
    */
   settle(count: number, stepMs: number): void {
     if (count <= 0) return;
+    const delays: number[] = [];
+    for (let i = 0; i < count; i++) delays.push(i * stepMs);
+    this.settleAt(delays);
+  }
+
+  /**
+   * 逐格音：按**给定时刻表**排一整段（每格一记）。
+   *
+   * 进场揭幕用这个 —— 格子的落定不是等距的（行内 `step`、行间 `row`，
+   * 大盘还要按 `sweep` 等比压缩），`settle` 那种等距排法排不出行序的拍子，
+   * 音和画就散了。时刻由 kit 的 `enterCellDelay` 给（音画同源）。
+   *
+   * 时刻表里的相同时刻只发**一记**：`prefers-reduced-motion` 降级时
+   * 整行同时淡亮（`step: 0`），一行 8 格就是 8 个同刻的 delay ——
+   * 不去重会叠成一声炸音，而去重后正好"一行一记"，行序节奏还在。
+   */
+  settleAt(delays: readonly number[]): void {
+    this.settleStop();
+    if (delays.length === 0) return;
     const grain = this.voice.settle?.();
     if (!grain || grain.length === 0) return;
     const all: SoundNote[] = [];
-    for (let i = 0; i < count; i++) {
-      for (const n of grain) all.push({ ...n, delay: (n.delay ?? 0) + i * stepMs });
+    for (const d of new Set(delays)) {
+      for (const n of grain) all.push({ ...n, delay: (n.delay ?? 0) + d });
     }
-    this.fire(all);
+    this.settleNodes = this.fire(all);
+  }
+
+  /**
+   * 停掉还没响的逐格音。
+   *
+   * 跳过开场时用（设计稿「动画中再点 = 跳过：所有格直接落定、沙光照播，
+   * **不回放过程**」）—— 逐格音是 WebAudio 里排好的时间线，
+   * 不停掉的话跳完之后沙雨还在下，又变成"动画完了音效还没结束"。
+   */
+  settleStop(): void {
+    for (const src of this.settleNodes) {
+      // 已经停过的节点再 `stop()` 在个别老实现里会抛 —— 停声这种事不值得炸游戏
+      try {
+        src.stop();
+      } catch {
+        /* 已停 */
+      }
+    }
+    this.settleNodes = [];
   }
 
   /**

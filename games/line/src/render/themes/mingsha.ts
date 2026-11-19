@@ -1414,11 +1414,30 @@ interface Paste {
 }
 
 const PASTES: readonly Paste[] = [
-  // 0 · 未铺：淡土块。比墙亮一档，靠一圈 0.34 的土线站住 ——
-  //     "还没上色的一块墙皮"，所以它读起来应该比墙更空，不是更亮
-  { ramp: ['#ECDCB8', '#DAC59A', '#C6AC80'], hi: 0.40, foot: 'rgba(120,80,30,0.16)', edge: 'rgba(124,88,48,0.30)', edgeW: 0.014, blotch: 0.10 },
-  // 1 · 石绿
-  { ramp: ['#7BA089', '#56786A', '#456055'], hi: 0.32, foot: 'rgba(30,25,15,0.30)', edge: 'rgba(44,64,54,0.42)', edgeW: 0.012, blotch: 0.10 },
+  /**
+   * 0 · 未铺普通格 = **石绿**。
+   *
+   * 设计稿裸 `.mp`：`linear-gradient(148deg, #6E9580, #56786A 55%, #456055)`
+   *
+   * ## 这里曾经搞反了一对 class（2026-11-19 像素闸门抓到）
+   *
+   * 早先写的是 `#ECDCB8 → #DAC59A → #C6AC80`（淡土黄），而那个色值是设计稿
+   * **`.mp.pale`** 的 —— `.mp.pale` 只用于机制格（起点/终点/按下/线头/钥匙/门），
+   * 是那些格子底下的"纸面"。普通格用的是裸 `.mp`，石绿。
+   *
+   * 后果：出图跟基线比，丹青未铺格均值 Δ **104**（全盘最大的单项偏差）。
+   * 并排一看就是"米黄 vs 石绿"，但只盯着代码看很难发现 ——
+   * 两个色值都是设计稿里真实存在的，只是**挂错了 class**。
+   */
+  { ramp: ['#6E9580', '#56786A', '#456055'], hi: 0.32, foot: 'rgba(30,25,15,0.30)', edge: 'rgba(44,64,54,0.42)', edgeW: 0.012, blotch: 0.10 },
+  /**
+   * 1 · 机制格的"纸面" = 淡土黄。
+   *
+   * 设计稿 `.mp.pale`：`linear-gradient(148deg, #E8D6B0, #D2BC8E 55%, #BFA176)`
+   * 起点/终点/钥匙/门/按下/线头铺这一层，机制标压在上面。
+   * 它与石绿普通格形成"上过色的纸 vs 没动过的墙"的对比。
+   */
+  { ramp: ['#E8D6B0', '#D2BC8E', '#BFA176'], hi: 0.40, foot: 'rgba(120,80,30,0.16)', edge: 'rgba(124,88,48,0.30)', edgeW: 0.014, blotch: 0.10 },
   // 2 · 朱砂
   // 朱砂（`.mp.red`：`linear-gradient(148deg, #B5472E, #8F3220 55%, #713A20)`）
   //
@@ -1946,8 +1965,27 @@ function drawCell(g: CellGeom): void {
     drawPiece(ctx, x + inset, y + inset, s, 6, shape);
     return;
   }
-  // 普通格 / 机制格：未铺是淡土块，已铺换成矿彩
-  drawPiece(ctx, x + inset, y + inset, s, walk ? pasteFor(gx, gy) : 0, shape);
+  /**
+   * 普通格 / 机制格分两档底色：
+   *
+   * - 普通格（BRICK）：未铺 = `PASTES[0]` 石绿；已铺 = `PASTES[2]` 朱砂
+   * - 机制格（起点/终点/单向/星屑/钥匙/门）：底色是 `PASTES[1]` **淡土黄**
+   *
+   * ## 为什么机制格要单独一档（2026-11-19 闸门抓到）
+   *
+   * 设计稿里这些状态写的是 `.mp.pale`（`#E8D6B0` 淡土黄），
+   * 机制标压在这层"纸面"上；而裸 `.mp`（石绿）是没人动过的墙。
+   * 两者是「已经贴了标记的纸」vs「一片空墙」的区别。
+   *
+   * 早先一律用 `PASTES[0]`，导致起点/终点/钥匙/门全是石绿 ——
+   * 与基线比，这几项均值 Δ 从 49 一路涨到 89（越修越差，因为底色跑偏了）。
+   */
+  const MECH_CELLS = new Set<number>([
+    CoverCell.START, CoverCell.END, CoverCell.ONEWAY,
+    CoverCell.SHARD, CoverCell.KEY, CoverCell.GATE,
+  ]);
+  const baseIdx = walk ? pasteFor(gx, gy) : (MECH_CELLS.has(type) ? 1 : 0);
+  drawPiece(ctx, x + inset, y + inset, s, baseIdx, shape);
 
   // 六字纹样：**只落普通格**（未铺 / 已铺都画），机制格一律净面。
   //

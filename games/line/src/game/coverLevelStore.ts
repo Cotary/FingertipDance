@@ -22,7 +22,6 @@
  * 代价是 bundle 大约多 300 KB —— 对小游戏来说可以接受。
  */
 import clientTable from '../../data/levels-v3-client.json';
-import { platform } from '../platform';
 import { fetchCoverLevels, fetchCoverTableVersion } from '../net/api';
 import type { LevelEntry } from '../core/cover/v3/codec';
 
@@ -129,10 +128,5 @@ export class CoverLevelStore {
   /** 总关数（内置表的数量）。 */
   get total(): number {
     return Math.max(BUILTIN.count, this.levels.size);
-  }
-
-  /** 清空缓存（换肤 / 清缓存按钮用不到关卡表，保留接口一致性）。 */
-  clearCache(): void {
-    platform.storage.remove('cover_levels_cache');
   }
 }

@@ -52,6 +52,78 @@ const REPORT = path.join(ROOT, 'report');
 
 const THRESH = { mean: 2, pct8: 2, block: 4 };
 
+/**
+ * 两套主题 × 各自的格子选择器。
+ *
+ * ## 为什么不能共用一份 TARGETS
+ *
+ * 两套设计稿是**两套装 DOM**：
+ *   天青：`.pc.pale` / `.pc.pale.start` / `.pc.pale.key-cell` …
+ *   丹青：`.mp` / `.mp.pale.m-start` / `.mp.pale.m-key` …
+ * 类名前缀和状态写法都不同。共用一份清单必然一半抓不到。
+ *
+ * ## 但 id 必须一致
+ *
+ * `tile.pale` 在两边指的都是「未铺的普通格」这个**概念**。
+ * id 一致，出图台（shoot.mjs）才能用同一份状态清单出两套主题的图，
+ * 闸门也才能两边用同一套阈值。
+ */
+export const THEMES_DESIGN = [
+  {
+    theme: 'mise',
+    design: '2026-11-16-秘色天青-图标动效音效.html',
+    targets: [
+      { id: 'tile.pale',        selector: '.pc.pale' },
+      { id: 'tile.deep',        selector: '.pc.deep' },
+      { id: 'tile.stone',       selector: '.pc.stone' },
+      { id: 'tile.frost',       selector: '.pc.frost' },
+      { id: 'tile.pale.start',  selector: '.pc.pale.start' },
+      { id: 'tile.pale.end',    selector: '.pc.pale.end' },
+      { id: 'tile.pale.trail',  selector: '.pc.pale.trail' },
+      { id: 'tile.pale.pressed',selector: '.pc.pale.pressed' },
+      { id: 'tile.pale.oneway', selector: '.pc.pale.oneway' },
+      { id: 'tile.pale.key',    selector: '.pc.pale.key-cell' },
+      { id: 'tile.pale.door',   selector: '.pc.pale.door-cell' },
+      { id: 'tile.pale.portalA',selector: '.pc.pale.portal-a' },
+      { id: 'tile.pale.portalB',selector: '.pc.pale.portal-b' },
+      { id: 'tile.deep.star',   selector: '.pc.deep.star' },
+      { id: 'tile.pale.arrive', selector: '.pc.pale.arrive' },
+      // hint / hintcell 是 1.8s 无限呼吸，尺寸逐次不同，不进静态基线
+    ],
+  },
+  {
+    theme: 'mingsha',
+    design: '2026-11-15-鸣沙丹青-图标动效音效.html',
+    targets: [
+      // ⚠️ 丹青有两套"普通格"底：
+      //   裸 `.mp`        = 石绿 #6E9580（未铺，占盘面大多数）
+      //   `.mp.pale`      = 淡土黄 #E8D6B0（起点/终点/键/门所在的"纸面"）
+      // `tile.pale` 必须用**裸 `.mp`** —— 它是"未铺普通格"这个概念。
+      // 用 `.mp` 选择器时会被 `.mp.pale` 抢先命中（DOM 顺序靠前），
+      // 所以下面用 `:not()` 明确排除。
+      { id: 'tile.pale',        selector: '.mp:not(.pale):not(.red):not(.m-stone):not(.m-ice):not(.m-oneway):not(.m-portal):not(.m-hint):not(.m-hintglow):not(.m-arrive)' },
+      { id: 'tile.deep',        selector: '.mp.red.m-walked' },
+      { id: 'tile.stone',       selector: '.mp.m-stone' },
+      { id: 'tile.frost',       selector: '.mp.m-ice' },
+      { id: 'tile.pale.start',  selector: '.mp.pale.m-start' },
+      { id: 'tile.pale.end',    selector: '.mp.pale.m-end' },
+      { id: 'tile.pale.trail',  selector: '.mp.pale.m-trail' },
+      { id: 'tile.pale.pressed',selector: '.mp.pale.m-pressed' },
+      { id: 'tile.pale.oneway', selector: '.mp.m-oneway' },
+      { id: 'tile.pale.key',    selector: '.mp.pale.m-key' },
+      { id: 'tile.pale.door',   selector: '.mp.pale.m-door' },
+      { id: 'tile.pale.portalA',selector: '.mp.m-portal' },
+      { id: 'tile.pale.portalB',selector: '.mp.m-portal' },
+      { id: 'tile.deep.star',   selector: '.mp.red.m-star' },
+      { id: 'tile.pale.arrive', selector: '.mp.m-arrive' },
+    ],
+  },
+];
+
+/** 兼容旧调用：默认天青那份。 */
+export const TARGETS = THEMES_DESIGN[0].targets;
+
+
 /* ────────────────────────────────────────────────────────────
    元素清单
    ────────────────────────────────────────────────────────────
@@ -59,47 +131,6 @@ const THRESH = { mean: 2, pct8: 2, block: 4 };
    selector 是基线阶段的 CSS 选择器；尺寸用于对齐截图口径。
    DPR 固定 3，是因为设计稿按 375 逻辑宽画、游戏按 750 逻辑宽渲染，
    3 倍超采样才能覆盖到高分屏。 */
-export const TARGETS = [
-  // ── 棋子：材质 × 状态，共 17 种（设计稿实测 DOM 分布） ──
-  // 选择器用「.pc.xxx」而不是截断到父容器，因为同一材质在不同章节
-  // 尺寸不同（62/54/44px），第一处命中是图标章节的 62px，口径统一。
-  { id: 'tile.pale',        selector: '.pc.pale' },
-  { id: 'tile.deep',        selector: '.pc.deep' },
-  { id: 'tile.stone',       selector: '.pc.stone' },
-  { id: 'tile.frost',       selector: '.pc.frost' },
-  { id: 'tile.pale.start',  selector: '.pc.pale.start' },
-  { id: 'tile.pale.end',    selector: '.pc.pale.end' },
-  { id: 'tile.pale.trail',  selector: '.pc.pale.trail' },
-  { id: 'tile.pale.pressed',selector: '.pc.pale.pressed' },
-  // tile.pale.hint 有 1.8s 无限呼吸动画（hintBreath），尺寸逐帧变化，
-  // 不能进静态基线（每次截图尺寸都可能不同）。动效类元素由 S5 单独验。
-  // { id: 'tile.pale.hint',   selector: '.pc.pale.hint' },
-  { id: 'tile.pale.oneway', selector: '.pc.pale.oneway' },
-  { id: 'tile.pale.key',    selector: '.pc.pale.key-cell' },
-  { id: 'tile.pale.door',   selector: '.pc.pale.door-cell' },
-  { id: 'tile.pale.portalA',selector: '.pc.pale.portal-a' },
-  { id: 'tile.pale.portalB',selector: '.pc.pale.portal-b' },
-  { id: 'tile.deep.star',   selector: '.pc.deep.star' },
-  { id: 'tile.pale.arrive', selector: '.pc.pale.arrive' },
-  // tile.pale.hintcell 同样是 1.8s 无限呼吸（hintCellGlow），同上。
-  // { id: 'tile.pale.hintcell', selector: '.pc.pale.hintcell' },
-
-  // ── 图标（8 个机制图标，全在 .icon-stage 里） ──
-  { id: 'icon.stone',   selector: '.icon-grid .icon-card:nth-child(1) .icon-stage' },
-  { id: 'icon.arrow',   selector: '.icon-grid .icon-card:nth-child(2) .icon-stage' },
-  { id: 'icon.star',    selector: '.icon-grid .icon-card:nth-child(3) .icon-stage' },
-  { id: 'icon.frost',   selector: '.icon-grid .icon-card:nth-child(4) .icon-stage' },
-  { id: 'icon.portal',  selector: '.icon-grid .icon-card:nth-child(5) .icon-stage' },
-  { id: 'icon.key',     selector: '.icon-grid .icon-card:nth-child(6) .icon-stage' },
-  { id: 'icon.door',    selector: '.icon-grid .icon-card:nth-child(7) .icon-stage' },
-  { id: 'icon.doorOpen',selector: '.icon-grid .icon-card:nth-child(8) .icon-stage' },
-
-  // ── 面板 / 卡片（九宫格的来源） ──
-  { id: 'panel.fix-card',   selector: '.fix-card' },
-  { id: 'panel.snd-card',   selector: '.snd-card' },
-  { id: 'panel.state-card', selector: '.state-card' },
-  { id: 'panel.ana-tile',   selector: '.ana-tile' },
-];
 
 /* ──────────────────────────────────────────────────────────── */
 
@@ -308,7 +339,13 @@ function verdict(r) {
 /* ────────────────────────────────────────────────────────────
    --build：从设计稿建基线
    ──────────────────────────────────────────────────────────── */
-async function build(designPath, targets) {
+/**
+ * 建一套主题的基线。
+ *
+ * @param theme 主题 id（mise / mingsha）—— 只用来给文件加前缀，
+ *              避免两套主题的 `tile.pale.png` 互相覆盖
+ */
+async function build(theme, designPath, targets) {
   ensureDir(BASELINE);
   const browser = await getBrowser();
   const page = await browser.newPage({ deviceScaleFactor: 3, viewport: { width: 1280, height: 900 } });
@@ -321,14 +358,16 @@ async function build(designPath, targets) {
 
   const manifest = [];
   for (const t of targets) {
+    // 文件名带主题前缀：baseline/mise__tile.pale.png
+    const fileId = `${theme}__${t.id}`;
     const loc = page.locator(t.selector).first();
     const cnt = await loc.count();
     if (!cnt) {
-      console.warn(`  ! 选择器无匹配：${t.id}  (${t.selector})`);
+      console.warn(`  ! 选择器无匹配：${fileId}  (${t.selector})`);
       continue;
     }
     const box = await loc.boundingBox();
-    if (!box) { console.warn(`  ! 不可见：${t.id}`); continue; }
+    if (!box) { console.warn(`  ! 不可见：${fileId}`); continue; }
 
     // 外扩量必须与 bake.mjs 用**同一个算法**，否则基线图与烘焙图尺寸对不上，
     // 比对会全部报"尺寸不符"。抽成共享函数见 ninePatchParams()。
@@ -345,7 +384,7 @@ async function build(designPath, targets) {
     // 外扩量也跟着变，截图尺寸不稳定（实测 hint 元素 426 vs 420）。
     // 这类元素归 S5「动效验收」管，用逐帧比对，不用静态基线。
     if ((style.animationIterationCount || '').includes('infinite')) {
-      console.warn(`  ~ 跳过（无限动画 ${style.animationName}）：${t.id}`);
+      console.warn(`  ~ 跳过（无限动画 ${style.animationName}）：${fileId}`);
       continue;
     }
     const PAD = calcPad(style);
@@ -364,8 +403,8 @@ async function build(designPath, targets) {
       return page.screenshot({ clip, omitBackground: true });
     });
 
-    if (!png) { console.warn(`  ! 隔离失败：${t.id}`); continue; }
-    fs.writeFileSync(path.join(BASELINE, `${t.id}.png`), png);
+    if (!png) { console.warn(`  ! 隔离失败：${fileId}`); continue; }
+    fs.writeFileSync(path.join(BASELINE, `${fileId}.png`), png);
 
     // computed style 快照 —— "为什么长这样"的答案
     const cs = await page.evaluate((sel) => {
@@ -379,21 +418,26 @@ async function build(designPath, targets) {
       out.innerHTML = el.innerHTML.slice(0, 2000);
       return out;
     }, t.selector);
-    if (cs) fs.writeFileSync(path.join(BASELINE, `${t.id}.style.json`), JSON.stringify(cs, null, 2));
+    if (cs) fs.writeFileSync(path.join(BASELINE, `${fileId}.style.json`), JSON.stringify(cs, null, 2));
 
-    manifest.push({ id: t.id, selector: t.selector, box: [box.width, box.height], pad: PAD });
-    console.log(`  ✓ ${t.id}  ${box.width}×${box.height}`);
+    manifest.push({ theme, id: fileId, baseId: t.id, selector: t.selector, box: [box.width, box.height], pad: PAD });
+    console.log(`  ✓ ${fileId}  ${box.width}×${box.height}`);
   }
 
-  fs.writeFileSync(path.join(BASELINE, 'manifest.json'), JSON.stringify({
-    builtAt: new Date().toISOString(),
-    design: path.basename(designPath),
-    dpr: 3,
-    targets: manifest,
-  }, null, 2));
+  // manifest 按主题合并 —— 两套主题各建一次基线，不能互相覆盖
+  const manPath = path.join(BASELINE, 'manifest.json');
+  let man = { builtAt: '', dpr: 3, targets: [] };
+  if (fs.existsSync(manPath)) {
+    try { man = JSON.parse(fs.readFileSync(manPath, 'utf8')); } catch { /* 损坏则重建 */ }
+  }
+  // 同主题的旧条目先清掉，再追加（重跑幂等）
+  man.targets = (man.targets || []).filter((t) => t.theme !== theme).concat(manifest);
+  man.builtAt = new Date().toISOString();
+  man.dpr = 3;
+  fs.writeFileSync(manPath, JSON.stringify(man, null, 2));
 
   await browser.close();
-  console.log(`\n基线已建：${manifest.length} 个元素 → ${BASELINE}`);
+  console.log(`\n基线已建：${theme} ${manifest.length} 个元素 → ${BASELINE}`);
 }
 
 /* ────────────────────────────────────────────────────────────
@@ -478,16 +522,29 @@ async function check(shotDir, only) {
 const argv = process.argv.slice(2);
 const getArg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
 
-const design = getArg('--design',
-  path.join(ROOT, '../../../../docs/连连看/风格样片/2026-11-16-秘色天青-图标动效音效.html'));
+const SAMPLE_DIR = path.join(ROOT, '../../../../docs/连连看/风格样片');
 
 if (argv.includes('--build')) {
-  await build(design, TARGETS);
+  const onlyTheme = getArg('--theme', null);
+  const list = onlyTheme
+    ? THEMES_DESIGN.filter((t) => t.theme === onlyTheme)
+    : THEMES_DESIGN;
+
+  for (const t of list) {
+    const designPath = getArg('--design', path.join(SAMPLE_DIR, t.design));
+    console.log(`\n──────── ${t.theme} ────────`);
+    console.log(`设计稿：${path.basename(designPath)}`);
+    await build(t.theme, designPath, t.targets);
+  }
 } else if (argv.includes('--check')) {
   const shots = getArg('--shots', path.join(ROOT, 'shots'));
   await check(shots, getArg('--only', null));
 } else {
   console.log('用法：');
-  console.log('  node baseline.mjs --build [--design <设计稿路径>]');
-  console.log('  node baseline.mjs --check [--shots <游戏截目录>] [--only <id 片段>]');
+  console.log('  node baseline.mjs --build [--theme mise|mingsha]');
+  console.log('  node baseline.mjs --check [--shots <游戏截图目录>] [--only <id 片段>]');
+  console.log('');
+  console.log('两套主题各自建基线，文件名带主题前缀：');
+  console.log('  baseline/mise__tile.pale.png');
+  console.log('  baseline/mingsha__tile.pale.png');
 }

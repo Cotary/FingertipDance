@@ -20,14 +20,14 @@ const API_BASE = __API_BASE__;
 export type EventName =
   | 'app_start' | 'login_success'   | 'level_start' | 'tile_light' | 'level_pass'
   | 'level_fail' | 'level_abandon' | 'hint_use' | 'skip_use'
-  | 'level_load_fail' | 'progress_report_failed' | 'canvas_resize'
+  | 'level_load_fail' | 'progress_report_failed' | 'progress_report_rejected' | 'canvas_resize'
   | 'ad_start' | 'ad_complete' | 'ad_abort' | 'ad_error'
   | 'skin_unlock' | 'skin_equip' | 'skin_page_view' | 'theme_equip' | 'theme_page_view'
   | 'leaderboard_view' | 'share_click' | 'share_success'
   | 'challenge_start' | 'challenge_result'
   // 大厅体系（T23）
   | 'nav_click' | 'home_start_click' | 'map_level_click'
-  | 'leaderboard_tab_switch' | 'profile_view';
+  | 'leaderboard_tab_switch' | 'profile_view' | 'profile_stats_view';
 
 /** 缓冲的事件。 */
 interface BufferedEvent {

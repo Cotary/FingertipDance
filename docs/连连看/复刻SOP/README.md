@@ -148,6 +148,34 @@ node baseline.mjs --check --shots <游戏截图目录>
 Playwright 通过 `PLAYWRIGHT_PATH` 环境变量指定（默认指向本机 npx 缓存）。
 本项目的游戏本体不依赖它——它只是设计期工具。
 
+## 游戏侧的两个验证台
+
+这两个不比对像素，用来肉眼确认**画出来的语义对不对**（有些错，像素闸门抓不到）。
+
+```
+games/line/tools/design-replica/
+  shoot.html + shoot.mjs    单格出图（按 baseline/manifest.json 的尺寸与 pad）
+  trail-check.html + trail-shot.mjs   连线验证台：画真实一小盘 + 真实连线
+```
+
+### 连线验证台为什么必须有
+
+像素闸门只能比单格。**连线的错不会体现在单格上**——比如"传送门把两格用一条弧线连起来"，
+每一格都是对的，整条线的语义却是错的。这类问题只能看整图。
+
+`trail-check.html` 直接调用生产的 `drawCoverPlate / Cells / Trail / Marks`，
+不是另画一份（另画一份验的就不是真实效果）。它构造 5×5 盘，
+两端传送门几何上隔着两格，**若线还画跨格弧线，一眼就能看出来**。
+
+```bash
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:50003/   # 先确认 dev server
+cd games/line/tools/design-replica && node trail-shot.mjs         # → trail-check.png
+```
+
+与之配套的**逻辑锁**在 `test/cover-visual.test.ts`：它用会记录 `lineTo` 坐标的桩，
+断言"没有任何一条描边同时经过 A 和 B 的中心"，以及"线终止于 A、起始于 B"。
+注入旧实现（画跨格线）时这条测试立刻判红 —— 已实测。
+
 ## 已知边界
 
 | 项 | 说明 |

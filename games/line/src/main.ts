@@ -1,6 +1,7 @@
 import { platform } from './platform';
+import { ApiError } from './platform/apiError';
 import { configureAds } from './platform/wechat';
-import { fetchFriends, fetchLeaderboard, fetchProfile, fetchStars, login, fetchConfig, reportCoverProgress, reportCoverSkip, reportCoverChallenge, reportEvent, debugJump, type ServerConfig } from './net/api';
+import { fetchFriends, fetchLeaderboard, fetchProfile, fetchStars, login, fetchConfig, reportCoverProgress, reportCoverSkip, reportCoverChallenge, createShareChallenge, fetchChallengeInfo, fetchCoverHint, reportEvent, debugJump, type ServerConfig, type CoverChallengeOutcome } from './net/api';
 import { CoverSession } from './game/coverSession';
 import { CoverLevelStore } from './game/coverLevelStore';
 import { buildCoverRuntime, decodeCoverLevel } from './game/coverLevel';
@@ -15,7 +16,7 @@ import { audio } from './render/audio';
 import { SKINS, skinById } from './render/skins';
 import { drawSkinsPage, pickThemeChip, themeIdAt, isThemeOwned, unlockedThemeCount, shelfCount, stepThemeScroll, clampShelfScroll, type SkinsPageState } from './ui/skins';
 import { themeById } from './render/themes';
-import { enterTotalMs } from './render/themes/kit';
+import { enterTotalMs, enterTempo, enterSettleDelays } from './render/themes/kit';
 import { cellType, CoverCell } from './core/cover/v3/types';
 import { ads } from './ads/ads';
 import { needsAdForHint, canSkipToday, markSkippedToday } from './ads/rewardRules';
@@ -32,6 +33,8 @@ import {
 import { drawMapView } from './ui/mapdraw';
 import { drawRankPage, createRankState, type RankPageState } from './ui/leaderboard';
 import { drawProfilePage, type ProfilePageState } from './ui/profile';
+import { drawStatsPanel } from './ui/statsPanel';
+import { drawSharePanel, type SharePanelState } from './ui/sharePanel';
 import { drawNav, pickNavTab, type NavTab } from './ui/nav';
 import { LOBBY_THEME } from './ui/theme';
 import { drawWallWipe, WIPE_MS } from './ui/wipe';
@@ -41,7 +44,7 @@ import { publishProfile } from './platform/openData';
 import { parseChallenge, buildShareQuery } from './game/challenge';
 import { DEBUG_ENABLED } from './core/debug';
 import { applyDebugJumpInput, createDebugJumpState, drawDebugJump, type DebugJumpState } from './ui/debugjump';
-import { renderPoster, shareCopy } from './ui/share';
+import { renderPoster, shareCopy, shareCopyCount } from './ui/share';
 
 /**
  * 画布的 CSS 尺寸与设备像素比。
@@ -119,6 +122,13 @@ let trailAt = 0;
  * 反而省掉一处"忘了清 → 下次进关直接从半空开始"的坑。
  */
 let enterAt = 0;
+/**
+ * 进场收尾（玉磬 + 轻震）的定时器。
+ *
+ * 留着 id 是为了能停：跳过开场时（「不回放过程」）要把没响的收尾掐掉，
+ * 否则跳完之后音效还在自顾自播，又变成"动画完了音效还没结束"。
+ */
+let enterCueTimer: ReturnType<typeof setTimeout> | undefined;
 /**
  * 用户是否要求减少动效（`prefers-reduced-motion: reduce`）。
  *
@@ -251,8 +261,60 @@ type Phase =
 
 let config: ServerConfig | null = null;
 let phase: Phase = 'loading';
+/**
+ * 战绩弹层是否打开。
+ *
+ * 不新增 `Phase`：它是**长在我的页上**的模态层，不是独立页面。
+ * 做成 Phase 意味着要在 `isNavPhase` / 转场 / 底栏绘制里各处特判，
+ * 而弹层关闭后必须回到「同一个」我的页（含滚动位置等），
+ * 用布尔量在原地开合最不容易出错。
+ */
+let statsPanelOpen = false;
+let statsPanelButtons: Button[] = [];
+
+/**
+ * 分享抽屉（我的页「分享挑战」点开）。
+ *
+ * 与 `statsPanelOpen` 同理：是**叠在我的页上的模态层**，不占一个 Phase。
+ * 两个弹层互斥 —— 同时开着会叠两层遮罩，点关闭只关掉最上面那层。
+ */
+let sharePanelOpen = false;
+let sharePanelButtons: Button[] = [];
+/**
+ * 抽屉是从哪一页打开的 —— 关掉抽屉要退回这页。
+ *
+ * 大厅三个入口都能开抽屉（首页选关 / 地图 / 通关结算 / 我的页），
+ * 靠 `phase` 自己判断不出来：抽屉是**叠在页面上**的模态层，
+ * `phase` 在抽屉开着时仍然是原页面的值，但如果在抽屉里换了 tab
+ * 或玩家切后台回来，就需要一个显式记录来复位。
+ */
+let sharePanelFrom: Phase = 'profile';
+/**
+ * 这次分享是否宣称成绩。
+ *
+ * ## 为什么不能只看 `sharePanel.undos`
+ *
+ * `undos = 0` 有两种完全相反的含义：
+ *   - **挑战**：我真的一次都没重来（三星，最好的成绩）；
+ *   - **邀请**：我不宣称任何成绩（面板里 undos 缺省填 0）。
+ *
+ * 只看数字分不出来。用错的话，一次纯邀请会被写成「我零重来通关」——
+ * 好友打开看到的是一个我根本没拿到的分数，而且他几乎必输。
+ *
+ * 所以用这个显式标记，由 `openSharePanel` 的调用方决定。
+ */
+let sharePanelHasScore = false;
+const sharePanel: SharePanelState = {
+  levelIdx: 1,
+  undos: 0,
+  nickname: '我',
+  uid: 0,
+  copy: '',
+  copyIndex: 0,
+  query: '',
+};
 let resultButtons: Button[] = [];
-let resultData: { levelIdx: number; steps: number; shortest: number; timeMs: number; unlockedSkin: { id: string; name: string } | null; undos: number; skipped?: boolean } | null = null;
+let resultData: { levelIdx: number; steps: number; shortest: number; timeMs: number; unlockedSkin: { id: string; name: string } | null; undos: number; skipped?: boolean; rejected?: boolean } | null = null;
 let pressedBtn: string | null = null;
 let pendingLevel = 1;
 
@@ -378,8 +440,6 @@ let profilePage: ProfilePageState = {
   totalSteps: 0,
   totalTimeMs: 0,
   adWatchCnt: 0,
-  unlockedSkins: ['wood', 'mint'],
-  totalSkins: 16,
   soundOn: true,
   vibrateOn: true,
   starCount: 0,
@@ -582,6 +642,9 @@ async function gotoTab(tab: NavTab): Promise<void> {
       break;
     case 'profile':
       phase = 'profile';
+      // 从别的 tab 回来时不该继承上一次的弹层状态
+      statsPanelOpen = false;
+      sharePanelOpen = false;
       profilePage = {
         ...profilePage,
         nickname: progress.current.nickname || '玩家',
@@ -590,8 +653,6 @@ async function gotoTab(tab: NavTab): Promise<void> {
         totalSteps: progress.current.totalSteps,
         totalTimeMs: progress.current.totalTimeMs,
         adWatchCnt: progress.current.adWatchCnt,
-        unlockedSkins: progress.current.unlockedSkins,
-        totalSkins: SKINS.length,
         starCount: totalStars(),
         totalRetries: progress.current.totalRetries ?? 0,
         threeStarCount: Object.values(progress.current.stars ?? {}).filter((s) => s === 3).length,
@@ -679,8 +740,12 @@ session.on((e) => {
   }
   if (e.type === 'abandoned') {
     // 作废只剩一个入口：玩家按了**别的格子**（显式要重新起一笔）。
-    // 有步数 = 真的丢了一段；没有步数 = 切后台那种，不打扰玩家。
-    if (e.steps && e.steps > 0) showToast('重新起一笔 · 这一笔已计入重来', 1600);
+    //
+    // **不弹提示**（2026-11-19 去掉）。这里原先会 toast「重新起一笔 ·
+    // 这一笔已计入重来」，但它弹的时机是玩家正在专注拖线的中途 ——
+    // 一块横在屏幕上的文字，说的还是他自己刚刚做的事。
+    // 「重来次数 +1」在 HUD 上本来就有数，不需要再喊一遍。
+    // 无步数的情况（切后台等）同样不打扰。
     reportEvent('level_abandon', {
       level_idx: session.state?.runtime.level.idx,
       steps: e.steps,
@@ -699,6 +764,8 @@ async function onWin(steps: number, timeMs: number, path: number[], skipped = fa
   reportEvent('level_pass', { level_idx: level.idx, steps, time_ms: timeMs, undos, skipped });
 
   let unlockedSkin: { id: string; name: string } | null = null;
+  // 服务端明确拒绝（路径非法）时为 true：照常出结算页，但不推进进度。
+  let rejectedByServer = false;
   try {
     if (skipped) {
       // **跳过走独立接口** —— cover 的跳过没有路径可校验，
@@ -734,28 +801,51 @@ async function onWin(steps: number, timeMs: number, path: number[], skipped = fa
     }
   } catch (e) {
     console.error('上报成绩失败', e);
-    // ── 乐观更新本地进度 ──
+
+    // ── 服务端**明确拒绝** ≠ 网络故障 ──
     //
-    // ## 为什么失败也要推进本地进度
+    // `reportCoverProgress` 会按完整规则回放路径。若服务端判「路径非法」，
+    // 那是**玩家的路径真的不合法**（或客户端规则与服务端漂移），
+    // 绝不能当成"网络抖动"乐观放行 —— 否则校验形同虚设：
+    // 改内存画一条假路径，本地照样记成已通关。
     //
-    // 服务端没记上这一关 → `maxLevel` 不变 → 地图页把下一关画成「锁着」。
-    // 但玩家**已经打完了**这一关，而且 `pendingLevel` 已经推进到下一关 ——
-    // 于是玩家能进下一关（走 `pendingLevel`），却看到地图说没解锁。
-    //
-    // 两边不一致比「服务端数据晚点同步」糟糕得多：
-    // 玩家会以为进度丢了，反复重玩同一关。
-    //
-    // 本地先记上，下次登录时服务端会用 `GREATEST(max_level, ...)` 兜回来；
-    // 如果这次上报其实只是网络抖动、请求已经到达服务端，那本地值和服务端一致。
-    progress.sync({
-      maxLevel: Math.max(progress.current.maxLevel, level.idx),
-    });
-    // 星级也乐观写上（服务端没收到的话下次拉取会覆盖回来）
-    if (!skipped) {
-      progress.setStar(level.idx, starOfCoverLocal(undos));
+    // 但也**不能直接 return 掉结算页**：玩家在屏幕上确实铺满了，
+    // 直接吞掉通关会让他以为游戏卡了。所以照常出结算页，
+    // 只是不推进 maxLevel、不给星 —— 重进这一关还能再打。
+    if (e instanceof ApiError && e.isRejection) {
+      showToast('这一笔没能记上，请重试');
+      reportEvent('progress_report_rejected', {
+        level_idx: level.idx,
+        skipped,
+        reason: e.message,
+      });
+      // 跳过下面的乐观更新，但仍要走到结算页
+      // （用局部变量标记，避免用 return 把动画/结算一起掐掉）
+      rejectedByServer = true;
+    } else {
+      // ── 网络故障：乐观更新本地进度 ──
+      //
+      // ## 为什么失败也要推进本地进度
+      //
+      // 服务端没记上这一关 → `maxLevel` 不变 → 地图页把下一关画成「锁着」。
+      // 但玩家**已经打完了**这一关，而且 `pendingLevel` 已经推进到下一关 ——
+      // 于是玩家能进下一关（走 `pendingLevel`），却看到地图说没解锁。
+      //
+      // 两边不一致比「服务端数据晚点同步」糟糕得多：
+      // 玩家会以为进度丢了，反复重玩同一关。
+      //
+      // 本地先记上，下次登录时服务端会用 `GREATEST(max_level, ...)` 兜回来；
+      // 如果这次上报其实只是网络抖动、请求已经到达服务端，那本地值和服务端一致。
+      progress.sync({
+        maxLevel: Math.max(progress.current.maxLevel, level.idx),
+      });
+      // 星级也乐观写上（服务端没收到的话下次拉取会覆盖回来）
+      if (!skipped) {
+        progress.setStar(level.idx, starOfCoverLocal(undos));
+      }
+      showToast('成绩同步失败，进度已本地保存');
+      reportEvent('progress_report_failed', { level_idx: level.idx, skipped });
     }
-    showToast('成绩同步失败，进度已本地保存');
-    reportEvent('progress_report_failed', { level_idx: level.idx, skipped });
   }
 
   resultData = {
@@ -766,13 +856,18 @@ async function onWin(steps: number, timeMs: number, path: number[], skipped = fa
     unlockedSkin,
     undos,
     skipped,
+    // 服务端拒了这一笔：结算页据此提示「没记上」，且不显示「下一关」。
+    // 不能假装通关了 —— 玩家重进这一关还能再打，进度也不会被写脏。
+    rejected: rejectedByServer,
   };
   // **下一关 = 当前关 + 1**。
   //
   // 最后一关（1000）通关后这里是 1001 —— 超出关卡表范围。
   // 结算页据此判断「是不是全部通关了」，决定要不要显示「下一关」按钮
   // （见 `drawResult` 的 `isAllCleared`）。`enterLevel` 也有越界拦截兜底。
-  pendingLevel = level.idx + 1;
+  //
+  // 服务端拒绝时**不推进**：那一笔不算数，玩家应该回到本关重打。
+  if (!rejectedByServer) pendingLevel = level.idx + 1;
 
   // 发布进度到开放数据域（好友榜才准）
   publishMyProfile();
@@ -816,28 +911,50 @@ async function onChallengeWin(steps: number, timeMs: number, path: number[]) {
   const undos = session.state?.undos ?? 0;
   let isNewBest = false;
   let myBest = { undos: 0, timeMs: 0 };
+  let verdict: CoverChallengeOutcome | null = null;
   try {
-    const res = await reportCoverChallenge(level.idx, steps, timeMs, undos, path);
+    // 把 token 一起上送 —— 服务端按它取对手成绩并判定胜负。
+    // 我们**不上送任何对手分数**，请求体里也没有那个字段。
+    const res = await reportCoverChallenge(level.idx, steps, timeMs, undos, path, challenge?.token ?? undefined);
     isNewBest = res.isNewBest;
     myBest = res.best;
+    verdict = res.challenge ?? null;
   } catch (e) {
     console.error('提交挑战成绩失败', e);
   }
 
-  // 好友的分数（分享链接带的话）；没有就用自己的历史最佳
-  //
-  // 注意 `fromUndos` 可能是 0（好友一次都没重来 = 最好的成绩），
-  // 所以判空用 `!== null` 而不是 `> 0`。
-  const friendUndos = challenge?.fromUndos ?? null;
-  const rivalUndos = friendUndos !== null ? friendUndos : myBest.undos;
-  // 平手算赢 —— 挑战场景下「跟好友一样好」也是赢
-  const win = undos <= rivalUndos;
+  /**
+   * 胜负：**优先用服务端判的**。
+   *
+   * ## 为什么不再自己比 `undos`
+   *
+   * 旧实现在这里比 `undos <= challenge.fromUndos`，而 `fromUndos` 来自
+   * 分享链接的 query —— 好友把 `?undos=0` 一改就「挑战成功」。
+   * 那不是一个成绩，只是一句可以随便写的话。
+   *
+   * 现在服务端按 token 从库里取真正的对手成绩来判（见 resolveChallenge）。
+   * 只有服务端不可用（断网 / 老服务端没有这个字段）时才退回本地比较，
+   * 而且此时**只跟自己的历史最佳比**，不用链接里那个可篡改的数字。
+   */
+  let rivalUndos: number;
+  let win: boolean;
+  if (verdict) {
+    rivalUndos = verdict.rivalUndos;
+    win = verdict.win;
+  } else {
+    // 退化路径：服务端没给判定（无 token / 老服务端）。
+    // 只跟自己的历史最佳比 —— 链接里的 undos 不可信，不拿它当对手。
+    rivalUndos = myBest.undos;
+    win = undos <= rivalUndos;
+  }
 
   reportEvent('challenge_result', {
     from_uid: challenge?.fromUid,
     level_idx: level.idx,
     win,
     is_new_best: isNewBest,
+    // 判定来源：服务端 / 本地退化。用来核对「有多少挑战真的走了服务端判定」
+    verdict_by: verdict ? 'server' : 'local',
   });
 
   winAnimStart = Date.now();
@@ -848,7 +965,8 @@ async function onChallengeWin(steps: number, timeMs: number, path: number[]) {
       win,
       myUndos: undos,
       bestUndos: rivalUndos,
-      fromName: challenge?.fromName ?? '好友',
+      // 昵称用服务端快照（分享那一刻的署名），没有就用链接里的
+      fromName: verdict?.fromName || challenge?.fromName || '好友',
       isNewBest,
     };
     // 挑战不落印，所以只要等波次跑完（没有级联的主题仍是 1.2 秒）
@@ -1044,45 +1162,78 @@ async function enterLevel(idx: number) {
  *
  * ## 为什么要在开局就排一段定时器
  *
- * 设计稿的揭幕是"逐格就位 → **末格**全盘脉冲 + 玉磬"。末格那一刻
- * 是由主题参数算出来的（`escortMs`），只有 `main` 知道 `enterAt`，
+ * 设计稿的揭幕是"逐格落定 → **末格**落定那一下全盘脉冲 + 玉磬"。末格那一刻
+ * 是由主题参数算出来的（`enterTempo` 的 `total`），只有 `main` 知道 `enterAt`，
  * 所以在这里排一次。
+ *
+ * ## 排期必须和画面**同一个模型**
+ *
+ * 逐格音、玉磬的时刻全部来自 kit 的 `enterTempo` / `enterSettleDelays` ——
+ * 和 `enterProgress`（格子什么时候落）同源。早先这里另抄了一套锯齿扫掠公式
+ * （`(w−1)·step + (h−1)·(w·step+row)`，连压缩比都没扣落定段），
+ * 和画面的行序模型对不上：8×8 的天青盘上它算出 2.4s，而格子 1.58s 就落完了，
+ * 于是"沙雨还在下、玉磬还没响"，画面里盘却已经静态 —— 音画就是这么散的。
+ * 这个坑 kit 的 `enterTempo` 注释里已经修过一次，这里当时没跟着改。
+ * **要新的排期先去 `enterTempo` 取数，别再抄公式。**
  *
  * ## 两个必须守住的细节
  *
- * 1. **逐格音**排成一条时间线（`audio.settle`），不是每格一个 `setTimeout`：
+ * 1. **逐格音**排成一条时间线（`audio.settleAt`），不是每格一个 `setTimeout`：
  *    40 个定时器在低端机上各偏 10~30ms，听起来就是一串毛毛雨。
  * 2. **主题没给 `enter` 或没给 `settle` 音色 → 一声不发**，连玉磬也不放。
  *    玻璃 / 黏土那几套没有"逐格落下"这件事，硬加音效就是贴音效。
  */
 function armEnterCue(): void {
+  // 重入（跳过后重播 / 快速换关）要把上一段没响的收尾掐掉，不然会双响
+  if (enterCueTimer !== undefined) {
+    clearTimeout(enterCueTimer);
+    enterCueTimer = undefined;
+  }
   const th = currentTheme();
   const en = th?.motion?.enter;
   if (!en || !en.pulse) return;
   const st = session.state;
   if (!st) return;
 
-  const w = st.runtime.level.w;
-  const h = st.runtime.level.h;
-  // 总扫掠 = (w−1)·step + (h−1)·(w·step+row)，再按 sweep 压缩
-  const step = en.step ?? 24;
-  const row = en.row ?? 0;
-  const sweep0 = (w - 1) * step + (h - 1) * (w * step + row);
-  const k = en.sweep && sweep0 > en.sweep ? en.sweep / sweep0 : 1;
-  const ms = Math.max(60, en.ms ?? 300);
+  const level = st.runtime.level;
+  const { total } = enterTempo(en, level.w, level.h);
 
-  // 倒数第二格的时刻 → 末格；末格"落定"再晚 `ms`
-  const total = sweep0 * k + ms;
-  const lastAt = total - ms;
+  // 逐格音跟着每格**落定**走（不是等距一串）—— 行距 `row`、扫掠压缩 `k`
+  // 都得在拍子里听得见，否则声音听起来"平"，画面却在分行落。
+  // VOID 不落（kit 的画格循环直接跳过它），也就没有"落定"这一声。
+  audio.settleAt(
+    enterSettleDelays(en, level.w, level.h, (x, y) => cellType(level.grid[y * level.w + x]) === CoverCell.VOID),
+  );
 
-  // 逐格音（只有会"落定"的主题才有）：每格一小记，48ms 一粒
-  audio.settle(st.runtime.level.w * st.runtime.level.h, en.step ?? 48);
-  // 末格：玉磬 + 一次轻震（设计稿「末格触发全盘金光脉冲 + 玉磬」）
-  setTimeout(() => {
+  // 末格落定那一下：全盘脉冲（kit 按 `enterAt + total` 画）+ 玉磬 + 轻震
+  enterCueTimer = setTimeout(() => {
+    enterCueTimer = undefined;
     if (phase !== 'playing') return;
     audio.chime();
     vibeAt('tap');
-  }, Math.max(0, lastAt));
+  }, Math.max(0, total));
+}
+
+/**
+ * 跳过开场的音画收尾：**不回放过程**，收尾立刻来。
+ *
+ * 设计稿「动画中再点 = 跳过：所有格直接落定、沙光照播，不回放过程」——
+ * 沙光由 kit 按 `enterAt + total` 照常播（跳过时它正好落在当下），
+ * 这里只负责把还没响的逐格音停掉、玉磬立刻敲。
+ * 早先是重调一次 `armEnterCue`：整段沙雨从头再排一遍，
+ * 跳过之后画面静态、耳朵里却还在下雨，比不跳还糟。
+ */
+function skipEnterCue(): void {
+  if (enterCueTimer !== undefined) {
+    clearTimeout(enterCueTimer);
+    enterCueTimer = undefined;
+  }
+  audio.settleStop();
+  // 「主题没给收尾语言就一声不发」与 `armEnterCue` 同一口径
+  const en = currentTheme()?.motion?.enter;
+  if (!en || !en.pulse) return;
+  audio.chime();
+  vibeAt('tap');
 }
 
 /**
@@ -1119,13 +1270,41 @@ async function useHint() {
     viaAd = true;
   }
 
+  // ── 提示：**优先问服务端**（它拿参考解切片，O(1)，永远给得出）──
+  //
+  // 旧实现完全在浏览器里跑哈密顿求解器（`coverHint.ts`，120ms 预算）。
+  // 冰块关 / 传送门关上剪枝失效会超时，表现为「这一关暂时给不出提示」。
+  //
+  // 服务端有参考解时直接切后缀，比前端解快且稳。
+  // 网络不通 / 服务端没这关的数据时**退回前端求解** —— 不能因为断网就不给提示。
+  const levelIdx = st.runtime.level.idx;
+  const walked = st.path.map((l) => st.runtime.rs.flatOf[l]);
+  let served = false;
+  try {
+    const r = await fetchCoverHint(levelIdx, walked);
+    // 等网络这段时间里玩家可能已经换关 / 结算
+    if (session.state !== st) return;
+    if (r.fromReference && r.cells.length > 0) {
+      session.setHint(r.cells);
+      showToast(`跟着亮的路走，还剩 ${r.cells.length} 格`, 1900);
+      reportEvent('hint_use', { level_idx: levelIdx, via_ad: viaAd, solve_ms: 0 });
+      served = true;
+    }
+    // `fromReference=false` = 玩家走岔了，参考解接不回来。
+    // 这时**不要**直接用前端的「退回到哪」—— 交给下面兜底统一处理，
+    // 免得两条路径给出不一致的提示。
+  } catch {
+    // 网络失败 → 下面走前端求解
+  }
+  if (served) return;
+
   const hint = findCoverHint(st);
   if (!hint.found || hint.cells.length === 0) {
     // 走岔了 → 告诉他「退回到哪里还有救」
     if (hint.backtrackTo !== undefined) {
       session.setHint([hint.backtrackTo]);
       showToast('这条线已经走不通了，退回到高亮格试试');
-      reportEvent('hint_use', { level_idx: st.runtime.level.idx, via_ad: viaAd, dead_end: 1 });
+      reportEvent('hint_use', { level_idx: levelIdx, via_ad: viaAd, dead_end: 1 });
     } else {
       // 真给不出（理论上只剩「关卡数据缺参考解」这一种）也要说一声，
       // 静默失败是最糟的反馈：玩家会以为按钮坏了，然后一直点。
@@ -1138,7 +1317,7 @@ async function useHint() {
   // 一次给整条，玩家只需要顺着亮的那头走。
   // 报一下还剩多少格 —— 不然「路线到底有多长」只能靠数亮点，越走越没底。
   showToast(`跟着亮的路走，还剩 ${hint.cells.length} 格`, 1900);
-  reportEvent('hint_use', { level_idx: st.runtime.level.idx, via_ad: viaAd, solve_ms: hint.ms });
+  reportEvent('hint_use', { level_idx: levelIdx, via_ad: viaAd, solve_ms: hint.ms });
 }
 
 /** 跳过关卡。 */
@@ -1206,32 +1385,197 @@ function publishMyProfile() {
   });
 }
 
-/** 分享：生成海报 + 调起分享。 */
-function doShare() {
-  const st = session.state;
-  if (!st) return;
-  const level = st.runtime.level;
-  // cover 模式分享的是**重来次数** —— 步数恒定，比步数没意义。
-  const undos = st.undos ?? 0;
+/**
+ * 打开分享抽屉（设计稿 01 屏）。**三个入口共用这一个函数。**
+ *
+ * ## 为什么删掉了旧的 `doShare()`
+ *
+ * 旧实现从 `session.state` 取关卡与成绩，而 `session.state` 在大厅里
+ * 躺的是**上一次玩过的关卡**，且全项目没有一处把它置空 —— 于是从大厅
+ * 点分享会发出去一局陈旧的成绩。`openSharePanel` 让调用方显式传关号，
+ * 这个隐患从根上没有了。分享入口只剩这一条，旧的没有存在价值。
+ *
+ * 所以关卡与成绩一律由**调用方显式传入**，不从 session 猜。
+ *
+ * ## `undos` 的两种语义
+ *
+ * - `null` —— **邀请**：我不宣称任何成绩，只是叫你一起来玩。
+ *   query 里不带 `undos`，好友打开后按「我的历史最佳」比。
+ * - `number` —— **挑战**：这是我刚打出来的成绩（通关结算走这条）。
+ *   好友要重来 ≤ 我才能赢。
+ *
+ * 这两种不能混：邀请场景塞一个 0 进去，等于宣称「我零重来通关」，
+ * 那是一句谎话，也会把好友的胜负判定搞反（见 challenge.ts 的注释）。
+ *
+ * @param levelIdx 分享哪一关
+ * @param undos    成绩；`null` = 纯邀请
+ * @param from     从哪一页开的（关掉抽屉时回这里）
+ */
+function openSharePanel(levelIdx: number, undos: number | null, from: Phase = 'map') {
   const nickname = progress.current.nickname || '我';
-  // 带 uid / name —— 好友打开链接才知道「谁在挑战我」，
-  // 结算页也要跟**他**比（而不是跟全服最佳比）。
-  const query = buildShareQuery({
-    levelIdx: level.idx,
-    undos,
+  // 文案游标以关号为起点：同一关每次打开都是同一条，不会「刚才看着不错，再打开变了」
+  sharePanel.copyIndex = levelIdx % shareCopyCount();
+  sharePanel.levelIdx = levelIdx;
+  sharePanel.undos = undos ?? 0;
+  sharePanel.nickname = nickname;
+  sharePanel.uid = progress.current.uid;
+  sharePanel.copy = shareCopy(levelIdx, undos ?? 0, sharePanel.copyIndex);
+  // 显式记住「这次宣称成绩吗」—— 不能靠 undos 是否为 0 推断（见 sharePanelHasScore）
+  sharePanelHasScore = undos !== null;
+  sharePanel.query = buildShareQuery({
+    levelIdx,
+    ...(undos === null ? {} : { undos }),
     uid: progress.current.uid,
     name: nickname,
   });
-  const poster = renderPoster({ idx: level.idx, w: level.w, h: level.h }, progress.current.currentSkin, undos, nickname);
-  if (platform.name === 'web' && poster.toDataURL) {
-    const url = poster.toDataURL('image/png');
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `level-${level.idx}.png`;
-    a.click();
+  sharePanelFrom = from;
+  sharePanelOpen = true;
+  // 抽屉是模态的，战绩弹层必须让位（两层遮罩叠起来会黑成一片）
+  statsPanelOpen = false;
+  audio.tap();
+  vibeAt('tap');
+  reportEvent('share_click', { level_idx: levelIdx, kind: undos === null ? 'invite' : 'result' });
+}
+
+/** 分享抽屉：换一条文案。 */
+function rollShareCopy() {
+  sharePanel.copyIndex = (sharePanel.copyIndex + 1) % shareCopyCount();
+  sharePanel.copy = shareCopy(sharePanel.levelIdx, sharePanel.undos, sharePanel.copyIndex);
+  audio.tap();
+  vibeAt('tap');
+}
+
+/** 分享抽屉：真的把海报画出来（750×1334）。 */
+function buildInvitePoster() {
+  return renderPoster(
+    { idx: sharePanel.levelIdx, w: 6, h: 6 },
+    progress.current.currentSkin,
+    sharePanel.undos,
+    sharePanel.nickname,
+    { text: sharePanel.copy },
+    sharePanel.uid,
+    0,
+  );
+}
+
+/**
+ * 分享抽屉：确保这次分享在服务端有一条挑战记录，返回完整 query。
+ *
+ * ## 为什么 token 在「分享那一刻」才创建
+ *
+ * 面板打开时玩家可能只是看看海报、换换文案然后就取消了。
+ * 一开面板就往 `challenges` 表写一行，等于把「浏览」也记成「分享」，
+ * 裂变数据会虚高。
+ *
+ * ## 失败也必须能分享
+ *
+ * 拿不到 token（断网 / 老服务端）时退回**不带 token** 的旧 query ——
+ * 链接照样能打开、能玩、能通关，只是胜负退回「跟自己的历史最佳比」。
+ * 分享本身不该因为一个统计用的 token 而失败。
+ */
+async function buildShareQueryWithToken(): Promise<string> {
+  const { levelIdx, undos } = sharePanel;
+  // undos === 0 有两种可能：真零重来（邀请场景也是 0）。这里靠外部调用区分不了，
+  // 所以用 `sharePanelHasScore` 这个显式标记 —— 见 openSharePanel。
+  const hasScore = sharePanelHasScore;
+  const nickname = progress.current.nickname || '我';
+
+  let token: string | undefined;
+  try {
+    const res = await createShareChallenge(levelIdx, hasScore ? undos : undefined);
+    token = res.token;
+  } catch (e) {
+    // 不挡分享：记一笔就够了
+    console.error('创建分享挑战失败', e);
   }
-  void platform.share({ title: shareCopy(level.idx, undos), query });
-  reportEvent('share_click', { level_idx: level.idx });
+
+  return buildShareQuery({
+    levelIdx,
+    ...(hasScore ? { undos } : {}),
+    ...(token ? { token } : {}),
+    uid: progress.current.uid,
+    name: nickname,
+  });
+}
+
+/**
+ * 分享抽屉：调起一次分享。
+ *
+ * @param channel `friend` / `timeline`
+ */
+async function sendInvite(channel: 'friend' | 'timeline') {
+  const poster = buildInvitePoster();
+  // 微信卡片最佳比例是 5:4，9:16 的海报直接当 imageUrl 会被裁得很难看。
+  // 这里**不传** imageUrl：宁可让微信用它自己的默认图，也不要传一张会被裁坏的。
+  // （要出真正的 5:4 卡图是另一件事，见 platform/types.ts 的注释。）
+  void poster;
+
+  // 先落服务端挑战记录再分享 —— 链接里带 token，胜负由服务端判
+  const query = await buildShareQueryWithToken();
+  sharePanel.query = query;
+
+  const res = await platform.share({
+    title: sharePanel.copy,
+    query,
+    channel,
+  });
+
+  if (res === 'sent') {
+    showToast('已打开微信，选个好友发出去吧');
+    reportEvent('share_success', { level_idx: sharePanel.levelIdx, channel: 'friend' });
+    sharePanelOpen = false;
+  } else if (res === 'menu') {
+    // 朋友圈通道微信不允许定制内容，我们只能把菜单放出来，必须如实说明
+    showToast('已打开右上角菜单，点「分享到朋友圈」', 3000);
+    reportEvent('share_success', { level_idx: sharePanel.levelIdx, channel: 'timeline' });
+    sharePanelOpen = false;
+  } else if (res === 'copied') {
+    showToast('链接已复制，去粘贴给好友吧');
+    reportEvent('share_success', { level_idx: sharePanel.levelIdx, channel: 'copy' });
+    sharePanelOpen = false;
+  } else {
+    showToast('分享没成功，再试一次？');
+  }
+}
+
+/** 分享抽屉：复制链接。 */
+async function copyInviteLink() {
+  // 复制出去的链接同样要带 token ——
+  // 否则从「复制链接」发出去的挑战，好友通关时服务端判不了胜负。
+  const query = await buildShareQueryWithToken();
+  sharePanel.query = query;
+  const url = `${location.origin}${location.pathname}?${query}`;
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(url);
+    ok = true;
+  } catch { /* 落到下面的失败文案 */ }
+
+  if (ok) {
+    showToast('链接已复制');
+    reportEvent('share_success', { level_idx: sharePanel.levelIdx, channel: 'copy' });
+    sharePanelOpen = false;
+  } else {
+    showToast('复制没成功，长按上面的链接试试');
+  }
+}
+
+/** 分享抽屉：保存海报。 */
+function saveInvitePoster() {
+  const poster = buildInvitePoster();
+  if (platform.name === 'web' && poster.toDataURL) {
+    const a = document.createElement('a');
+    a.href = poster.toDataURL('image/png');
+    a.download = `invite-${sharePanel.levelIdx}.png`;
+    a.click();
+    showToast('海报已保存');
+  } else if (platform.name === 'wechat' && poster.toDataURL) {
+    // 微信小游戏保存到相册要 canvasToTempFilePath + saveImageToPhotosAlbum，
+    // 且都需要用户授权。这里先如实告知，不乱承诺。
+    showToast('请长按海报保存到相册');
+  } else {
+    showToast('当前环境不支持保存海报');
+  }
 }
 
 /**
@@ -1324,6 +1668,28 @@ function onDown(clientX: number, clientY: number) {
       if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
     }
     pressedBtn = null;
+    return;
+  }
+
+  // ── 战绩弹层：模态，压在我的页与底栏之上 ──
+  //
+  // 必须在「判底栏」之前拦截，否则底部 tab 会被点穿。
+  // 弹层按钮列表是「整屏遮罩 + 关闭键」两个，遮罩 id 也是 statsClose，
+  // 所以点卡片外任何地方都等于关闭。
+  if (phase === 'profile' && statsPanelOpen) {
+    for (const b of statsPanelButtons) {
+      if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
+    }
+    // 按钮还没画出来（首帧之前）也绝不下传
+    return;
+  }
+  // 分享抽屉是**全站模态**：它可能从首页 / 地图 / 结算页打开，
+  // 所以不能像战绩弹层那样只判 `phase === 'profile'`。
+  // 必须抢在底栏与页面按钮之前拦截，否则玩家会把抽屉下面的 tab 点穿。
+  if (sharePanelOpen) {
+    for (const b of sharePanelButtons) {
+      if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
+    }
     return;
   }
 
@@ -1446,8 +1812,8 @@ function onDown(clientX: number, clientY: number) {
       if (Date.now() - enterAt < total) {
         // 推到"整盘刚落定"那一刻，沙光脉冲才不会被一起跳掉
         enterAt = Date.now() - total;
-        // 全部落定 = 这一段的音画收尾也一并结束（`armEnterCue` 排的就是它）
-        armEnterCue();
+        // 全部落定 = 过程不回放，收尾立刻来（见 `skipEnterCue`）
+        skipEnterCue();
         return;
       }
     }
@@ -1555,6 +1921,30 @@ function onUp() {
     // 调试面板的键（入口牌子 `dj:open` 也走这里）
     if (DEBUG_ENABLED && id.startsWith('dj:')) { applyDebugJumpKey(id); return; }
 
+    // 战绩弹层：只有关闭键，且必须抢在导航之前（模态）
+    if (id === 'statsClose') {
+      statsPanelOpen = false;
+      audio.tap();
+      vibeAt('tap');
+      return;
+    }
+
+    // 分享抽屉
+    if (id === 'shareDismiss') {
+      sharePanelOpen = false;
+      // 回到开抽屉的那一页（地图/结算/我的）。
+      // 抽屉是叠在页面上的模态层，取消要退回原处 —— 不能让玩家在地图里
+      // 点开分享又取消，结果被丢回大厅。
+      if (phase !== sharePanelFrom) phase = sharePanelFrom;
+      audio.tap();
+      return;
+    }
+    if (id === 'shareNewCopy') { rollShareCopy(); return; }
+    if (id === 'shareWechat') { void sendInvite('friend'); return; }
+    if (id === 'shareTimeline') { void sendInvite('timeline'); return; }
+    if (id === 'shareCopyLink') { void copyInviteLink(); return; }
+    if (id === 'shareSavePoster') { saveInvitePoster(); return; }
+
     // 底部导航
     if (id.startsWith('nav:')) { void gotoTab(id.slice(4) as NavTab); return; }
 
@@ -1592,6 +1982,17 @@ function onUp() {
     }
     if (id.startsWith('map:')) {
       const idx = parseInt(id.slice(4), 10);
+
+      // ── 分享选关模式：点哪一关就分享哪一关 ──
+      //
+      // **不受进度限制** —— 分享不是玩，未解锁的关也可以发给好友；
+      // 好友点开才是真正在玩，而他本来就能玩（挑战链接直达）。
+      // 这里也不推进任何进度、不进关。
+      if (mapPage.shareMode) {
+        openSharePanel(idx, null, 'map');
+        return;
+      }
+
       if (isLevelPlayable(idx, mapPage)) {
         // 调试模式下点未解锁的关 → 先让服务端把进度推上去，
         // 这样目标关就是「当前关」，地图显示才对得上。
@@ -1609,6 +2010,25 @@ function onUp() {
         mapPage.toast = `先通过第 ${progress.current.maxLevel} 关`;
         mapPage.toastAt = Date.now();
       }
+      return;
+    }
+
+    // 首页「分享挑战」条 → 进地图的选关分享模式
+    if (id === 'homeSharePick') {
+      mapPage = createMapState(progress.currentLevel, totalLevelCount(), progress.current.stars, DEBUG_ENABLED);
+      mapPage.scrollY = Math.min(mapPage.maxScrollY, scrollToLevel(progress.currentLevel));
+      mapPage.shareMode = true;
+      mapDragStart = null;
+      phase = 'map';
+      audio.tap();
+      vibeAt('tap');
+      return;
+    }
+
+    // 地图选关模式的两个出口：脚卡「取消」/ 底部导航切走都算退出
+    if (id === 'sharePickCancel') {
+      mapPage.shareMode = false;
+      void gotoTab('home');
       return;
     }
 
@@ -1641,8 +2061,17 @@ function onUp() {
       vibeAt('trail');
       return;
     }
-    if (id === 'shareGame') { void doShare(); return; }
-    if (id === 'clearCache') { platform.storage.remove('levels_cache'); return; }
+    // 我的页「分享挑战」—— 邀请：不带成绩，挑的是「当前该打的那一关」
+    if (id === 'shareGame') { openSharePanel(progress.currentLevel, null, 'profile'); return; }
+    if (id === 'profileStats') {
+      // 两个弹层互斥，否则遮罩叠两层、点关闭只关掉最上面那层
+      sharePanelOpen = false;
+      statsPanelOpen = true;
+      audio.tap();
+      vibeAt('tap');
+      reportEvent('profile_stats_view', { max_level: profilePage.maxLevel });
+      return;
+    }
 
     // 游戏内
     if (id === 'hint') void useHint();
@@ -1662,7 +2091,18 @@ function onUp() {
       const target = challenge ? challenge.levelIdx : (resultData?.levelIdx ?? pendingLevel);
       void enterLevel(target);
     }
-    else if (id === 'share') doShare();
+    // 通关结算的「分享」：分享**刚打完的这一关 + 本局重来数**。
+    //
+    // 与我的页那条（邀请）的区别就在 `undos`：这里是真成绩，
+    // 好友要重来 ≤ 我才能赢；邀请那条不带成绩。
+    //
+    // 关号取 `resultData.levelIdx` 而不是 `pendingLevel` ——
+    // 后者是「下一关」，分享出去会变成一句和刚打完的这局无关的话。
+    else if (id === 'share') {
+      const lv = challenge ? challenge.levelIdx : (resultData?.levelIdx ?? pendingLevel - 1);
+      const undos = challengeResult ? challengeResult.myUndos : (resultData?.undos ?? null);
+      openSharePanel(lv, undos, 'result');
+    }
     else if (id === 'skins') {
       phase = 'skins';
       syncSkinsPage();
@@ -2134,6 +2574,30 @@ function renderFrame(now: number, dt: number): void {
     drawNav(ctx, navTabOf(phase), now, themeById(progress.current.currentTheme)?.chrome);
   }
 
+  // ── 战绩弹层（模态，压在底栏之上）──
+  //
+  // 必须画在 `drawNav` **之后**：弹层是模态的，底栏若压在它上面，
+  // 玩家会一边看着弹层一边把 tab 点穿。同理 `onDown` 里要抢先拦截。
+  if (phase === 'profile' && statsPanelOpen) {
+    statsPanelButtons = drawStatsPanel(ctx, {
+      maxLevel: profilePage.maxLevel,
+      currentLevel: profilePage.currentLevel,
+      starCount: profilePage.starCount,
+      threeStarCount: profilePage.threeStarCount,
+      totalRetries: profilePage.totalRetries,
+      totalSteps: profilePage.totalSteps,
+      totalTimeMs: profilePage.totalTimeMs,
+      adWatchCnt: profilePage.adWatchCnt,
+      levelCount: totalLevelCount(),
+    });
+  }
+
+  // ── 分享抽屉（全站模态，压在底栏与结算面板之上）──
+  //
+  // 绘制必须放在**所有页面之后**：它可能从首页 / 地图 / 结算页打开，
+  // 若跟着某一页画，从别处打开时就会被后面的页面盖住。
+  // 见文件末尾的 `drawSharePanel` 调用点。
+
   if (phase === 'result' && challengeResult) {
     resultButtons = drawChallengeResult(ctx, challengeResult);
   } else if (phase === 'result' && resultData) {
@@ -2146,6 +2610,7 @@ function renderFrame(now: number, dt: number): void {
       resultData.undos,
       resultData.skipped === true,
       isAllCleared,
+      resultData.rejected === true,
     );
   }
 
@@ -2182,6 +2647,18 @@ function renderFrame(now: number, dt: number): void {
     } else {
       drawWallWipe(ctx, visibleDesignBox(), e, wipeSkin);
     }
+  }
+
+  // ── 分享抽屉（全站模态：首页 / 地图 / 结算页都可能打开它）──
+  //
+  // 画在**页面与底栏之后、提示条之前**：
+  // - 在页面之后，换个入口打开也不会被后面的页面盖住；
+  // - 在提示条之前，因为「已打开微信」「链接已复制」这类反馈
+  //   恰恰是在抽屉上点出来的，必须比抽屉更靠前。
+  //
+  // 不放进 `isNavPhase` 分支：结算页不是 nav 页，但它也要能开抽屉。
+  if (sharePanelOpen) {
+    sharePanelButtons = drawSharePanel(ctx, sharePanel);
   }
 
   // ── 全局提示条（最后画，压在所有页面之上）──
@@ -2355,8 +2832,32 @@ async function boot() {
   // ④ 挑战参数
   challenge = parseChallenge();
 
+  // 带 token 的链接：用服务端记录校正「发起人是谁、当时什么成绩」。
+  //
+  // ## 为什么以服务端为准
+  //
+  // 链接里的 `undos` / `name` 只是**文案**，可能被改、也可能是老版本残留。
+  // 服务端那条记录是分享那一刻的快照，横幅与结算都该用它。
+  //
+  // 查不到（token 无效 / 老链接没带 token）就保留链接参数里解析出来的值 ——
+  // 挑战照玩，只是判定会走退化路径。
+  if (challenge?.token) {
+    const info = await fetchChallengeInfo(challenge.token);
+    if (info) {
+      challenge.fromName = info.fromName || challenge.fromName;
+      challenge.fromUid = info.fromUid || challenge.fromUid;
+      // fromUndos = -1 是「不带成绩」的哨兵 → 客户端用 null 表示「不知道」
+      challenge.fromUndos = info.hasScore ? info.fromUndos : null;
+    }
+  }
+
   // 分享挑战 → 直接进关卡；普通启动 → 回大厅
   if (challenge) {
+    reportEvent('challenge_start', {
+      level_idx: challenge.levelIdx,
+      from_uid: challenge.fromUid || undefined,
+      from_server: !!challenge.token,
+    });
     await enterLevel(challenge.levelIdx);
   } else {
     phase = 'home';

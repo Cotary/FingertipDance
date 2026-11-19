@@ -696,6 +696,19 @@ function drawHeader(ctx: CanvasRenderingContext2D, st: MapViewState, first: numb
   let totalStars = 0;
   for (const k of Object.keys(st.stars)) totalStars += st.stars[k] ?? 0;
 
+  if (st.shareMode) {
+    // 分享模式下标题改成**行动指令**：「挑一关」比「关卡地图」更能说明
+    // 玩家现在该干什么。右侧读数保留（还有用），但换成「点任意关分享」。
+    label(ctx, '挑一关分享', SCENE.x + 4, 62, 34, p.ink, { align: 'left', weight: 600, tracking: 10.88 });
+    label(
+      ctx,
+      '点任意关 → 发给好友',
+      SCENE.x + SCENE.w - 4, 62, 20, p.gold,
+      { align: 'right', weight: 600, tracking: 4.4 },
+    );
+    return;
+  }
+
   label(ctx, '关卡地图', SCENE.x + 4, 62, 34, p.ink, { align: 'left', weight: 600, tracking: 10.88 });
   label(
     ctx,
@@ -756,6 +769,28 @@ function drawFoot(ctx: CanvasRenderingContext2D, st: MapViewState, p: MapPalette
   const w = SCENE.w;
   const h = 104;
   const y = SCENE.y + SCENE.h + 24;
+
+  // 分享模式：脚卡换成「取消」。
+  //
+  // 原来的「回到当前 / 下一里程碑」在这个模式下是**误导**：
+  // 玩家此刻的意图是挑一关发出去，不是回到自己的进度。
+  // 给他一个明确的出口，比留一个能跳走的脚卡重要。
+  if (st.shareMode) {
+    const btn: Button = { x, y, w, h, label: '', kind: 'ghost', id: 'sharePickCancel' };
+    roundRect(ctx, x, y, w, h, 32);
+    ctx.fillStyle = 'rgba(22,36,30,0.55)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(185,178,164,0.26)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    const baseline = y + h / 2 + 4;
+    label(ctx, '取 消', x + 38, baseline, 26, p.inkSoft, { align: 'left', weight: 600, tracking: 6 });
+    label(ctx, '回到主页', x + w - 38, baseline - 2, 22, p.inkSoft, {
+      align: 'right', weight: 500, tracking: 3,
+    });
+    return btn;
+  }
+
   const btn: Button = { x, y, w, h, label: '', kind: 'ghost', id: 'playCurrent' };
 
   roundRect(ctx, x, y, w, h, 32);
@@ -924,8 +959,12 @@ export function drawMapView(
   drawHeader(ctx, st, first, last, p);
 
   const out: Button[] = [drawFoot(ctx, st, p)];
-  const home = drawHomePill(ctx, st, p);
-  if (home) out.push(home);
+  // 分享模式下不给「回到当前」：那颗药丸压在卡内下缘，
+  // 正好盖住最后几关的节点 —— 而这个模式的核心动作就是「点节点」。
+  if (!st.shareMode) {
+    const home = drawHomePill(ctx, st, p);
+    if (home) out.push(home);
+  }
   const debug = drawDebugEntry(ctx, st, p);
   if (debug) out.push(debug);
 
