@@ -1,16 +1,5 @@
 import { platform } from '../platform';
-
-/**
- * 每日键（UTC 日期）。
- *
- * 用 UTC 而不是本地日期，是因为「跨时区重装/改系统时间」的场景下
- * UTC 至少是单调的；本地日期反而更容易被拨回去刷次数。
- * 代价是国内玩家每天 08:00 才算「新的一天」——
- * 对「每天几次」这种额度来说可以接受，而且和 `ad_rewarded_*` 同一口径。
- */
-function todayKey(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { skipCountKey, skipLevelKey } from '../core/dayKey';
 
 /**
  * 每关**免费**提示次数（服务端 `ad.hintFreeUses` 下发）。
@@ -66,7 +55,7 @@ export function needsAdForHint(levelIdx: number, hintUsed: number): boolean {
 
 /** 今日已跳过关卡数。 */
 export function skipUsedToday(): number {
-  return parseInt(platform.storage.get(`skip_count_${todayKey()}`) ?? '0', 10) || 0;
+  return parseInt(platform.storage.get(skipCountKey()) ?? '0', 10) || 0;
 }
 
 /** 今日跳关上限（0 = 不限），供 UI 文案使用。 */
@@ -85,7 +74,7 @@ export function skipLimitToday(): number {
  * 两者都要报清楚，否则玩家点了一下没反应，会以为按钮坏了。
  */
 export function skipBlockReason(levelIdx: number): string | null {
-  if (platform.storage.get(`skip_${todayKey()}_${levelIdx}`) === '1') {
+  if (platform.storage.get(skipLevelKey(levelIdx)) === '1') {
     return '本关今天已经跳过了';
   }
   if (skipDailyLimit > 0 && skipUsedToday() >= skipDailyLimit) {
@@ -110,9 +99,10 @@ export function canSkipToday(levelIdx: number): boolean {
  * 否则上限永远读不到变化（表现为「配置了 3 次，实际能跳无限次」）。
  */
 export function markSkippedToday(levelIdx: number): void {
-  const day = todayKey();
-  platform.storage.set(`skip_${day}_${levelIdx}`, '1');
-  platform.storage.set(`skip_count_${day}`, String(skipUsedToday() + 1));
+  // 两个键必须来自**同一次** `dayKeyCN()` 调用：
+  // 跨零点那一瞬间各算一次的话，会写出「昨天的关 + 今天的计数」这种错配。
+  platform.storage.set(skipLevelKey(levelIdx), '1');
+  platform.storage.set(skipCountKey(), String(skipUsedToday() + 1));
 }
 
 /**

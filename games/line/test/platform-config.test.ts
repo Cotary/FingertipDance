@@ -10,6 +10,7 @@ import {
 import { Ads } from '../src/ads/ads';
 import { resolveShareBase } from '../src/game/challenge';
 import { platform } from '../src/platform';
+import { adRewardedKey } from '../src/core/dayKey';
 
 /**
  * 平台配置下发后的**客户端消费**规则。
@@ -82,9 +83,13 @@ describe('skipDailyLimit：每日跳关上限', () => {
 
 describe('激励视频每日额度', () => {
   it('额度用完时立即返回 false（不弹广告、不白等）', async () => {
-    // 直接写计数，不真跑一次 3 秒的 mock 广告
-    const day = new Date().toISOString().slice(0, 10);
-    platform.storage.set(`ad_rewarded_${day}`, '3');
+    // 直接写计数，不真跑一次 3 秒的 mock 广告。
+    //
+    // 键必须用 `adRewardedKey()`（东八区）而不是自己拼 UTC 日期 ——
+    // 测试里手算日期，被测代码换了口径就会两边对不上，而失败信息
+    // 只说「expected 3 to be 0」，看不出是日期口径问题。
+    const key = adRewardedKey();
+    platform.storage.set(key, '3');
 
     const a = new Ads();
     a.applyFrequency({ rewardedDailyLimit: 3 });
@@ -93,7 +98,7 @@ describe('激励视频每日额度', () => {
     expect(await a.showRewarded('hint')).toBe(false);
 
     a.applyFrequency({ rewardedDailyLimit: 0 });
-    platform.storage.set(`ad_rewarded_${day}`, '0');
+    platform.storage.set(key, '0');
   });
 
   it('上限 0 = 不限（Infinity）', () => {

@@ -1,16 +1,19 @@
 import { platform } from '../platform';
 import { reportEvent } from '../net/api';
+import { adRewardedKey } from '../core/dayKey';
 
 /** 广告位。 */
 export type Placement = 'hint' | 'skip' | 'skin_unlock' | 'result_interstitial' | 'skin_banner';
 
-/** 观看计数用的日期键（与 `rewardRules` 的每日键同一口径：UTC 日期）。 */
-function todayKey(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
+/**
+ * 观看计数用的日期键。
+ *
+ * 统一走 `core/dayKey.ts`（东八区）—— 与服务端 `skips.day` 同一口径。
+ * 曾经这里自己算了一次，且用的是 `toISOString()`（UTC），
+ * 于是每天有 8 小时两边不同日，额度判定和服务端对不上。
+ */
 function rewardedCountKey(): string {
-  return `ad_rewarded_${todayKey()}`;
+  return adRewardedKey();
 }
 
 /**
