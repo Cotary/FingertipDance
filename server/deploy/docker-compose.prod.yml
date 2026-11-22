@@ -8,6 +8,17 @@ services:
       POSTGRES_USER: fgame
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: fgame
+      # ## 时区必须跟业务侧对齐
+      #
+      # 业务按东八区判断「今天」（`skips.day`、每日跳关额度、签到），
+      # 而 Postgres 容器默认 UTC —— 后台统计用的 `created_at::date`
+      # 与业务口径会差 8 小时：凌晨 0~8 点的注册/活跃被算进前一天，
+      # 两边的「今日」永远对不上，且不会报任何错。
+      #
+      # `TZ` 影响容器与 initdb 的默认时区，`PGTZ` 影响客户端连接会话的
+      # `timezone`（`::date` 转换按会话时区走），两个都要设。
+      TZ: Asia/Shanghai
+      PGTZ: Asia/Shanghai
     volumes:
       - pg-data:/var/lib/postgresql/data
     restart: always

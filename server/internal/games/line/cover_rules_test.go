@@ -1,6 +1,7 @@
 package line
 
 import (
+	"encoding/base64"
 	"testing"
 )
 
@@ -17,7 +18,7 @@ func TestCoverLevelsLoad(t *testing.T) {
 	}
 }
 
-// TestCoverReferenceSolutionsValid 验证**非传送门关卡**的参考解都能通过完整规则校验。
+// TestCoverReferenceSolutionsValid 验证**所有关卡**的参考解都能通过完整规则校验。
 //
 // 这是 Go 侧与 TypeScript 侧「同一份规则」的交叉验证：
 // Go 独立实现了冰块滑行 / 单向门 / 钥匙门 / 传送门 / 星星顺序，
@@ -26,19 +27,14 @@ func TestCoverLevelsLoad(t *testing.T) {
 // 全量跑（不是抽样）—— 因为规则判定漂移往往只出现在**少数关卡**上，
 // 抽样会漏掉。1000 关的回放是 O(n)，总共几毫秒。
 //
-// ## 为什么排除传送门关卡（2026-11-20）
+// ## 传送门关卡现在也全量校验（2026-11-20）
 //
-// 传送语义改成了「进入即传送」，而现有 252 个传送门关卡是
-// 「传送门摆在解路径中间、被物理踩过去」生成的 —— 强制传送后
-// 夹在中间的那些格（如第 153 关的 (3,0)）永远进不去，参考解必然失效。
-//
-// 这不是规则错了，是**关卡表要重新生成**（用户已确认由他重做）。
-// 新表生成后 skipped 应为 0，届时把过滤删掉即可恢复全量校验。
+// 关卡表已按新语义重新生成：传送门关卡的参考解是**专门拼接**出来的
+// （跳跃边的两端就是传送门对），所以强制传送后依然能逐位回放。
 func TestCoverReferenceSolutionsValid(t *testing.T) {
 	if err := CoverLevels.Load("testdata/nonexistent"); err != nil {
 		t.Fatalf("加载 cover 关卡表失败: %v", err)
 	}
-	skipped := 0
 	for idx := 1; idx <= CoverLevels.Count(); idx++ {
 		lv := CoverLevels.Get(idx)
 		if lv == nil {
@@ -52,10 +48,6 @@ func TestCoverReferenceSolutionsValid(t *testing.T) {
 		if err != nil {
 			t.Fatalf("第 %d 关盘面解码失败: %v", idx, err)
 		}
-		if coverGridHasPortal(grid) {
-			skipped++
-			continue
-		}
 		cells := grid.Walkable()
 		if len(sol) != len(cells) {
 			t.Fatalf("第 %d 关参考解长度 %d != 可走格数 %d", idx, len(sol), len(cells))
@@ -64,19 +56,6 @@ func TestCoverReferenceSolutionsValid(t *testing.T) {
 			t.Fatalf("第 %d 关参考解校验失败: %v", idx, err)
 		}
 	}
-	if skipped > 0 {
-		t.Logf("跳过 %d 个传送门关卡（待重新生成）", skipped)
-	}
-}
-
-// coverGridHasPortal 盘面上是否有传送门格。
-func coverGridHasPortal(g *CoverGrid) bool {
-	for i := range g.Bytes {
-		if coverCellType(g.Bytes[i]) == CoverPortal {
-			return true
-		}
-	}
-	return false
 }
 
 // TestCoverRejectsIncompletePath 短路径（没铺满）必须被拒绝。
@@ -129,6 +108,137 @@ func TestCoverRejectsRepeat(t *testing.T) {
 	if err := CoverLevels.ValidatePath(1, bad); err == nil {
 		t.Fatal("重复走同一格应被拒绝")
 	}
+}
+
+// TestCoverSolutionCodecJumps 验证解的第 4 段（传送跳跃）的编解码。
+//
+// 「进入即传送」下，解里相邻两格可能**几何上不相邻** —— 那是传送跳跃。
+// 2 bit 的方向编码表达不了这种步长，所以跳跃步单独记在第 4 段：
+//
+//	"起点,步数,base64(方向序列),stepIdx:targetFlat;stepIdx:targetFlat;…"
+//
+// 无跳跃的关卡仍然只有 3 段（旧格式照常能读）。
+func TestCoverSolutionCodecJumps(t *testing.T) {
+	w := 5
+
+	// ① 3 段（无跳跃）：路径 0→1→2→7→12
+	sol3 := "0,4,____"
+	if _, err := DecodeCoverSolution(sol3, w); err == nil {
+		t.Fatal("非法 base64 应被拒绝")
+	}
+
+	// ② 4 段（有一个跳跃）：手动构造 base64 方向序列。
+	//
+	// 方向编码：0=上 1=下 2=左 3=右，每 4 个方向打包成 1 字节（高位在前）。
+	//
+	// 路径（5 列）：0 → 1 → 2 → 17 → 18
+	//   步 0：0→1   = 右（3）
+	//   步 1：1→2   = 右（3）
+	//   步 2：2→17  = **跳跃** → 占位方向 0（UP），目标记在第 4 段
+	//   步 3：17→18 = 右（3）
+	//
+	// 方向序列 = [3, 3, 0, 3] → 一个字节 = 3<<6 | 3<<4 | 0<<2 | 3 = 0xF3
+	dirs := []byte{0xF3}
+	enc := "0,4," + base64.StdEncoding.EncodeToString(dirs) + ",2:17"
+	got, err := DecodeCoverSolution(enc, w)
+	if err != nil {
+		t.Fatalf("解码失败: %v", err)
+	}
+	want := []int{0, 1, 2, 17, 18}
+	if len(got) != len(want) {
+		t.Fatalf("解长度 = %d，期望 %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("第 %d 格 = %d，期望 %d", i, got[i], want[i])
+		}
+	}
+
+	// ③ 跳跃记录格式非法 → 报错
+	bad := "0,4," + base64.StdEncoding.EncodeToString(dirs) + ",xx"
+	if _, err := DecodeCoverSolution(bad, w); err == nil {
+		t.Fatal("非法跳跃记录应被拒绝")
+	}
+}
+
+// TestCoverReferenceSolutionHasPortalJumps 验证传送门关卡的参考解**真的**用到了传送。
+//
+// 这是「参考解不是摆设」的检查：
+//   - 传送门关卡的解里必须存在**非邻接步**（传送跳跃）；
+//   - 跳跃的两端必须就是同一对传送门。
+//
+// 没有这条，生成器可能产出「有传送门但参考解从不传送」的关卡 ——
+// 那种关卡在旧语义下能过校验，在新语义下会让玩家卡死。
+func TestCoverReferenceSolutionHasPortalJumps(t *testing.T) {
+	if err := CoverLevels.Load("testdata/nonexistent"); err != nil {
+		t.Fatalf("加载 cover 关卡表失败: %v", err)
+	}
+	portalLevels := 0
+	jumpLevels := 0
+	for idx := 1; idx <= CoverLevels.Count(); idx++ {
+		sol, err := CoverLevels.ReferenceSolution(idx)
+		if err != nil {
+			t.Fatalf("第 %d 关参考解解码失败: %v", idx, err)
+		}
+		grid, err := CoverLevels.Grid(idx)
+		if err != nil {
+			t.Fatalf("第 %d 关盘面解码失败: %v", idx, err)
+		}
+		cells := grid.Walkable()
+		rs := buildCoverRuleSet(cells, grid)
+
+		hasPortal := false
+		for i := range rs.TypeOf {
+			if int(rs.TypeOf[i]) == CoverPortal {
+				hasPortal = true
+				break
+			}
+		}
+		if !hasPortal {
+			continue
+		}
+		portalLevels++
+
+		// 局部编号 ↔ 拍平索引
+		localOf := make(map[int]int, len(cells))
+		for i, c := range cells {
+			localOf[c] = i
+		}
+
+		jumps := 0
+		for i := 1; i < len(sol); i++ {
+			a := sol[i-1]
+			b := sol[i]
+			dx := abs(a%grid.W - b%grid.W)
+			dy := abs(a/grid.W - b/grid.W)
+			if dx+dy == 1 {
+				continue
+			}
+			jumps++
+			la, ok1 := localOf[a]
+			lb, ok2 := localOf[b]
+			if !ok1 || !ok2 {
+				t.Fatalf("第 %d 关：跳跃端点不在可走格上", idx)
+			}
+			if int(rs.TypeOf[la]) != CoverPortal || int(rs.TypeOf[lb]) != CoverPortal {
+				t.Fatalf("第 %d 关：跳跃两端不是传送门", idx)
+			}
+			if rs.PortalOf[la] != lb {
+				t.Fatalf("第 %d 关：跳跃两端不是同一对传送门", idx)
+			}
+		}
+		if jumps == 0 {
+			t.Fatalf("第 %d 关：含传送门但参考解从未传送", idx)
+		}
+		jumpLevels++
+	}
+	if portalLevels == 0 {
+		t.Fatal("关卡表里没有任何传送门关卡")
+	}
+	if jumpLevels != portalLevels {
+		t.Fatalf("含传送门的关卡 %d 个，用到传送的 %d 个", portalLevels, jumpLevels)
+	}
+	t.Logf("传送门关卡 %d 个，全部在参考解里用到了传送", portalLevels)
 }
 
 // TestCoverGridDecode 验证 grid 的位布局与 TS 侧一致。

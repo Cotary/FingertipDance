@@ -52,14 +52,52 @@ type entry struct {
 	TotalTimeMs int64  `json:"totalTimeMs"`
 }
 
-// GetHandler 返回总榜。
+// 排行榜分页的默认值与上限。
+//
+// ## 为什么要上限
+//
+// `limit` 直接进 Redis 的 `ZREVRANGE`。不设上限的话，一个
+// `?limit=1000000` 就能把整个 Redis 的有序集合拉出来、再逐条查用户表 ——
+// 一次请求打满内存和数据库连接池。100 条一页对榜单 UI 已经绰绰有余。
+const (
+	DefaultPageSize = 50
+	MaxPageSize     = 100
+)
+
+// clampRankWindow 把请求里的 offset / limit 收进合法范围。
+//
+// 负 offset、0 或负数 limit、超大 limit 都在这里归一 —— 让处理函数里
+// 只剩一条"按窗口取"的路径，不用在每个调用点重复防御。
+func clampRankWindow(offset, limit int) (int, int) {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = DefaultPageSize
+	}
+	if limit > MaxPageSize {
+		limit = MaxPageSize
+	}
+	return offset, limit
+}
+
+// GetHandler 返回总榜（支持 offset / limit 翻页）。
+//
+// ## 为什么必须能翻页
+//
+// 以前写死 `ZREVRANGE 0 99`：1000 关的游戏，第 100 名之外的人
+// **永远看不到自己**。榜单页会给他画一条「我的名次 第 4213 名」，
+// 但上面那 100 个人和他毫无关系 —— 那是"别人的榜单"，不是"我的"。
 func GetHandler(db *core.DB, rdb *core.Redis) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		uid := core.UIDFromContext(c)
 
-		// 取 Top 100
-		zs, err := rdb.ZRevRangeWithScores(ctx, KeyGlobal, 0, 99).Result()
+		offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+		limit, _ := strconv.Atoi(c.DefaultQuery("limit", strconv.Itoa(DefaultPageSize)))
+		offset, limit = clampRankWindow(offset, limit)
+
+		zs, err := rdb.ZRevRangeWithScores(ctx, KeyGlobal, int64(offset), int64(offset+limit-1)).Result()
 		if err != nil {
 			core.Fail(c, core.CodeInternal, "读取榜单失败: "+err.Error())
 			return
@@ -83,7 +121,9 @@ func GetHandler(db *core.DB, rdb *core.Redis) gin.HandlerFunc {
 		for i, z := range zs {
 			member, _ := z.Member.(string)
 			parsed, _ := strconv.ParseInt(member, 10, 64)
-			e := entry{Rank: i + 1, UID: parsed}
+			// 名次是**全局**名次：第二页第一条是第 offset+1 名，
+			// 不是第 1 名（那会让每一页都从 1 开始编号）
+			e := entry{Rank: offset + i + 1, UID: parsed}
 			if info, ok := infoMap[parsed]; ok {
 				e.Nickname = info.nickname
 				e.Avatar = info.avatar
@@ -105,6 +145,8 @@ func GetHandler(db *core.DB, rdb *core.Redis) gin.HandlerFunc {
 			"list":   list,
 			"myRank": myRank,
 			"total":  total,
+			"offset": offset,
+			"limit":  limit,
 		})
 	}
 }

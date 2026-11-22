@@ -21,14 +21,36 @@ const ContextUID = "uid"
 // 都能从用户浏览器里拿 token 调我们的 API。
 //
 // 现在改成白名单：
-//   - `allowed` 含 `*` → 允许所有（本地开发默认）
+//   - `allowed` 含 `*` → 允许所有（**只在本地开发用**，需要显式写出来）
 //   - `allowed` 为空 → 拒绝所有跨域（只放行同源请求）
 //   - 否则按 `Origin` 精确匹配
 //
 // `Allow-Credentials` 与 `Origin: *` 不能共存（浏览器规范），
 // 所以通配符模式下会忽略 credentials，并回显具体的 Origin。
+//
+// ## 为什么「空 = 拒绝」而不是「空 = 放行」
+//
+// 这个判据反过一次，代价很大。
+//
+// 原来写的是 `allowAll := len(allowed) == 0` —— 意思是「没配就放行全部」。
+// 理由大概是「本地开发没配 CORS 段也能跑」。但生产配置里**常常根本没有
+// `cors:` 段**（那一段只出现在 `config.local.yaml`），于是
+// `cfg.CORS.AllowedOrigins` 是 `nil` → 传进来零个参数 → `allowAll = true`
+// → **生产环境实际下发 `Access-Control-Allow-Origin: *`**，
+// 而 `Allow-Headers` 里含 `Authorization`。
+//
+// 后果就是当年改成白名单要防的那件事：任何网站都能从玩家浏览器里
+// 拿 token 调我们的 API。而且它**不会报错** —— 一切看起来都正常。
+//
+// 现在改成「必须显式写 `*` 才放行全部」。空列表 = 拒绝所有跨域。
+// 本地开发不受影响：`config.local.yaml` 里写的是 `allowed_origins: ["*"]`，
+// 是显式的。
+//
+// 副作用（正是我们要的）：`config.prod.yaml` 里**不写** `cors:` 段时，
+// 生产默认是「拒绝一切跨域」而不是「放行一切」—— 安全的那个方向。
 func CORS(allowed ...string) gin.HandlerFunc {
-	allowAll := len(allowed) == 0
+	// 只认**显式**的 `*`。空列表不是放行全部，是拒绝全部。
+	allowAll := false
 	set := make(map[string]bool, len(allowed))
 	for _, o := range allowed {
 		if o == "*" {

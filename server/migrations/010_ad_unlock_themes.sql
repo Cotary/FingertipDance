@@ -1,0 +1,22 @@
+-- 010_ad_unlock_themes.sql
+--
+-- 广告解锁的**棋盘主题**。
+--
+-- ## 为什么不复用 `unlocked_skins`
+--
+-- `users.unlocked_skins` 是**棋子皮肤**（wood / mint / gold…）的命名空间，
+-- 好友列表里的「皮肤数」就是 `jsonb_array_length(unlocked_skins)`。
+-- 把主题 id（mise / mingsha）塞进去会造成两个后果：
+--
+--   1. 好友榜的「皮肤数」凭空变大（26 个皮肤？）；
+--   2. 主题和皮肤都没有"我是哪一类"的信息，清理/回滚时分不开。
+--
+-- 两个命名空间就两列，互不干扰。里程牌主题（第 N 关解锁）仍然**不落盘** ——
+-- 它由 `max_level` 推导，跨设备天然一致（见 `themeUnlocked` 的说明）。
+--
+-- 只有「看广告解锁」这一档需要落盘：它既不能从进度推导，
+-- 也不能只存本地（换机就丢，玩家会认为"看了广告什么都没给"）。
+--
+-- 迁移每次启动全跑（`core/migrate.go` 不记版本），所以必须幂等。
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS unlocked_themes JSONB NOT NULL DEFAULT '[]'::jsonb;

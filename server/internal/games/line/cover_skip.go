@@ -1,6 +1,7 @@
 package line
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -23,7 +24,18 @@ import (
 //   - **推进最高关卡**（否则玩家会卡死在这一关）
 //   - **不发皮肤**（跳过不算真通关）
 //   - **不给星**（跳过的关卡星级为 0，地图上不点亮）
-func CoverSkipHandler(db *core.DB) gin.HandlerFunc {
+//
+// ## 每日次数必须由服务端兜
+//
+// `skipDailyLimit` 以前只在客户端判（`rewardRules.ts`）。玩家清掉本地缓存
+// 就能无限跳关 —— 而跳过会 `GREATEST(max_level, level_idx)` 推进主线，
+// 等于花 0 成本刷进度。所以这里按 `skips` 表当日的行数再卡一次：
+//
+//   - 客户端判的是「手感」（不用等网络就知道今天没额度了）
+//   - 服务端判的是**规矩**（改本地存储没用）
+//
+// 次数上限从 `platform_config` 读（每个平台可以不同），读失败按默认值（0 = 不限）。
+func CoverSkipHandler(db *core.DB, load PlatformConfigLoader) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			LevelIdx int `json:"levelIdx"`
@@ -60,6 +72,38 @@ func CoverSkipHandler(db *core.DB) gin.HandlerFunc {
 		if err := lockUserRow(tx, uid); err != nil {
 			core.Fail(c, core.CodeInternal, "锁定用户失败: "+err.Error())
 			return
+		}
+
+		// ── 每日总次数（服务端兜底）──
+		//
+		// 先判总额度、再判「本关是否已跳过」：额度用完是更早、更明确的拒绝。
+		// 反过来的话，玩家会以为「只是这一关跳过了」，换个关继续点，
+		// 每点一次都要过一次网络和一次广告加载。
+		//
+		// 配置读失败 / 查不到用户平台 → limit = 0（不限）。
+		// 这里**不能**因为读不到配置就拒绝玩家：配置库挂了不代表玩家违规。
+		limit := 0
+		if load != nil {
+			var platform int
+			if err := tx.QueryRow("SELECT platform FROM users WHERE id=$1", uid).Scan(&platform); err == nil {
+				if cfg, err := load(PlatformCodeOf(strconv.Itoa(platform))); err == nil {
+					limit = cfg.Ad.SkipDailyLimit
+				}
+			}
+		}
+		if limit > 0 {
+			var used int
+			if err := tx.QueryRow(
+				"SELECT count(*) FROM skips WHERE uid=$1 AND mode=$2 AND day=$3",
+				uid, ModeCover, day,
+			).Scan(&used); err != nil {
+				core.Fail(c, core.CodeInternal, "读取跳关次数失败: "+err.Error())
+				return
+			}
+			if used >= limit {
+				core.Fail(c, core.CodeSkipLimit, "今日跳关次数已用完（"+strconv.Itoa(limit)+" 次）")
+				return
+			}
 		}
 
 		// 幂等插入：已存在则跳过

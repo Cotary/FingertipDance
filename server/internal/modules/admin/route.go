@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/tupss/f-game/server/internal/core"
+	"github.com/tupss/f-game/server/internal/games/line"
 	"github.com/tupss/f-game/server/internal/modules/adrev"
 )
 
@@ -106,6 +107,48 @@ func Register(r *gin.Engine, cfg *core.Config, issuer *core.TokenIssuer, db *cor
 			days, _ := strconv.Atoi(c.DefaultQuery("days", "30"))
 			c.Data(http.StatusOK, "text/html; charset=utf-8",
 				[]byte(AdsPage(db, core.AdminFromContext(c), days)))
+		})
+		// ── 平台配置：一个页面改微信 / 抖音两份 ──
+		//
+		// 保存用 POST + 302 重定向（而不是渲染同一个响应）：
+		// 浏览器刷新时不会重复提交表单 —— 配置重复提交虽然幂等，
+		// 但「刷新一次就多一条修改记录」会污染 updated_at / updated_by。
+		page.GET("/config", func(c *gin.Context) {
+			notice := ""
+			if c.Query("saved") == "1" {
+				notice = "已保存。客户端重新启动或刷新后生效。"
+			}
+			c.Data(http.StatusOK, "text/html; charset=utf-8",
+				[]byte(ConfigPage(db, core.AdminFromContext(c), nil, notice, "")))
+		})
+		page.POST("/config", func(c *gin.Context) {
+			who := core.AdminFromContext(c)
+			if err := c.Request.ParseForm(); err != nil {
+				c.Data(http.StatusOK, "text/html; charset=utf-8",
+					[]byte(ConfigPage(db, who, nil, "", "表单解析失败: "+err.Error())))
+				return
+			}
+			// base = 库里的当前值：表单里留空的数字栏按它兜底
+			base, _ := LoadAllPlatformConfigs(db, configPlatforms)
+			submitted := make(map[int]line.PlatformConfig, len(configPlatforms))
+			for _, p := range configPlatforms {
+				prefix := formPrefix(p)
+				// 表单里压根没有这个平台 → 保持原值。
+				// 不能按「全空表单」解析：那会把开关全关、主题清空，
+				// 等于因为一次不完整的请求把半个平台下线。
+				if !formHasPlatform(c.Request.PostForm, prefix) {
+					submitted[p] = base[p]
+					continue
+				}
+				submitted[p] = ReadPlatformForm(c.Request.PostForm, prefix, base[p])
+			}
+			if err := SavePlatformConfigs(db, submitted, who); err != nil {
+				// 失败时回显**提交的值**，别让运营重填
+				c.Data(http.StatusOK, "text/html; charset=utf-8",
+					[]byte(ConfigPage(db, who, submitted, "", err.Error())))
+				return
+			}
+			c.Redirect(http.StatusFound, "/admin/config?saved=1")
 		})
 		// 页面表单提交（手工补录 / 触发同步）
 		page.POST("/ads/manual", func(c *gin.Context) {

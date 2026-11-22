@@ -98,8 +98,17 @@ type CORSConfig struct {
 	// AllowedOrigins 是允许的来源白名单。
 	//
 	// 特殊值：
-	//   - `*`：允许所有（**仅限本地开发**，默认值）
-	//   - 空数组：拒绝所有跨域请求
+	//   - `*`：允许所有（**仅限本地开发**，必须显式写出来）
+	//   - 空数组 / 没配这一段：拒绝所有跨域请求
+	//
+	// ## 「没配」= 拒绝，不是放行
+	//
+	// 这一条改过（原来 `CORS()` 里是 `len(allowed) == 0` → 放行全部），
+	// 因为生产配置里常常根本没有 `cors:` 段 —— 那会让生产**静默**下发
+	// `Access-Control-Allow-Origin: *`，正是白名单要防的攻击面。
+	//
+	// 现在空列表一律按「拒绝所有跨域」处理。
+	// 小游戏端不受影响：`wx.request` 不带 `Origin` 头，走的是同源/非浏览器分支。
 	AllowedOrigins []string `yaml:"allowed_origins"`
 	// AllowCredentials 是否允许携带 Cookie。
 	//

@@ -3,6 +3,7 @@ package line
 import (
 	"encoding/base64"
 	"fmt"
+	"strings"
 )
 
 // Cover v3：格子类型与位布局。
@@ -554,15 +555,23 @@ func replayCoverPath(rs *CoverRuleSet, pathLocal []int) error {
 	return nil
 }
 
-// DecodeCoverSolution 解码解（"起点,步数,base64(方向序列)"）。
+// DecodeCoverSolution 解码解（"起点,步数,base64(方向序列)[,jumps]"）。
 //
 // 返回拍平索引序列。
 //
 // 编码格式见 TS 侧 `codec.ts` 的 `encodeSolution`：
 // 每 4 个方向打包成 1 字节（每个方向 2 bit，高位在前）。
+//
+// ## 第 4 段：传送跳跃
+//
+// 「进入即传送」下，走进传送格 A 的一步会一次吃掉 [A, B]，
+// 于是解里**相邻两格可能几何上不相邻** —— 那种步长没法用 2 bit 的方向编码表示。
+//
+// 所以跳跃步单独记在第 4 段：`stepIdx:targetFlat` 用 ';' 分隔。
+// 没有跳跃的关卡仍然只有 3 段（旧格式照常能读）。
 func DecodeCoverSolution(s string, w int) ([]int, error) {
 	parts := splitComma(s)
-	if len(parts) != 3 {
+	if len(parts) != 3 && len(parts) != 4 {
 		return nil, fmt.Errorf("解格式非法")
 	}
 	start, err := atoiSafe(parts[0])
@@ -577,10 +586,34 @@ func DecodeCoverSolution(s string, w int) ([]int, error) {
 	if err != nil {
 		return nil, fmt.Errorf("解 base64 解码: %w", err)
 	}
+	// 跳跃表：步序号 -> 目标拍平索引。
+	jumpMap := make(map[int]int)
+	if len(parts) >= 4 && parts[3] != "" {
+		for _, rec := range strings.Split(parts[3], ";") {
+			if rec == "" {
+				continue
+			}
+			at := strings.Index(rec, ":")
+			if at < 0 {
+				return nil, fmt.Errorf("跳跃记录非法: %s", rec)
+			}
+			stepIdx, err1 := atoiSafe(rec[:at])
+			target, err2 := atoiSafe(rec[at+1:])
+			if err1 != nil || err2 != nil {
+				return nil, fmt.Errorf("跳跃记录非法: %s", rec)
+			}
+			jumpMap[stepIdx] = target
+		}
+	}
 	path := make([]int, 0, steps+1)
 	path = append(path, start)
 	cur := start
 	for i := 0; i < steps; i++ {
+		if target, ok := jumpMap[i]; ok {
+			cur = target
+			path = append(path, cur)
+			continue
+		}
 		b := bin[i/4]
 		d := int(b>>(6-(i%4)*2)) & 0b11
 		switch d {

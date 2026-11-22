@@ -83,6 +83,100 @@ func TestCORSNoOriginHeader(t *testing.T) {
 	}
 }
 
+// TestCORSEmptyListRejectsAll 锁定「空白名单 = 拒绝所有跨域」。
+//
+// ## 这是本次修复的核心
+//
+// 原来的判据是 `allowAll := len(allowed) == 0` —— 空列表 = 放行全部。
+// 而生产配置 `config.prod.yaml` 里**常常根本没有 `cors:` 段**
+// （那一段只出现在 `config.local.yaml`），于是 `cfg.CORS.AllowedOrigins`
+// 是 `nil` → `core.CORS(cfg.CORS.AllowedOrigins...)` 传进来零个参数
+// → **生产环境实际下发 `Access-Control-Allow-Origin: *`**，
+// 而 `Allow-Headers` 里含 `Authorization`。
+//
+// 后果就是白名单本来要防的那件事：任何网站都能从玩家浏览器里拿 token
+// 调我们的 API。而且它**不会报错** —— 一切看起来都正常。
+//
+// 现在空列表一律按「拒绝所有跨域」处理。
+func TestCORSEmptyListRejectsAll(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(CORS()) // 零个参数 —— 生产配置缺 `cors:` 段时的实际形态
+	r.GET("/x", func(c *gin.Context) { c.String(200, "ok") })
+
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Origin", "https://evil.example.com")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("空白名单时任何 Origin 都不该拿到 CORS 头，实际 = %q", got)
+	}
+	if got := w.Header().Get("Access-Control-Allow-Headers"); got != "" {
+		t.Errorf("空白名单时不该下发 Allow-Headers，实际 = %q", got)
+	}
+}
+
+// TestCORSEmptySliceRejectsAll 锁定「显式空数组」与「零参数」行为一致。
+//
+// 两者在生产里都可能出现：一个是 yaml 里写了 `allowed_origins: []`，
+// 一个是根本没写那一段。它们必须给出**同一个**答案。
+func TestCORSEmptySliceRejectsAll(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(CORS([]string{}...)) // 显式空数组展开 → 仍是零个参数
+	r.GET("/x", func(c *gin.Context) { c.String(200, "ok") })
+
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Origin", "https://evil.example.com")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("显式空数组时不该下发 CORS 头，实际 = %q", got)
+	}
+}
+
+// TestCORSEmptyListStillAllowsNoOrigin 锁定「空白名单」不影响小游戏端。
+//
+// 小游戏端 `wx.request` / `tt.request` **不带 `Origin` 头**，
+// 走的是同源/非浏览器分支。所以生产把白名单留空不影响小游戏。
+func TestCORSEmptyListStillAllowsNoOrigin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(CORS())
+	r.GET("/x", func(c *gin.Context) { c.String(200, "ok") })
+
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("没有 Origin 头的请求应放行，实际状态 = %d", w.Code)
+	}
+}
+
+// TestCORSProdConfigDoesNotAllowAll 锁定生产配置模板本身是「拒绝所有」。
+//
+// 这一条是**配置层面的回归测试**：即使中间件写对了，
+// 哪天有人在 `config.prod.yaml` 里手滑写了 `["*"]`，这里也会拦下来。
+//
+// 读的是仓库里的模板文件（不是临时构造的 yaml），
+// 因为要防的正是「有人改了这个文件」。
+func TestCORSProdConfigDoesNotAllowAll(t *testing.T) {
+	path := "../../deploy/config.prod.yaml"
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("加载生产配置失败: %v", err)
+	}
+
+	for _, o := range cfg.CORS.AllowedOrigins {
+		if o == "*" {
+			t.Error("生产配置里出现通配符 `*` —— 任何网站都能拿玩家 token 调我们的 API")
+		}
+	}
+}
+
 // TestCORSPreflight 锁定 OPTIONS 预检返回 204。
 func TestCORSPreflight(t *testing.T) {
 	gin.SetMode(gin.TestMode)

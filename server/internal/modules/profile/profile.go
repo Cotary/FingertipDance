@@ -69,7 +69,42 @@ type User struct {
 	TotalTimeMs   int64
 	TotalSteps    int
 	UnlockedSkins []string
-	AdWatchCnt    int
+	// UnlockedThemes 是**看广告解锁**的棋盘主题（mise / mingsha…）。
+	// 与皮肤分开两列：好友榜的"皮肤数"数的是 `unlocked_skins`，
+	// 主题塞进去会让那个数字凭空变大（见 migrations/010 的说明）。
+	// 里程碑主题不在这里 —— 它由 `max_level` 推导，不落盘。
+	UnlockedThemes []string
+	AdWatchCnt     int
+}
+
+// coverMode 是 `level_records.mode` 里 cover 玩法（现行玩法）的取值，
+// 与 `line.ModeCover` 同一个数。
+//
+// 这里写常量而不是 import `line` 包：`profile` 是账号模块，
+// 不该为了一个数字去依赖游戏规则包（那会让 `line` 想用 profile 的东西时成环）。
+const coverMode = 1
+
+// sumRetries 累计重来次数 = 各关悔棋数之和（cover 模式）。
+//
+// ## 为什么由服务端算，而不是客户端自己加
+//
+// 客户端原来的做法是「点一次重来按钮 `totalRetries += 1`」，那是**另一个口径**：
+// 玩家在关卡里撤销 20 步、然后重开，真实的「重来」是 20 次悔棋，
+// 而按钮只记 1 次。界面上写的是「累计重来」，统计的必须是悔棋次数。
+//
+// 后台玩家详情页也是这个口径（`admin/stats.go`：`SUM(undos) ... AND mode=1`），
+// 两边不一致的话，同一个玩家在游戏里和后台会显示两个数。
+//
+// 读失败返回 0：统计数字读不到不该让登录失败。
+func sumRetries(db *core.DB, uid int64) int {
+	var n int64
+	if err := db.QueryRow(
+		"SELECT COALESCE(SUM(undos),0) FROM level_records WHERE uid=$1 AND mode=$2",
+		uid, coverMode,
+	).Scan(&n); err != nil {
+		return 0
+	}
+	return int(n)
 }
 
 // LoginHandler 处理登录：code 换 openid → 查找或创建用户 → 签发令牌。
@@ -138,8 +173,12 @@ func LoginHandler(cfg *core.Config, issuer *core.TokenIssuer, db *core.DB) gin.H
 			"totalTimeMs":   user.TotalTimeMs,
 			"totalSteps":    user.TotalSteps,
 			"unlockedSkins": user.UnlockedSkins,
+			"unlockedThemes": user.UnlockedThemes,
 			"adWatchCnt":    user.AdWatchCnt,
-			"isNew":         isNew,
+			// 累计重来：服务端按 `SUM(level_records.undos)` 算，
+			// 客户端不再自己加（见 sumRetries 的说明）。
+			"totalRetries": sumRetries(db, user.ID),
+			"isNew":        isNew,
 		})
 	}
 }
@@ -148,14 +187,15 @@ func LoginHandler(cfg *core.Config, issuer *core.TokenIssuer, db *core.DB) gin.H
 func ProfileHandler(db *core.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		uid := core.UIDFromContext(c)
-	row := db.QueryRow(
-		"SELECT max_level, total_time_ms, total_steps, unlocked_skins FROM users WHERE id=$1",
-		uid,
-	)
-		var maxLevel, totalSteps int
+		row := db.QueryRow(
+			"SELECT nickname, avatar, max_level, total_time_ms, total_steps, unlocked_skins, unlocked_themes, ad_watch_cnt FROM users WHERE id=$1",
+			uid,
+		)
+		var maxLevel, totalSteps, adWatchCnt int
 		var totalTimeMs int64
-		var skinsJSON string
-		if err := row.Scan(&maxLevel, &totalTimeMs, &totalSteps, &skinsJSON); err != nil {
+		var nickname, avatar, skinsJSON, themesJSON string
+		if err := row.Scan(&nickname, &avatar, &maxLevel, &totalTimeMs, &totalSteps,
+			&skinsJSON, &themesJSON, &adWatchCnt); err != nil {
 			core.Fail(c, core.CodeInternal, "用户不存在")
 			return
 		}
@@ -164,12 +204,82 @@ func ProfileHandler(db *core.DB) gin.HandlerFunc {
 		if skins == nil {
 			skins = []string{}
 		}
+		var themes []string
+		_ = json.Unmarshal([]byte(themesJSON), &themes)
+		if themes == nil {
+			themes = []string{}
+		}
 		core.OK(c, gin.H{
-			"maxLevel":     maxLevel,
-			"totalTimeMs":  totalTimeMs,
-			"totalSteps":   totalSteps,
-			"unlockedSkins": skins,
+			// 昵称 / 头像也要回：换了设备登录，「我的」页得能显示上次填的那份，
+			// 否则会看到自己的头像又变回首字圆球。
+			"nickname":       nickname,
+			"avatar":         avatar,
+			"maxLevel":       maxLevel,
+			"totalTimeMs":    totalTimeMs,
+			"totalSteps":     totalSteps,
+			"unlockedSkins":  skins,
+			"unlockedThemes": themes,
+			"adWatchCnt":     adWatchCnt,
+			"totalRetries":   sumRetries(db, uid),
 		})
+	}
+}
+
+// UpdateHandler 更新昵称 / 头像。
+//
+// ## 为什么单独一条，而不是塞进登录
+//
+// 登录时客户端**还没有**昵称头像 —— 微信的 `getUserProfile` 必须由用户手势触发
+// （弹授权框），不能在启动时悄悄调。所以「完善资料」是一个显式动作：
+// 玩家在「我的」页点一下，拿到昵称头像，再 POST 到这里。
+//
+// ## 空值不覆盖
+//
+// 请求里只带一个字段是合法的（只改昵称 / 只换头像）。
+// 用 `orKeep` 保留另一列，避免「只想换头像」把昵称清空 ——
+// 那种 bug 在好友榜上会表现成一排「玩家」。
+func UpdateHandler(db *core.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			Nickname string `json:"nickname"`
+			Avatar   string `json:"avatar"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			core.Fail(c, core.CodeBadRequest, "参数错误: "+err.Error())
+			return
+		}
+		if req.Nickname == "" && req.Avatar == "" {
+			core.Fail(c, core.CodeBadRequest, "昵称和头像不能都为空")
+			return
+		}
+
+		uid := core.UIDFromContext(c)
+
+		// 长度兜底：头像 URL 可能很长，但昵称不该塞进 20KB。
+		// 超长直接截断而不是报错 —— 玩家不该因为名字太长而保存失败。
+		nickname := req.Nickname
+		if len([]rune(nickname)) > 24 {
+			nickname = string([]rune(nickname)[:24])
+		}
+		avatar := req.Avatar
+		if len(avatar) > 1024 {
+			avatar = avatar[:1024]
+		}
+
+		var outNick, outAvatar string
+		err := db.QueryRow(
+			"UPDATE users SET "+
+				"nickname = CASE WHEN $1 = '' THEN nickname ELSE $1 END, "+
+				"avatar   = CASE WHEN $2 = '' THEN avatar   ELSE $2 END "+
+				"WHERE id=$3 RETURNING nickname, avatar",
+			nickname, avatar, uid,
+		).Scan(&outNick, &outAvatar)
+		if err != nil {
+			core.Fail(c, core.CodeInternal, "保存资料失败: "+err.Error())
+			return
+		}
+
+		core.OK(c, gin.H{"nickname": outNick, "avatar": outAvatar})
 	}
 }
 
@@ -224,24 +334,29 @@ func findOrCreate(db *core.DB, hash, enc, nickname, avatar string, platform int,
 	return &User{
 		ID: id, OpenIDEnc: enc, OpenIDHash: hash, Nickname: nickname, Avatar: avatar,
 		UnlockedSkins: []string{"wood", "mint"},
+		UnlockedThemes: []string{},
 	}, true, nil
 }
 
 // queryByHash 按 openid 哈希查询用户。
 func queryByHash(db *core.DB, hash string) (*User, error) {
 	row := db.QueryRow(
-		"SELECT id, openid, openid_hash, nickname, avatar, max_level, total_time_ms, total_steps, unlocked_skins, ad_watch_cnt FROM users WHERE openid_hash=$1",
+		"SELECT id, openid, openid_hash, nickname, avatar, max_level, total_time_ms, total_steps, unlocked_skins, unlocked_themes, ad_watch_cnt FROM users WHERE openid_hash=$1",
 		hash,
 	)
 	var u User
-	var skinsJSON string
+	var skinsJSON, themesJSON string
 	if err := row.Scan(&u.ID, &u.OpenIDEnc, &u.OpenIDHash, &u.Nickname, &u.Avatar,
-		&u.MaxLevel, &u.TotalTimeMs, &u.TotalSteps, &skinsJSON, &u.AdWatchCnt); err != nil {
+		&u.MaxLevel, &u.TotalTimeMs, &u.TotalSteps, &skinsJSON, &themesJSON, &u.AdWatchCnt); err != nil {
 		return nil, err
 	}
 	_ = json.Unmarshal([]byte(skinsJSON), &u.UnlockedSkins)
 	if u.UnlockedSkins == nil {
 		u.UnlockedSkins = []string{}
+	}
+	_ = json.Unmarshal([]byte(themesJSON), &u.UnlockedThemes)
+	if u.UnlockedThemes == nil {
+		u.UnlockedThemes = []string{}
 	}
 	return &u, nil
 }

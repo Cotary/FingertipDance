@@ -12,9 +12,58 @@ redis:
 
 jwt:
   secret: "用 openssl rand -hex 32 生成"
-  ttl_hours: 720
+  # 令牌有效期（小时）。24~72 是个好区间：
+  # 720（30 天）意味着令牌泄露后的可用窗口太长。
+  ttl_hours: 72
 
 wechat:
   appid: "wx真实AppID"
   secret: "真实Secret"
   mock: false
+
+# 抖音小游戏。
+#
+# ## 这个段不能省
+#
+# 生产配置以前只有 `wechat` 一段。`Validate()` 只校验微信，所以服务
+# **能启动**，但抖音登录会拿到空 appid 去换 code2session —— 表现是
+# 「抖音端一律登录失败」，日志里只有一句平台返回的 invalid appid。
+#
+# `mock: false` 是生产必须的：开着 mock 等于任何人报个 code 就能建号
+# 拿到令牌（本地调试专用）。
+douyin:
+  appid: "tt真实AppID"
+  secret: "真实Secret"
+  mock: false
+
+cors:
+  # 跨域白名单。
+  #
+  # ## 这里的默认值是「拒绝所有」
+  #
+  # 以前 `CORS()` 里的判据是 `len(allowed) == 0` → 放行全部，
+  # 而生产配置里**常常根本没有 `cors:` 段** —— 那就让生产静默下发
+  # `Access-Control-Allow-Origin: *`，而 `Allow-Headers` 里含 `Authorization`。
+  # 后果就是任何网站都能拿玩家浏览器里的 token 调我们的 API，
+  # 而且**不报错**（一切看起来都正常）。
+  #
+  # 现在：空列表 = 拒绝所有跨域；只有显式写 `*` 才放行全部。
+  # 本地开发在 `config.local.yaml` 里写的是 `["*"]`，是显式的。
+  #
+  # ## 小游戏端不需要这一段
+  #
+  # `wx.request` / `tt.request` **不带 `Origin` 头**，走的是同源/非浏览器
+  # 分支，不受白名单限制。所以生产留空即可 —— 只有后台网页
+  # （`/admin/*`）在另一个域名时才需要往里加。
+  allowed_origins: []
+  allow_credentials: false
+
+# admin / debug 两段**故意不写**。
+#
+# 没写 = 关闭，这是安全的那一侧：
+#   - `admin.enabled` 默认 false → 整个 `/admin` 路由树不注册（连 404 都不给）
+#   - `debug.enabled` 默认 false → `/api/debug/jump` 直接 403
+#
+# 要开后台就设环境变量 `ADMIN_ENABLED=true` + `ADMIN_USER` / `ADMIN_PASSWORD`，
+# 并且**只在有鉴权的前置代理后面**或者内网里开。
+

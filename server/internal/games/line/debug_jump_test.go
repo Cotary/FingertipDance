@@ -92,20 +92,20 @@ func TestDebugJumpHandlerDoesNotTouchDataWhenDisabled(t *testing.T) {
 	r.ServeHTTP(w, req)
 }
 
-// TestDebugJumpSourceDoesNotWriteLevelRecords 锁定「跳关不写成绩表」。
+// TestDebugJumpSourceDoesNotWriteAnyProgress 锁定「跳关不写任何进度」。
 //
-// ## 为什么不能补写记录
+// ## 2026-11-21 起这条断言反过来了
 //
-// `applyCoverProgress` 用 `level_records` 有无来判定 `firstPass`，
-// 而 `firstPass` 决定真实成绩能不能刷新纪录。
+// 旧实现把 `users.max_level` 推到 `levelIdx - 1`（目标关成为「当前关」），
+// 代价是**玩家的真实进度被永久顶高**：点进第 405 关看一眼，
+// `max_level` 就从真实的 153 变成 404，之后再也不会自己降回来。
 //
-// 如果跳关时给 1..N-1 都塞一条 `skipped=1`（undos=0、time_ms=0）的记录，
-// 玩家之后真去打第 300 关时：
+// 表现就是 2026-11-21 那次排查的问题：地图说「1..404 已通关、405 是你在这里」，
+// 分享选关按星级说「405 你还没通过」—— 两条都对，放在一起就是自相矛盾。
 //
-//	isNewBest = 0 < 0 || (0 == 0 && timeMs < 0) = false
-//
-// → 真实成绩被丢弃，玩家永远拿不到那颗星。
-func TestDebugJumpSourceDoesNotWriteLevelRecords(t *testing.T) {
+// 所以现在的契约是：跳关**一个字节都不写**。真正的进度只由
+// 通关上报（`applyCoverProgress`）与看广告跳过推进。
+func TestDebugJumpSourceDoesNotWriteAnyProgress(t *testing.T) {
 	b, err := readFileInPackage(t, "debug_jump.go")
 	if err != nil {
 		t.Fatalf("读取 debug_jump.go 失败: %v", err)
@@ -116,24 +116,23 @@ func TestDebugJumpSourceDoesNotWriteLevelRecords(t *testing.T) {
 		strings.Contains(src, "UPDATE level_records") {
 		t.Error("跳关接口写了 level_records（会让之后的真实成绩永远刷不了新纪录）")
 	}
-	if !strings.Contains(src, "max_level = GREATEST(max_level") {
-		t.Error("跳关接口没有推进 max_level")
+	if strings.Contains(src, "UPDATE users") || strings.Contains(src, "max_level = GREATEST") {
+		t.Error("跳关接口写了 users.max_level —— 会永久顶掉玩家真实进度（2026-11-21 的 bug）")
 	}
 }
 
-// TestDebugJumpAdvancesToLevelMinusOne 锁定「跳关把 max_level 推到目标关的前一关」。
+// TestDebugJumpDoesNotBumpMaxLevel 锁定「跳关不再推进 max_level」。
 //
-// 少 1 是刻意的：目标关本身还没打过，不该算「已通关」。
-// `currentLevel = maxLevel + 1` → 目标关正好成为「当前关」。
-func TestDebugJumpAdvancesToLevelMinusOne(t *testing.T) {
+// 少 1 那套（`target := levelIdx - 1`）已经删了：它让「抵达」变成了「已通关」。
+func TestDebugJumpDoesNotBumpMaxLevel(t *testing.T) {
 	b, err := readFileInPackage(t, "debug_jump.go")
 	if err != nil {
 		t.Fatalf("读取 debug_jump.go 失败: %v", err)
 	}
 	src := string(b)
 
-	if !strings.Contains(src, "target := req.LevelIdx - 1") {
-		t.Error("跳关的目标应该是 req.LevelIdx - 1（目标关本身还没打过）")
+	if strings.Contains(src, "target := req.LevelIdx - 1") {
+		t.Error("跳关还在算 target = levelIdx-1（这是旧实现，会把目标关的上一关写成已通关）")
 	}
 }
 
@@ -148,7 +147,57 @@ func TestDebugRouteIsRegistered(t *testing.T) {
 	if !strings.Contains(src, "/debug/jump") {
 		t.Error("main.go 里没有注册 /debug/jump 路由")
 	}
+	if !strings.Contains(src, "/debug/repair-progress") {
+		t.Error("main.go 里没有注册 /debug/repair-progress 路由（被跳关顶坏的账号没地方修）")
+	}
 	if !strings.Contains(src, "cfg.Debug.Enabled") {
 		t.Error("main.go 没有把 cfg.Debug.Enabled 传给跳关处理器")
+	}
+}
+
+// TestDebugRepairProgressRejectsWhenDisabled 锁定「修进度接口同样默认关闭」。
+//
+// 这个接口能把 `max_level` 改小 —— 生产环境要是能调，
+// 任何人都能把别人的进度打回 0。所以它和跳关共用同一道开关门。
+func TestDebugRepairProgressRejectsWhenDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	r.POST("/api/debug/repair-progress", DebugRepairProgressHandler(nil, false))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/debug/repair-progress", nil)
+	r.ServeHTTP(w, req)
+
+	var resp core.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("解析响应失败: %v (body=%s)", err, w.Body.String())
+	}
+	if resp.Code != core.CodeForbidden {
+		t.Errorf("调试关闭时应返回 %d(Forbidden)，实际 %d", core.CodeForbidden, resp.Code)
+	}
+}
+
+// TestDebugRepairProgressRecomputesFromRecords 锁定重算口径。
+//
+// 两条必须同时成立：
+//  1. 从 `level_records` 取 `MAX(level_idx)`，且**只看 skipped=0**
+//     （看广告跳过的关没有星，不该算「通过」——和分享选关、星级接口同一口径）；
+//  2. 没有记录时落到 0，而不是把 `max_level` 留在原处或塞个 1。
+func TestDebugRepairProgressRecomputesFromRecords(t *testing.T) {
+	b, err := readFileInPackage(t, "debug_progress.go")
+	if err != nil {
+		t.Fatalf("读取 debug_progress.go 失败: %v", err)
+	}
+	src := string(b)
+
+	if !strings.Contains(src, "COALESCE(MAX(level_idx), 0)") {
+		t.Error("修进度没有按 MAX(level_idx) 重算（没有记录时应落 0）")
+	}
+	if !strings.Contains(src, "skipped=0") {
+		t.Error("修进度没有排除 skipped=1（看广告跳过的关不算通过）")
+	}
+	if !strings.Contains(src, "UPDATE users SET max_level=") {
+		t.Error("修进度没有写回 users.max_level")
 	}
 }

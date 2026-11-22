@@ -18,7 +18,18 @@ type SkinConfig struct {
 	UnlockValue int    `json:"unlockValue"`
 }
 
-// ConfigHandler 返回关卡版本、皮肤表与广告配置。
+// PlatformConfigLoader 按平台读取运营配置。
+//
+// ## 为什么用函数注入，而不是在这里直接查库
+//
+// 读写平台配置的 SQL 在 `admin/config_store.go`（后台是唯一的写入口），
+// 而 admin 已经 import 了 line。这里再 import admin 就成环了。
+//
+// 注入一个函数把依赖方向拉直：line 只定义「怎么用配置」，
+// 数据从哪来由 main 决定。顺带的好处是——测试不用连数据库。
+type PlatformConfigLoader func(platform int) (PlatformConfig, error)
+
+// ConfigHandler 返回关卡版本、皮肤表与**按平台**的运营配置。
 //
 // ## 两套关卡表
 //
@@ -28,8 +39,31 @@ type SkinConfig struct {
 //
 // `levelVersion` / `levelCount` 保留**经典模式**的语义（老客户端在用），
 // cover 的用 `coverLevelVersion` / `coverLevelCount`。
-func ConfigHandler(skins []SkinConfig, adID string) gin.HandlerFunc {
+//
+// ## 平台由 query 声明
+//
+// 这个接口**不鉴权**，而且客户端在登录之前就要拿到它（登录失败也要能玩），
+// 那时没有 token、推断不出平台。所以由客户端带 `?platform=`，
+// 缺失或非法一律按微信处理（老客户端走的也是这条路）——
+// 详见 `PlatformCodeOf`。
+//
+// ## 配置读不出来时不能失败
+//
+// 这个接口挂掉，客户端会退回内置默认值：广告位变 placeholder、
+// 分享链接拼不出来。但「读不到配置」不该等于「退回一个更差的世界」——
+// 所以读写失败只记日志，照常返回默认配置。
+func ConfigHandler(load PlatformConfigLoader, skins []SkinConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		platform := PlatformCodeOf(c.Query("platform"))
+
+		cfg := DefaultPlatformConfig()
+		if load != nil {
+			if got, err := load(platform); err == nil {
+				// 兜住库里的历史脏值（负数间隔 / 非法 URL）
+				cfg = got.Normalize()
+			}
+		}
+
 		core.OK(c, gin.H{
 			"levelVersion": Levels.Version(),
 			"levelCount":   Levels.Count(),
@@ -37,15 +71,27 @@ func ConfigHandler(skins []SkinConfig, adID string) gin.HandlerFunc {
 			"coverLevelVersion": CoverLevels.Version(),
 			"coverLevelCount":   CoverLevels.Count(),
 			"skins":             skins,
+			// 本次按哪个平台下发（客户端可据此自检映射有没有搞错）
+			"platform":      platform,
+			"shareUrlPrefix": cfg.ShareURLPrefix,
 			"ad": gin.H{
-				"rewardedVideoId": adID,
-				"interstitialId":  "",
+				"rewardedVideoId": cfg.Ad.RewardedVideoID,
+				"interstitialId":  cfg.Ad.InterstitialID,
+				"bannerId":        cfg.Ad.BannerID,
+				// 频控：服务端只下发参数，判定在客户端（见 ads.ts / rewardRules.ts）
+				"interstitialIntervalSec": cfg.Ad.InterstitialIntervalSec,
+				"rewardedDailyLimit":      cfg.Ad.RewardedDailyLimit,
+				"hintFreeUses":            cfg.Ad.HintFreeUses,
+				"skipDailyLimit":          cfg.Ad.SkipDailyLimit,
 			},
 			"features": gin.H{
-				"hint":           true,
-				"skip":           true,
-				"shareChallenge": true,
+				"hint":           cfg.Features.Hint,
+				"skip":           cfg.Features.Skip,
+				"shareChallenge": cfg.Features.ShareChallenge,
 			},
+			// 主题的**解锁条件**（不是主题本体）。客户端按 id 覆盖本地常量，
+			// 没下发的 id 保持本地不变。
+			"themes":     cfg.Themes,
 			"serverTime": time.Now().UnixMilli(),
 		})
 	}

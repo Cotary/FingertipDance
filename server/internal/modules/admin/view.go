@@ -127,6 +127,30 @@ button.ghost{background:transparent;border:1px solid var(--line);color:var(--ink
 .hint{font-size:11px;color:var(--ink3);letter-spacing:.06em;line-height:1.9;padding:12px 14px;
   background:rgba(212,175,106,.04);border:1px solid rgba(212,175,106,.14);border-radius:10px;margin-bottom:16px}
 .hint b{color:var(--gold2);font-weight:500}
+.hint code{font-family:ui-monospace,monospace;font-size:11px;color:var(--gold3)}
+
+/* 配置页：两平台并排 */
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(430px,1fr));gap:16px;margin-bottom:16px}
+.cols .panel{margin-bottom:0}
+.panel h3{font-size:11px;letter-spacing:.22em;color:var(--gold3);font-weight:500;
+  margin:18px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line2)}
+.panel h3:first-of-type{margin-top:4px}
+.stamp{font-size:10px;color:var(--ink3);letter-spacing:.1em;margin:-8px 0 6px}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
+.field label{font-size:11px;letter-spacing:.1em;color:var(--ink3)}
+.field input{width:100%}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.switches{display:flex;gap:18px;flex-wrap:wrap;padding:4px 0 2px}
+.switches label{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--ink2);letter-spacing:.04em}
+.switches input{width:auto;accent-color:var(--gold3)}
+.tablehint{font-size:10px;color:var(--ink3);line-height:1.9;margin-bottom:8px}
+table.themes td{padding:5px 5px}
+table.themes input,table.themes select{width:100%;padding:5px 8px;font-size:12px}
+.savebar{position:sticky;bottom:0;display:flex;align-items:center;gap:14px;
+  padding:14px 18px;margin-top:4px;border:1px solid var(--line);border-radius:14px;
+  background:linear-gradient(180deg,rgba(22,36,30,.96),rgba(15,25,21,.98));
+  backdrop-filter:blur(6px)}
+.savebar .savelabel{font-size:11px;color:var(--ink3);letter-spacing:.08em}
 `
 
 // layout 包一层页面骨架。
@@ -137,6 +161,7 @@ func layout(title, active, who, body string) string {
 		{"/admin/players", "玩家", "players"},
 		{"/admin/levels", "关卡", "levels"},
 		{"/admin/ads", "广告", "ads"},
+		{"/admin/config", "配置", "config"},
 	}
 	var navHTML strings.Builder
 	for _, n := range nav {

@@ -15,10 +15,10 @@ import (
 
 	"github.com/tupss/f-game/server/internal/core"
 	"github.com/tupss/f-game/server/internal/games/line"
-	"github.com/tupss/f-game/server/internal/modules/friend"
-	"github.com/tupss/f-game/server/internal/modules/leaderboard"
 	"github.com/tupss/f-game/server/internal/modules/admin"
 	"github.com/tupss/f-game/server/internal/modules/adrev"
+	"github.com/tupss/f-game/server/internal/modules/friend"
+	"github.com/tupss/f-game/server/internal/modules/leaderboard"
 	"github.com/tupss/f-game/server/internal/modules/profile"
 )
 
@@ -35,6 +35,12 @@ func main() {
 	}
 	if err := cfg.Validate(); err != nil {
 		log.Fatalf("配置校验失败: %v", err)
+	}
+	// 抖音段缺失不会让 `Validate()` 失败（那边只校验微信），但抖音登录会
+	// 拿着空 appid 去换 code2session —— 表现是「抖音端一律登录失败」。
+	// 启动时喊一声，比等玩家报障再翻日志便宜得多。
+	if cfg.Douyin.AppID == "" || cfg.Douyin.Secret == "" {
+		logger.Warn("抖音 appid/secret 未配置：抖音端登录会失败（微信端不受影响）")
 	}
 
 	db, err := core.OpenDB(cfg.DB.DSN)
@@ -134,8 +140,19 @@ func main() {
 
 	api := r.Group("/api")
 	{
+		// 平台运营配置的读取器。**只建一个**，`/api/config` 和
+		// 「跳关每日额度」共用 —— 两处各写一份 SQL 的话，
+		// 以后改「哪个平台的配置」这种规则就会只改到一半。
+		loadPlatformConfig := func(platform int) (line.PlatformConfig, error) {
+			return admin.LoadPlatformConfig(db, platform)
+		}
+
 		api.POST("/login", profile.LoginHandler(cfg, issuer, db))
-		api.GET("/config", line.ConfigHandler(line.DefaultSkins(), "adunit-mock"))
+		// 平台运营配置（公开接口）：客户端带 `?platform=1|2|3` 自己声明平台。
+		//
+		// 读库失败会回落内置默认值，不会让客户端启动失败 ——
+		// 这里的 loader 由 main 注入，SQL 在 admin/config_store.go（唯一写入口）。
+		api.GET("/config", line.ConfigHandler(loadPlatformConfig, line.DefaultSkins()))
 		// ── 经典模式接口（已废弃）──
 		//
 		// cover 模式是现行玩法，客户端只用下面那组 `/api/cover/*`。
@@ -150,6 +167,9 @@ func main() {
 		auth.GET("/friends", friend.Handler(db))
 		auth.POST("/friend", friend.Handler(db))
 		auth.GET("/profile", profile.ProfileHandler(db))
+		// 更新昵称 / 头像：微信的 `getUserProfile` 必须由用户手势触发，
+		// 不能塞进启动流程，所以是有这个显式的「完善资料」写接口（见 profile.UpdateHandler）。
+		auth.POST("/profile", profile.UpdateHandler(db))
 		auth.GET("/progress/stars", line.StarsHandler(db))
 		// 以下三个是经典模式的写接口，已废弃（保留兼容老客户端）
 		auth.POST("/progress", line.ProgressHandler(db, rdb, line.DefaultSkins()))
@@ -182,7 +202,14 @@ func main() {
 		// （cover 要铺满全盘 + 冰块滑行 / 钥匙门 / 传送门 / 星星顺序）。
 		auth.POST("/cover/progress", line.CoverProgressHandler(db, rdb))
 		auth.POST("/cover/challenge", line.CoverChallengeHandler(db))
-		auth.POST("/cover/skip", line.CoverSkipHandler(db))
+		auth.POST("/cover/skip", line.CoverSkipHandler(db, loadPlatformConfig))
+		// 看广告解锁：主题 / 皮肤。能不能解锁由服务端查配置判断，
+		// 客户端传的 id 只当"想解锁哪一个"（见 cover_unlock.go）。
+		auth.POST("/cover/unlock", line.CoverUnlockHandler(db, loadPlatformConfig))
+		// 看广告次数：`users.ad_watch_cnt` 此前从没人写过（后台那栏永远是 0）。
+		// 独立成一条轻量接口，不塞进 progress 事务 —— 通关被判非法时
+		// 广告其实已经看完了，跟着回滚会让计数系统性偏低（见 ad_watch.go）。
+		auth.POST("/cover/ad-watch", line.CoverAdWatchHandler(db))
 		// 发起分享：把「谁分享了哪一关、当时什么成绩」记到服务端，返回挑战 token。
 		//
 		// 为什么分享也要走服务端：胜负判定要有一个**服务端可信**的对手成绩。
@@ -197,13 +224,18 @@ func main() {
 
 		// ── 调试接口（仅测试环境）──
 		//
-		// 跳到任意关卡。**服务端独立把关**：配置里没开 `debug.enabled`
-		// 时这个接口直接 403 —— 客户端绕过不算数。
-		// 生产环境的 `config.yaml` 不含这个配置项 → 默认关闭。
+		// **服务端独立把关**：配置里没开 `debug.enabled` 时这两个接口直接 403
+		// —— 客户端绕过不算数。生产环境的 `config.yaml` 不含这个配置项 → 默认关闭。
+		//
+		// `/debug/jump` 只做登记，**不写任何进度**（旧实现会把 `max_level`
+		// 推到目标关前一关，直接把玩家的真实进度顶掉，见 debug_jump.go）。
+		// `/debug/repair-progress` 是按 `level_records` 重算 `max_level`，
+		// 给被旧实现顶坏的账号一个退回真实值的口子。
 		if cfg.Debug.Enabled {
-			logger.Info("调试模式已开启：/api/debug/jump 可用")
+			logger.Info("调试模式已开启：/api/debug/jump、/api/debug/repair-progress 可用")
 		}
 		auth.POST("/debug/jump", line.DebugJumpHandler(db, cfg.Debug.Enabled))
+		auth.POST("/debug/repair-progress", line.DebugRepairProgressHandler(db, cfg.Debug.Enabled))
 	}
 
 	// ── 数据后台 ──
