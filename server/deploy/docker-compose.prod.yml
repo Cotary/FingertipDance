@@ -22,6 +22,14 @@ services:
     volumes:
       - pg-data:/var/lib/postgresql/data
     restart: always
+    # 供上面的 `depends_on: condition: service_healthy` 使用。
+    # `pg_isready` 返回 0 才说明能接受连接（容器 Up 不等于能连）。
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fgame -d fgame"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
 
   redis:
     image: redis:7-alpine
@@ -45,10 +53,29 @@ services:
       WECHAT_SECRET: "${WECHAT_SECRET}"
       WECHAT_MOCK: "false"
     depends_on:
-      - postgres
-      - redis
+      # 等 DB 真的能接连接再起，而不是"容器起来了"就起 ——
+      # 否则迁移会在 postgres 还在初始化时执行，启动直接失败并进重启循环。
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     volumes:
       - ../data:/app/data
+    # ## 健康检查不能只看进程活着
+    #
+    # `/healthz` 只回 `{ok:true}`（不查库），所以它验的是"HTTP 层还在"。
+    # 这一条能抓住的情况：进程卡死、端口没监听、被 OOM 杀掉后没重启。
+    #
+    # 抓不住的情况（需要外部告警，见 47 文档）：库连不上、慢查询。
+    # 没有 healthcheck 时，容器崩了 `docker ps` 依然显示 Up，
+    # 部署脚本会以为一切正常。
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      # 给迁移留时间：首次启动要跑 10 个 migration
+      start_period: 40s
 
 volumes:
   pg-data:
