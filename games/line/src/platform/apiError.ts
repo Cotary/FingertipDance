@@ -1,4 +1,22 @@
 /**
+ * 判断某个异常是不是指定业务错误码。
+ *
+ * ## 为什么不用 `instanceof`
+ *
+ * `instanceof` 依赖**同一个模块实例**。这个项目里至少有两种情况会让它失效：
+ *
+ * - 打包器把 `apiError.ts` 复制进了两个 chunk（小游戏单文件包不会，但 Web 分包会）；
+ * - 测试里 `vi.resetModules()` 之后，被测模块 import 到的是**新的一份类**，
+ *   而测试文件顶部的还是旧的 —— `instanceof` 恒为 false，断言就假绿了。
+ *
+ * 按 `code` 做结构化判断没有这个隐患，而且读起来更直白：
+ * 「这个错误是不是 4001」比「这个错误是不是 ApiError 且 code 是 4001」更接近意图。
+ */
+export function isApiCode(e: unknown, code: number): boolean {
+  return typeof e === 'object' && e !== null && (e as { code?: unknown }).code === code;
+}
+
+/**
  * 服务端业务错误。
  *
  * ## 为什么需要一个带 `code` 的错误类型

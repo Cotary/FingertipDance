@@ -43,19 +43,38 @@ import type { Button } from './hud';
 import { trackedText, trackedTextRight, trackedWidth } from './hud';
 import { THEMES, themeById, themeUnlocked, type BoardTheme } from '../render/themes';
 import { hasOwnVoice, voiceFor } from '../render/voice';
+import { SKINS, paintSkin, type Skin } from '../render/skins';
 import { CoverCell, packCell } from '../core/cover/v3/types';
 import { THEME, type Theme } from './theme';
 import { fillGrain } from '../render/grain';
+import { canCreateOffscreenCanvas } from '../platform/offscreen';
+
+/**
+ * 页面分段。
+ *
+ * ## 为什么皮肤要放在主题页里，而不是单开一页
+ *
+ * 它们回答的是同一个问题：「我的盘面长什么样」。主题换的是整个世界
+ * （背景 / 图标 / 音效 / 动线），皮肤只换格子本身的那层material ——
+ * 一个粗、一个细，玩家调的时候是连着调的。分成两页，他就会在两页之间来回跳，
+ * 却不知道自己在调同一个东西。
+ *
+ * 分段放在标题下面（不是侧边）：竖屏 750 宽只放得下两段，
+ * 横排胶囊和排行榜的页签是同一套语言，玩家不用重新学。
+ */
+export type SkinsTab = 'themes' | 'skins';
 
 /**
  * 页面状态。
  *
- * `tab` / `page` / `selected` / `equipped` / `unlocked` 这几个字段是黏土皮肤页的遗留，
- * 现在只由老存档与 `main.ts` 的公共流程读写；界面**只认主题**。
- * 真正的展示源是 `themeSelected / themeEquipped / maxLevel`。
+ * `equipped` / `selected` / `page` 是黏土皮肤页的遗留，现在只由老存档与
+ * `main.ts` 的公共流程读写；主题那段只认 `themeSelected / themeEquipped / maxLevel`。
  */
 export interface SkinsPageState {
-  /** 遗留：黏土皮肤（只用于「经典」盘的色板，不在这一页展示） */
+  /** 当前分段 */
+  tab?: SkinsTab;
+
+  /** 已拥有的棋子皮肤（原始 id 集合，来自 `progress.unlockedSkins`） */
   equipped: string;
   selected: string;
   unlocked: Set<string>;
@@ -69,10 +88,16 @@ export interface SkinsPageState {
   maxLevel?: number;
   /** 调试构建：所有主题视为已解锁 */
   themeAllUnlocked?: boolean;
+  /** 广告解锁的主题 id（服务端 / 本地缓存） */
+  unlockedThemes?: Set<string>;
   /** 货架滚动偏移（设计像素） */
   themeScroll?: number;
   /** 货架甩动速度（设计像素 / 毫秒），由 `stepThemeScroll` 衰减 */
   themeFling?: number;
+  /** 皮肤网格滚动偏移 */
+  skinScroll?: number;
+  /** 皮肤网格甩动速度 */
+  skinFling?: number;
 }
 
 // ────────────────────────────── 尺寸 ──────────────────────────────
@@ -87,23 +112,49 @@ const PAD = 44;
 /** 标题基线：与地图 / 排行同一把尺（设计 h3 顶部 54 CSS → 36，34px 字基线落在 68） */
 const HEAD_BASE = 68;
 
-/** 货架大卡（设计 22..353 × 87..233 CSS）。 */
-const FEAT = { x: PAD, y: 102, w: DESIGN_W - PAD * 2, h: 292, r: 36 } as const;
+/** 分段胶囊（设计：两枚 98×26 CSS → 196×52）。 */
+const TABS = { x: PAD, y: 96, w: 196, h: 52, gap: 14 } as const;
+
+/**
+ * 货架大卡（设计 22..353 × 87..233 CSS，往下让出分段那 62 高）。
+ *
+ * 分包之后整页多了一条分段，所有内容统一下移 62 ——
+ * 不是把分段"挤"进大卡顶部：大卡里已经有一块五色签，再压一行胶囊
+ * 会把「主题名」挤到视觉第二位。
+ */
+const FEAT = { x: PAD, y: 164, w: DESIGN_W - PAD * 2, h: 292, r: 36 } as const;
 
 /** 卡片网格（设计 22..353 × 247..665，卡 160×132、间距 11）。 */
 const SHELF = {
   x: PAD,
   // 设计稿是 422、卡高 264、间距 11 CSS×2；三者一起收一点点，
   // 才放得下三整行（第三行下沿 1213，底栏 1214）
-  y: 418,
+  y: 480,
   w: DESIGN_W - PAD * 2,
   cardW: 320,
   cardH: 253,
   gapX: 22,
   gapY: 18,
   /** 裁剪上界 = 大卡下沿：卡片从展签底下钻出来，不留一条空隙 */
-  viewTop: 394,
+  viewTop: 456,
   /** 裁剪下界 = 底栏上沿：再往下是导航，卡片该被栏体的渐隐吃掉 */
+  viewBottom: 1214,
+} as const;
+
+/**
+ * 皮肤网格：3 列。
+ *
+ * 皮肤是"一格材料"，不需要主题卡那么大的预览 —— 2 列 16 张要滚 8 行，
+ * 3 列 6 行就到头了。卡高 206 也刚好放下「预览 + 名字 + 状态」三行。
+ */
+const SKIN_GRID = {
+  x: PAD,
+  y: 480,
+  cardW: 208,
+  cardH: 206,
+  gapX: 19,
+  gapY: 18,
+  viewTop: 456,
   viewBottom: 1214,
 } as const;
 
@@ -135,9 +186,9 @@ const P = {
 // ────────────────────────────── 入口 ──────────────────────────────
 
 /**
- * 绘制主题页。
+ * 绘制主题 / 皮肤页。
  * @param theme 保留参数（本页配色不跟随主题，见 `P`）
- * @returns 可点按钮（装备 / 看广告）
+ * @returns 可点按钮（分段 / 装备 / 看视频解锁）
  */
 export function drawSkinsPage(
   ctx: CanvasRenderingContext2D,
@@ -147,9 +198,16 @@ export function drawSkinsPage(
 ): Button[] {
   void theme;
 
-  drawHead(ctx, st);
-  const buttons = drawFeatured(ctx, st);
-  drawShelf(ctx, st, now);
+  const tab = st.tab ?? 'themes';
+  drawHead(ctx, st, tab);
+  const buttons = drawTabRow(ctx, tab);
+
+  if (tab === 'themes') {
+    buttons.push(...drawFeatured(ctx, st));
+    drawShelf(ctx, st, now);
+  } else {
+    buttons.push(...drawSkinGrid(ctx, st, now));
+  }
   return buttons;
 }
 
@@ -177,29 +235,96 @@ function themeAt(index: number): BoardTheme | undefined {
 export function unlockedThemeCount(st: SkinsPageState): number {
   if (st.themeAllUnlocked) return shelfCount();
   const maxLevel = st.maxLevel ?? 0;
-  const ad = new Set<string>();
+  const ad = st.unlockedThemes ?? new Set<string>();
   return THEMES.filter((t) => themeUnlocked(t, maxLevel, ad)).length;
 }
 
 /** 某个主题是否已解锁。 */
 export function isThemeOwned(st: SkinsPageState, theme: BoardTheme): boolean {
   if (st.themeAllUnlocked) return true;
-  return themeUnlocked(theme, st.maxLevel ?? 0, new Set());
+  return themeUnlocked(theme, st.maxLevel ?? 0, st.unlockedThemes ?? new Set());
+}
+
+/**
+ * 某个棋子皮肤是否已拥有。
+ *
+ * 三档来源：
+ * - `default`：开局就有（wood / mint），不需要落盘；
+ * - 服务端 `unlocked_skins`：里程碑发放与广告解锁都写在这里；
+ * - `milestone` 由 `maxLevel` **推导**（服务端漏发时也不会锁着玩家）。
+ */
+export function isSkinOwned(st: SkinsPageState, skin: Skin): boolean {
+  if (skin.unlockType === 'default') return true;
+  if (st.unlocked.has(skin.id)) return true;
+  if (skin.unlockType === 'milestone') return (st.maxLevel ?? 0) >= skin.unlockValue;
+  return false;
+}
+
+/** 已拥有皮肤数。 */
+export function ownedSkinCount(st: SkinsPageState): number {
+  return SKINS.filter((s) => isSkinOwned(st, s)).length;
 }
 
 // ────────────────────────────── 标题 ──────────────────────────────
 
 /**
- * 标题行：左「主题」，右「N / M 已解锁」。
+ * 标题行：左标题，右「N / M 已解锁」。
  *
  * 右读数与标题**垂直居中**（设计 `.map-head` 是 align-items:center），
  * 不是压在同一条基线上 —— 同基线会让小字看起来掉了半格。
  */
-function drawHead(ctx: CanvasRenderingContext2D, st: SkinsPageState): void {
-  trackedText(ctx, '主题', PAD + 4, HEAD_BASE, 34, P.ink, 10.88, 600);
+function drawHead(ctx: CanvasRenderingContext2D, st: SkinsPageState, tab: SkinsTab): void {
+  trackedText(ctx, tab === 'themes' ? '主题' : '棋子皮肤', PAD + 4, HEAD_BASE, 34, P.ink, 10.88, 600);
 
-  const label = `${unlockedThemeCount(st)} / ${shelfCount()} 已解锁`;
+  const label = tab === 'themes'
+    ? `${unlockedThemeCount(st)} / ${shelfCount()} 已解锁`
+    : `${ownedSkinCount(st)} / ${SKINS.length} 已解锁`;
   trackedTextRight(ctx, label, DESIGN_W - PAD - 8, HEAD_BASE - 6, 20, P.muted, 4.4, 500);
+}
+
+/**
+ * 分段胶囊。与排行榜页签同一套画法（选中金底暗字）。
+ *
+ * 两个分段**永远显示**，不按内容隐藏：玩家需要看到"这里还有另一类东西"，
+ * 否则皮肤入口等于不存在（这正是它之前的状态）。
+ */
+function drawTabRow(ctx: CanvasRenderingContext2D, tab: SkinsTab): Button[] {
+  const items: Array<{ id: string; label: string; on: boolean }> = [
+    { id: 'themeTab', label: '板面主题', on: tab === 'themes' },
+    { id: 'skinTab', label: '棋子皮肤', on: tab === 'skins' },
+  ];
+  return items.map((it, i) => {
+    const b: Button = {
+      x: TABS.x + i * (TABS.w + TABS.gap),
+      y: TABS.y,
+      w: TABS.w,
+      h: TABS.h,
+      label: it.label,
+      kind: 'secondary',
+      id: it.id,
+    };
+    roundRect(ctx, b.x, b.y, b.w, b.h, b.h / 2);
+    if (it.on) {
+      const g = ctx.createLinearGradient(0, b.y, 0, b.y + b.h);
+      g.addColorStop(0, '#E8CE96');
+      g.addColorStop(1, P.gold);
+      ctx.fillStyle = g;
+      ctx.fill();
+    } else {
+      ctx.fillStyle = 'rgba(22,36,30,0.55)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    const size = 22;
+    const tw = trackedWidth(ctx, it.label, size, 4.4, it.on ? 700 : 400);
+    trackedText(
+      ctx, it.label, b.x + (b.w - tw) / 2, b.y + b.h / 2 + 8,
+      size, it.on ? '#2A2114' : P.muted, 4.4, it.on ? 700 : 400,
+    );
+    return b;
+  });
 }
 
 // ────────────────────────────── 大卡 ──────────────────────────────
@@ -296,7 +421,23 @@ function drawFeatured(ctx: CanvasRenderingContext2D, st: SkinsPageState): Button
     }];
   }
 
-  // 未解锁：只写条件，不给假按钮（设计稿这些卡也没有按钮）
+  // 未解锁：ad 档给真按钮，里程碑档只写条件。
+  //
+  // ## 为什么 ad 档必须有按钮
+  //
+  // 文案写着「看广告解锁」，却没有任何可点的地方 —— 玩家会以为按钮没画出来，
+  // 一直点那张卡。而现在后台确实能把主题配成 ad 档，
+  // 客户端不给入口的话，那个配置永远只是句空话。
+  if (shown && shown.unlock.type === 'ad') {
+    const bw = 196;
+    const bx = x + w - 34 - bw;
+    drawGoldChip(ctx, bx, chipY, bw, 48, '看视频解锁');
+    return [{
+      x: bx - 14, y: chipY - 14, w: bw + 28, h: 48 + 28,
+      label: '看视频解锁', kind: 'primary' as const, id: 'unlockThemeAd',
+    }];
+  }
+
   if (shown) trackedTextRight(ctx, themeUnlockLabel(shown), x + w - 46, y + h - 58, 22, P.gold, 3.2, 600);
   return [];
 }
@@ -482,16 +623,7 @@ function drawShelf(ctx: CanvasRenderingContext2D, st: SkinsPageState, now: numbe
   // 上缘的淡出：滚动之后卡片是从大卡底下「钻出来」的，
   // 没有这层就会看到一条被切断的横边（像少画了半个卡）。
   // 停在顶部时不画 —— 否则第一行会被无端压暗一条。
-  if (scroll > 4) {
-    // 前 30px 几乎全遮：被切掉的那半张卡连「圆角消失」都不该看见
-    const fade = ctx.createLinearGradient(0, SHELF.viewTop, 0, SHELF.viewTop + 88);
-    fade.addColorStop(0, 'rgba(14,24,21,1)');
-    fade.addColorStop(0.34, 'rgba(14,24,21,0.94)');
-    fade.addColorStop(0.7, 'rgba(14,24,21,0.5)');
-    fade.addColorStop(1, 'rgba(14,24,21,0)');
-    ctx.fillStyle = fade;
-    ctx.fillRect(0, SHELF.viewTop, DESIGN_W, 88);
-  }
+  drawTopFade(ctx, SHELF.viewTop, scroll);
 }
 
 /** 一张货架卡：卡面 → 预览条 → 名字 / 轴 / 解锁。 */
@@ -582,7 +714,10 @@ const THUMB_STATE = {
 
 /** 能不能画真盘面：霓虹 / 玻璃主题依赖 CanvasPattern 与离屏画布。 */
 function canPaintTheme(): boolean {
-  return typeof document !== 'undefined' || typeof OffscreenCanvas !== 'undefined';
+  // 小游戏端没有 `document` 也没有 `OffscreenCanvas` 构造器，
+  // 但 `wx/tt.createOffscreenCanvas` 是有的 —— 只判前两者会让
+  // 小游戏端的主题预览全部退化成一块底色（静默降级，没人会报 bug）
+  return canCreateOffscreenCanvas();
 }
 
 /** 画预览条：经典盘用黏土砖，主题盘用主题自己的 backdrop + board。 */
@@ -661,6 +796,195 @@ function drawPreview(
   ctx.fillRect(x, y, w, h);
 
   ctx.restore();
+}
+
+// ────────────────────────────── 皮肤网格 ──────────────────────────────
+
+/** 皮肤网格的列数。 */
+const SKIN_COLS = 3;
+
+/** 皮肤网格内容总行数。 */
+function skinRows(): number {
+  return Math.ceil(SKINS.length / SKIN_COLS);
+}
+
+export function skinMaxScroll(): number {
+  const rows = skinRows();
+  const contentH = rows * SKIN_GRID.cardH + Math.max(0, rows - 1) * SKIN_GRID.gapY;
+  return Math.max(0, contentH - (SKIN_GRID.viewBottom - SKIN_GRID.y));
+}
+
+export function clampSkinScroll(v: number): number {
+  return Math.max(0, Math.min(skinMaxScroll(), v));
+}
+
+/** 第 i 张皮肤卡的外框（已减滚动）。 */
+export function skinCardRect(i: number, scroll = 0): { x: number; y: number; w: number; h: number } {
+  const row = Math.floor(i / SKIN_COLS);
+  const col = i % SKIN_COLS;
+  return {
+    x: SKIN_GRID.x + col * (SKIN_GRID.cardW + SKIN_GRID.gapX),
+    y: SKIN_GRID.y + row * (SKIN_GRID.cardH + SKIN_GRID.gapY) - scroll,
+    w: SKIN_GRID.cardW,
+    h: SKIN_GRID.cardH,
+  };
+}
+
+/** 每帧推进皮肤网格的甩动（与货架同一条衰减曲线）。 */
+export function stepSkinScroll(st: SkinsPageState, dt: number): void {
+  const v = st.skinFling ?? 0;
+  if (Math.abs(v) < 0.01) {
+    st.skinFling = 0;
+    return;
+  }
+  const max = skinMaxScroll();
+  const next = (st.skinScroll ?? 0) + v * dt;
+  st.skinScroll = Math.max(0, Math.min(max, next));
+  st.skinFling = v * Math.exp(-dt / 320);
+  if (st.skinScroll <= 0 || st.skinScroll >= max) st.skinFling = 0;
+}
+
+/** 点到第几张皮肤卡。没点到返回 -1。 */
+export function pickSkinChip(x: number, y: number, scroll = 0): number {
+  if (y < SKIN_GRID.y - 8 || y > SKIN_GRID.viewBottom) return -1;
+  for (let i = 0; i < SKINS.length; i++) {
+    const r = skinCardRect(i, scroll);
+    if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return i;
+  }
+  return -1;
+}
+
+/** 皮肤序号 → 皮肤 id。 */
+export function skinIdAt(index: number): string {
+  return SKINS[index]?.id ?? '';
+}
+
+/**
+ * 画皮肤网格。
+ *
+ * ## 为什么每格都画真材质
+ *
+ * `paintSkin` 是**现成的资产管线**：大理石、拉丝、冰晶、星尘全是程序化纹理。
+ * 用一块纯色方块代替预览的话，10 套纹理皮肤在货架上会长得一模一样 ——
+ * 玩家没有任何理由为它们看广告。
+ */
+function drawSkinGrid(
+  ctx: CanvasRenderingContext2D,
+  st: SkinsPageState,
+  now: number,
+): Button[] {
+  const buttons: Button[] = [];
+  const scroll = st.skinScroll ?? 0;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, SKIN_GRID.viewTop, DESIGN_W, SKIN_GRID.viewBottom - SKIN_GRID.viewTop);
+  ctx.clip();
+
+  for (let i = 0; i < SKINS.length; i++) {
+    const r = skinCardRect(i, scroll);
+    if (r.y > SKIN_GRID.viewBottom + 40 || r.y + r.h < SKIN_GRID.viewTop - 40) continue;
+    drawSkinCard(ctx, r, SKINS[i], i, st, now, buttons);
+  }
+
+  ctx.restore();
+  drawTopFade(ctx, SKIN_GRID.viewTop, scroll);
+  return buttons;
+}
+
+/** 一张皮肤卡：预览格 → 名字 → 状态 / 看视频。 */
+function drawSkinCard(
+  ctx: CanvasRenderingContext2D,
+  r: { x: number; y: number; w: number; h: number },
+  skin: Skin,
+  index: number,
+  st: SkinsPageState,
+  now: number,
+  buttons: Button[],
+): void {
+  const owned = isSkinOwned(st, skin);
+  const equipped = st.equipped === skin.id;
+
+  roundRect(ctx, r.x, r.y, r.w, r.h, 28);
+  ctx.fillStyle = P.cardFill;
+  ctx.fill();
+  ctx.strokeStyle = equipped ? 'rgba(212,175,106,0.85)' : P.cardLine;
+  ctx.lineWidth = equipped ? 2.5 : 2;
+  ctx.stroke();
+
+  // 预览：4×2 的小格阵，比一块纯色更能说明"这是格子"
+  const px = r.x + 20;
+  const py = r.y + 16;
+  const pw = r.w - 40;
+  const ph = 92;
+  ctx.save();
+  roundRect(ctx, px, py, pw, ph, 18);
+  ctx.clip();
+  ctx.fillStyle = '#141F1A';
+  ctx.fillRect(px, py, pw, ph);
+  const gap = 5;
+  const cw = (pw - gap * 3) / 4;
+  const ch = (ph - gap) / 2;
+  for (let gy = 0; gy < 2; gy++) {
+    for (let gx = 0; gx < 4; gx++) {
+      const x = px + gx * (cw + gap);
+      const y = py + gy * (ch + gap);
+      paintSkin(ctx, skin, x, y, cw, ch, index + 1, now);
+      roundRect(ctx, x, y, cw, ch, Math.min(8, cw * 0.18));
+      ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  const left = r.x + 20;
+  const innerW = r.w - 40;
+  trackedText(ctx, fitText(ctx, skin.name, innerW, 22, 4.4, 600), left, r.y + 140, 22, P.ink, 4.4, 600);
+
+  if (equipped) {
+    trackedText(ctx, '使用中', left, r.y + 176, 18, P.goldHi, 2.88, 600);
+    return;
+  }
+
+  if (owned) {
+    trackedText(ctx, '点击使用', left, r.y + 176, 18, P.muted, 2.88, 500);
+    // 整张卡都是热区：皮肤卡的预览占了大半，只有名字能点会很难按
+    buttons.push({
+      x: r.x, y: r.y, w: r.w, h: r.h,
+      label: '使用', kind: 'secondary' as const, id: `skin:${index}`,
+    });
+    return;
+  }
+
+  if (skin.unlockType === 'ad') {
+    const bw = innerW;
+    const by = r.y + 152;
+    drawGoldChip(ctx, left, by, bw, 38, '看视频解锁');
+    buttons.push({
+      x: left - 8, y: by - 8, w: bw + 16, h: 38 + 16,
+      label: '看视频解锁', kind: 'primary' as const, id: `skinAd:${index}`,
+    });
+    return;
+  }
+
+  trackedText(
+    ctx,
+    skin.unlockType === 'milestone' ? `第 ${skin.unlockValue} 关解锁` : '未解锁',
+    left, r.y + 176, 18, P.gold, 2.88, 600,
+  );
+}
+
+/** 顶部淡出：滚动之后被切掉的那半张卡不能露出硬边。 */
+function drawTopFade(ctx: CanvasRenderingContext2D, top: number, scroll: number): void {
+  if (scroll <= 4) return;
+  const fade = ctx.createLinearGradient(0, top, 0, top + 88);
+  fade.addColorStop(0, 'rgba(14,24,21,1)');
+  fade.addColorStop(0.34, 'rgba(14,24,21,0.94)');
+  fade.addColorStop(0.7, 'rgba(14,24,21,0.5)');
+  fade.addColorStop(1, 'rgba(14,24,21,0)');
+  ctx.fillStyle = fade;
+  ctx.fillRect(0, top, DESIGN_W, 88);
 }
 
 // ────────────────────────────── 拾取 ──────────────────────────────

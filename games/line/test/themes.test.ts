@@ -113,12 +113,12 @@ describe('棋盘页 · 命中与解锁', () => {
 
   it('货架几何按设计稿：卡 320×252、间距 22、两列左沿 44 / 386', () => {
     const a = shelfCardRect(0);
-    expect([a.x, a.y, a.w, a.h]).toEqual([44, 418, 320, 253]);
+    expect([a.x, a.y, a.w, a.h]).toEqual([44, 480, 320, 253]);
     const b = shelfCardRect(1);
     expect(b.x).toBe(386);
-    expect(b.y).toBe(418);
+    expect(b.y).toBe(480);
     const c = shelfCardRect(2);
-    expect([c.x, c.y]).toEqual([44, 418 + 253 + 18]);
+    expect([c.x, c.y]).toEqual([44, 480 + 253 + 18]);
   });
 
   it('每张卡都能点中，且互不重叠', () => {
@@ -132,11 +132,11 @@ describe('棋盘页 · 命中与解锁', () => {
     }
     expect(hits).toEqual([...Array(shelfCount()).keys()]);
     // 卡内任意点都算命中（点名字/预览一样选中）
-    expect(pickThemeChip(44 + 20, 418 + 20)).toBe(0);
+    expect(pickThemeChip(44 + 20, 480 + 20)).toBe(0);
     // 两列之间的空隙不该有归属
-    expect(pickThemeChip(375, 418 + 60)).toBe(-1);
+    expect(pickThemeChip(375, 480 + 60)).toBe(-1);
     // 两行之间的空隙不该有归属（卡底 664、下一行顶 684）
-    expect(pickThemeChip(44 + 160, 418 + 253 + 9)).toBe(-1);
+    expect(pickThemeChip(44 + 160, 480 + 253 + 9)).toBe(-1);
     // 大卡区域不该返回卡片
     expect(pickThemeChip(44 + 160, 300)).toBe(-1);
   });

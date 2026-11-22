@@ -151,10 +151,12 @@ describe('我的页接线（源码断言）', () => {
     expect(MAIN).toMatch(/shareMode = true/);
 
     // ③ 地图选关模式下点节点 = 分享那一关（不是进关）
+    //    且必须先校验「这一关自己已经通过」——未通过的关只给提示，不弹面板。
     const mapBranch = MAIN.slice(MAIN.indexOf("id.startsWith('map:')"));
-    expect(mapBranch.slice(0, 400), '选关模式必须优先于进关判断').toMatch(
-      /shareMode\)\s*\{\s*openSharePanel\(idx, null/,
+    expect(mapBranch.slice(0, 600), '选关模式必须优先于进关判断，且只允许已通关的关').toMatch(
+      /shareMode\)\s*\{\s*if \(!isLevelCleared\(idx, mapPage\)\) \{[\s\S]{0,200}openSharePanel\(idx, null/,
     );
+    expect(mapBranch.slice(0, 600), '未通关时要说清楚，不能静默').toContain('先通过第');
 
     // ④ 结算页 —— 带成绩：关号取刚打完那关，不能取「下一关」
     const shareBranch = MAIN.slice(MAIN.indexOf("id === 'share')"));

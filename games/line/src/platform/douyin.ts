@@ -19,8 +19,10 @@
  * 所以这里用 `declare const tt`，构建时靠 `__TARGET__` 保证
  * 只有抖音包会走到这些代码（tree-shaking 会摇掉微信包里这一整个文件）。
  */
-import type { Platform, ShareResult } from './types';
+import type { Platform, ShareResult, SaveableCanvas } from './types';
 import { ApiError } from './apiError';
+import { saveCanvasToAlbum, exportCanvasToTempFile } from './saveImage';
+import { stringifyDetail } from './detail';
 
 declare const tt: any;
 
@@ -46,6 +48,30 @@ export function configureDouyinAds(ids: {
   if (ids.rewardedVideoId) rewardedAdId = ids.rewardedVideoId;
   if (ids.interstitialId) interstitialAdId = ids.interstitialId;
   if (ids.bannerId) bannerAdId = ids.bannerId;
+}
+
+/**
+ * 全局未捕获异常 → 实时日志（抖音后台「运营中心 → 实时日志」）。
+ *
+ * 与微信端同一套理由：必须在业务代码之前挂上，才接得住启动期崩溃。
+ */
+export function installDouyinErrorReporting(): void {
+  if (typeof tt === 'undefined') return;
+  try {
+    tt.onError?.((err: any) => {
+      const text = typeof err === 'string'
+        ? err
+        : `${err?.message ?? ''}\n${err?.stack ?? ''}`;
+      try {
+        tt.getRealtimeLogManager?.()?.error?.('uncaught', stringifyDetail(text));
+      } catch { /* 日志失败不影响游戏 */ }
+    });
+    tt.onUnhandledRejection?.((res: any) => {
+      try {
+        tt.getRealtimeLogManager?.()?.error?.('unhandled-rejection', stringifyDetail(res?.reason ?? res));
+      } catch { /* noop */ }
+    });
+  } catch { /* 老版本没有这些钩子 */ }
 }
 
 export const douyinPlatform: Platform = {
@@ -89,6 +115,22 @@ export const douyinPlatform: Platform = {
         fail: (err: any) => reject(new Error('tt.login 失败: ' + (err?.errMsg ?? ''))),
       });
     });
+  },
+
+  /**
+   * 启动参数。
+   *
+   * 抖音同样走 `getLaunchOptionsSync`，但命名空间是 `tt` ——
+   * 这里如果漏了，`game/challenge.ts` 会退到 `location` 分支，
+   * 而小游戏里没有 `location`，结果是**分享链接在抖音端全部打不开对应关卡**。
+   */
+  launchQuery(): Record<string, string> {
+    if (typeof tt === 'undefined') return {};
+    try {
+      return tt.getLaunchOptionsSync?.()?.query ?? {};
+    } catch {
+      return {};
+    }
   },
 
   request<T>(url: string, method: 'GET' | 'POST', data?: unknown, header?: Record<string, string>): Promise<T> {
@@ -272,4 +314,120 @@ export const douyinPlatform: Platform = {
    * 只有两个：好友、分享到抖音。**没有朋友圈**。
    */
   shareChannels: ['friend', 'douyin'] as const,
+
+  /**
+   * 昵称头像。
+   *
+   * 抖音的 `tt.getUserInfo` 与微信 `getUserInfo` 同形，返回
+   * `userInfo.nickName / avatarUrl`。**没有** `getUserProfile` 那一层
+   * 「必须手势触发」的限制，但仍然只在「我的 → 完善资料」里调 ——
+   * 启动时弹授权框会让玩家莫名其妙。
+   */
+  profile: {
+    request(): Promise<{ nickname: string; avatar: string } | null> {
+      return new Promise((resolve) => {
+        if (typeof tt === 'undefined' || typeof tt.getUserInfo !== 'function') {
+          resolve(null);
+          return;
+        }
+        tt.getUserInfo({
+          withCredentials: false,
+          success: (res: any) => {
+            const info = res?.userInfo ?? res;
+            const nickname = String(info?.nickName ?? info?.nickname ?? '').trim();
+            const avatar = String(info?.avatarUrl ?? info?.avatar ?? '').trim();
+            if (!nickname && !avatar) resolve(null);
+            else resolve({ nickname, avatar });
+          },
+          fail: () => resolve(null),
+        });
+      });
+    },
+  },
+
+  /**
+   * 复制分享链接（`tt.setClipboardData`）。
+   *
+   * 抖音端同样没有 `navigator.clipboard`；走直连 DOM 会在点击后
+   * 直接抛 `ReferenceError`，被兜住后给玩家一句「长按试试」——
+   * 而小游戏里没有可长按的文本。
+   */
+  clipboard: {
+    set(text: string): Promise<boolean> {
+      return new Promise((resolve) => {
+        if (typeof tt === 'undefined' || typeof tt.setClipboardData !== 'function') {
+          resolve(false);
+          return;
+        }
+        tt.setClipboardData({
+          data: text,
+          success: () => resolve(true),
+          fail: () => resolve(false),
+        });
+      });
+    },
+  },
+
+  /**
+   * 保存海报到相册。
+   *
+   * 抖音小游戏的 `tt.saveImageToPhotosAlbum` 与微信同名同参，
+   * 所以直接复用 `platform/saveImage.ts`（它同时认 `wx` 和 `tt`）。
+   */
+  saveImage(canvas: SaveableCanvas) {
+    return saveCanvasToAlbum(canvas);
+  },
+
+  /**
+   * 导出画布成临时文件（分享卡片图要用）。
+   *
+   * 抖音的 `tt.shareAppMessage({ imageUrl })` 同样只吃本地路径。
+   */
+  exportCanvas(canvas: SaveableCanvas) {
+    return exportCanvasToTempFile(canvas);
+  },
+
+  /**
+   * 绑定触摸。
+   *
+   * **这一条此前是缺的**：`main.ts` 只读了 `globalThis.wx.onTouchStart`，
+   * 而抖音包里没有 `wx` —— 结果是抖音端进得去、点不动，且因为
+   * 可选链短路，一行报错都没有。
+   */
+  onTouch(bind) {
+    if (typeof tt === 'undefined') return;
+    tt.onTouchStart?.((e: any) => {
+      const t = e?.touches?.[0] ?? e?.changedTouches?.[0];
+      if (t) bind.down(t.clientX, t.clientY);
+    });
+    tt.onTouchMove?.((e: any) => {
+      const t = e?.touches?.[0] ?? e?.changedTouches?.[0];
+      if (t) bind.move(t.clientX, t.clientY);
+    });
+    tt.onTouchEnd?.(() => bind.up());
+    tt.onTouchCancel?.(() => bind.cancel());
+  },
+
+  onAppHide(cb) {
+    if (typeof tt === 'undefined') return;
+    tt.onHide?.(() => cb());
+  },
+
+  /** 回前台。`res.query` 是点分享卡片进来时带的参数。 */
+  onAppShow(cb) {
+    if (typeof tt === 'undefined') return;
+    tt.onShow?.((res: any) => cb(res?.query ?? {}));
+  },
+
+  /** 实时日志（抖音后台「运营中心 → 实时日志」）。 */
+  logError(tag: string, detail: unknown) {
+    try {
+      const mgr = tt?.getRealtimeLogManager?.();
+      if (!mgr) return;
+      mgr.setFilterMsg?.(tag);
+      mgr.error?.(tag, stringifyDetail(detail));
+    } catch { /* 日志失败不影响游戏 */ }
+  },
+
+  installErrorReporting: installDouyinErrorReporting,
 };

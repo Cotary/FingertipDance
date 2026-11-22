@@ -84,6 +84,14 @@ export interface ProfilePageState {
   currentLevel: number;
   /** 玩家 ID（头行「ID xxx」）。 */
   uid: number;
+  /**
+   * 昵称头像是否已经填过（服务端有值）。
+   *
+   * 用它决定「昵称头像」行右值是「已同步」还是「未设置」——
+   * 光看 `nickname` 不行：服务端对新用户下发的是空串，
+   * 而本地会兜成「玩家」，两个都看不出"你到底填没填过"。
+   */
+  profileFilled?: boolean;
 }
 
 // ── 色（定稿 07 我的色板）──
@@ -123,14 +131,16 @@ const M = {
   /**
    * 功能行顶线。
    *
-   * 统计格底 340、底栏顶 1214 → 可用 874。4 行 × 120 = 480，
-   * 从 537 起正好上下各留 197，整块在可用区里居中。
+   * 统计格底 340、底栏顶 1214 → 可用 874。
+   * **6 行 × 100 = 600**，从 477 起上下各留 137，整块在可用区里居中。
    *
-   * （设计稿原值 542/92 是「4 行紧凑贴顶 + 底部空 304」，删掉主题墙后
-   * 那样排会留下过大空白，所以这里改成居中。）
+   * 2026-11-22 加了「昵称头像」与「适龄提示」两行，行数从 4 变 6：
+   * 原来的 4 行 × 120（起 537）塞不下第 5 行 —— 第 6 行会被
+   * `DESIGN_H - 120` 那条防线直接丢掉（按钮消失且没有任何提示）。
+   * 所以改成 6 行 × 100，间距略收紧，视觉密度和原来接近。
    */
-  fnTop: 537,
-  rowH: 120,
+  fnTop: 477,
+  rowH: 100,
 } as const;
 
 /**
@@ -278,7 +288,12 @@ export function drawProfilePage(ctx: CanvasRenderingContext2D, st: ProfilePageSt
   const rows: Array<{ id: string; label: string; value?: string; on?: boolean; accent?: boolean }> = [
     { id: 'toggleSound', label: '音 效', value: st.soundOn ? '开' : '关', on: st.soundOn },
     { id: 'toggleVibrate', label: '振 动', value: st.vibrateOn ? '开' : '关', on: st.vibrateOn },
+    // 昵称头像：微信不给「静默拿资料」，必须玩家点一下才弹授权框。
+    // 没填过时右值是「未设置」，填过就显示「已同步」—— 玩家一眼知道点它有东西可改。
+    { id: 'editProfile', label: '昵称头像', value: st.profileFilled ? '已同步' : '未设置' },
     { id: 'shareGame', label: '分享挑战', value: '带关卡 + 重来数' },
+    // 适龄提示：首次启动已经弹过一次，这里给个随时能回看的入口。
+    { id: 'ageGate', label: '适龄提示', value: '8+' },
     { id: 'profileStats', label: '战 绩', value: '', accent: true },
   ];
 

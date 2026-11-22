@@ -16,8 +16,14 @@
  * 2. 键盘 `` ` `` 或 `F2` 随时随地呼出（浏览器端）；
  * 3. 面板内的世界胶囊 —— 七个世界边界写在代码里，没人记得住，点一下自动填号。
  *
- * ## 只在调试构建里存在
+ * ## 「修进度」按钮
  *
+ * 标题行左上角那颗：让服务端按 `level_records` 把 `max_level` 重算回真实值。
+ * 只对「被旧版跳关顶坏过进度」的账号有意义 —— 旧实现会把 `max_level`
+ * 推到目标关前一关，点开第 405 关看一眼，真实的第 153 关就被顶成 404，
+ * 且 `GREATEST` 永不回落。详见服务端 `debug_jump.go`。
+ *
+ * ## 只在调试构建里存在
  * 调用方全部包在 `DEBUG_ENABLED &&` 里，生产构建把整块连同本文件一起 tree-shake 掉。
  * 这不是「藏起来」，是**产出的包里根本没有这段代码**。
  */
@@ -187,6 +193,16 @@ export function drawDebugJump(
   const close: Button = { x: PLATE.x + PLATE.w - 138, y: PLATE.y + 26, w: 110, h: 62, label: '关闭', kind: 'ghost', id: 'dj:close' };
   drawButton(ctx, close, false);
   buttons.push(close);
+
+  // 修进度：左上角，和「关闭」左右对称。
+  //
+  // 旧版跳关会把服务端的 `max_level` 推到目标关前一关（点开 405 看一眼，
+  // 真实进度 153 就被顶成 404，且永不回落）。跳关现在不写了，
+  // 但已经被顶坏的账号需要一次「按成绩表重算」——就是这颗按钮。
+  // 放标题行而不是底部：底部那行是居中的一句提示，塞按钮会压字。
+  const repair: Button = { x: IX, y: PLATE.y + 26, w: 128, h: 62, label: '修进度', kind: 'ghost', id: 'dj:repair' };
+  drawDebugKey(ctx, repair, 22, false);
+  buttons.push(repair);
 
   // ── 输入行：−  [ 关号 ]  + ──
   const minus: Button = { x: IX, y: ROW_INPUT_Y, w: 86, h: INPUT_H, label: '-', kind: 'secondary', id: 'dj:minus' };

@@ -39,6 +39,7 @@ import {
   type GlyphShapes,
 } from './glyphs';
 import { arcPts, composeTheme, portalEntrance, truncatePts, type CellGeom, type Pt } from './kit';
+import { createOffscreenCanvas } from '../../platform/offscreen';
 
 const TAU = Math.PI * 2;
 
@@ -1560,7 +1561,7 @@ function traceShape(
  */
 const sprites = new Map<string, HTMLCanvasElement>();
 
-function pieceSprite(s: number, vi: number, shape: number): HTMLCanvasElement {
+function pieceSprite(s: number, vi: number, shape: number): HTMLCanvasElement | null {
   const key = `${Math.round(s)}|${vi}|${shape}`;
   const hit = sprites.get(key);
   if (hit) return hit;
@@ -1569,9 +1570,9 @@ function pieceSprite(s: number, vi: number, shape: number): HTMLCanvasElement {
   const pad = Math.ceil(s * 0.24);
   const box = s + pad * 2;
   const ss = 2;
-  const cv = document.createElement('canvas');
-  cv.width = Math.ceil(box * ss);
-  cv.height = Math.ceil(box * ss);
+  // 小游戏端没有 `document`，必须走 wx/tt 的离屏工厂（见 platform/offscreen）
+  const cv = createOffscreenCanvas(Math.ceil(box * ss), Math.ceil(box * ss));
+  if (!cv) return null;
   const c = cv.getContext('2d');
   if (!c) return cv;
   c.scale(ss, ss);
@@ -1740,7 +1741,10 @@ function drawPiece(
   shape: number,
 ): void {
   const pad = Math.ceil(s * 0.24);
-  ctx.drawImage(pieceSprite(s, vi, shape), x - pad, y - pad, s + pad * 2, s + pad * 2);
+  const sprite = pieceSprite(s, vi, shape);
+  // 拿不到离屏画布时宁可不画这一格，也不要在小游戏端抛异常把整盘带崩
+  if (!sprite) return;
+  ctx.drawImage(sprite, x - pad, y - pad, s + pad * 2, s + pad * 2);
 }
 
 /**

@@ -23,6 +23,7 @@ import type { BoardLayout } from '../layout';
 import { CoverCell } from '../../core/cover/v3/types';
 import type { DesignBox, ThemeChrome } from './types';
 import { composeTheme, type CellGeom, type Pt } from './kit';
+import { createOffscreenCanvas } from '../../platform/offscreen';
 
 const CYAN = '#00E5FF';
 const MAGENTA = '#FF2E9A';
@@ -54,9 +55,9 @@ let dotTile: HTMLCanvasElement | null = null;
 
 function dotPattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
   if (!dotTile) {
-    dotTile = document.createElement('canvas');
-    dotTile.width = 12;
-    dotTile.height = 12;
+    const tile = createOffscreenCanvas(12, 12);
+    if (!tile) return null;
+    dotTile = tile;
     const c = dotTile.getContext('2d');
     if (!c) return null;
     c.fillStyle = 'rgba(88,62,152,0.20)';

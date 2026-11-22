@@ -29,6 +29,7 @@ import { carveAndVerify } from './carve';
 import { computeDiff, measure, type DiffContext, type Metrics } from './metrics';
 import { buildRuleSet, replay, type RuleSet } from './rules';
 import { estimateSolutions } from './solcount';
+import { splicePortals } from './portal';
 import { CoverCell, cellType, packCell } from './types';
 import { classifyObstacles, fingerprintOf } from './generate';
 
@@ -241,7 +242,7 @@ function generateOne(
   rs.startAt = startAt;
   rs.endAt = endAt;
 
-  const path = carve.path;
+  let path = carve.path;
 
   // 注入机制（**按用户指定的数量**，而不是世界配方）
   const plan = {
@@ -251,7 +252,17 @@ function generateOne(
     portal: pickInRange(params.portal, rng),
     ice: pickInRange(params.ice, rng),
   };
-  injectCustomMechanics(rs, path, plan, rng);
+
+  // 传送门：2-opt 拼接（**必须在注入机制之前**）—— 理由同 `generate.ts`。
+  let portalCells: Array<[number, number]> = [];
+  if (plan.portal > 0) {
+    const spliced = splicePortals(rs, path, rng, plan.portal);
+    if (!spliced) return null;
+    path = spliced.path;
+    portalCells = spliced.portals.map((p) => [p.entry, p.exit] as [number, number]);
+  }
+
+  injectCustomMechanics(rs, path, plan, rng, portalCells);
 
   // 写回 grid
   for (let i = 0; i < rs.n; i++) {
@@ -267,6 +278,12 @@ function generateOne(
   rs2.endAt = endAt;
   const rp = replay(rs2, path);
   if (!rp.ok) {
+    /**
+     * **传送门关卡不能退化成无机制盘面** ——
+     * 那等于「这一关名义上有传送门、实际没有」。
+     * 宁可丢掉候选。
+     */
+    if (plan.portal > 0) return null;
     // 机制注入破坏了参考解 → 清空机制重来一遍。
     // **必须重建规则集**，否则拿旧的 rs2 回放仍会失败。
     for (let i = 0; i < rs.n; i++) {
@@ -334,6 +351,7 @@ function injectCustomMechanics(
   path: number[],
   plan: { oneway: number; shard: number; keygate: number; portal: number; ice: number },
   rng: Rng,
+  portalCells: ReadonlyArray<readonly [number, number]> = [],
 ): void {
   const n = rs.n;
   if (n < 10) return;
@@ -348,6 +366,17 @@ function injectCustomMechanics(
   if (interior.length < 4) return;
 
   const used = new Set<number>();
+
+  /**
+   * **传送门格预先占用** —— 理由同 `generate.ts` 的 `injectMechanics`：
+   * 传送门格是跳跃边的两端，任何别的机制落上去都会破坏
+   * 「走进传送格 → 传送到搭档」的对齐。
+   */
+  for (const [entry, exit] of portalCells) {
+    used.add(entry);
+    used.add(exit);
+  }
+
   const pick = (): number | null => {
     const avail = interior.filter((v) => !used.has(v));
     if (avail.length === 0) return null;
@@ -417,10 +446,14 @@ function injectCustomMechanics(
   }
 
   // --- 传送门：成对格 ---
+  //
+  // ⚠️ 传送门格**只能来自 `portalCells`**（由 `splicePortals` 预先算好）。
+  // 「进入即传送」语义下，走进传送格 A 的一步会一次吃掉 `[A, B]`，
+  // 参考解必须**正好**在这一步从 A 跳到 B —— 随便挑两格必然回放失败。
   for (let k = 0; k < plan.portal; k++) {
-    const a = pick();
-    const b = pick();
-    if (a === null || b === null) break;
+    const pair = portalCells[k];
+    if (!pair) break;
+    const [a, b] = pair;
     rs.typeOf[a] = CoverCell.PORTAL;
     rs.groupOf[a] = k % 4;
     rs.typeOf[b] = CoverCell.PORTAL;

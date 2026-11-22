@@ -17,6 +17,8 @@
  * - **密度必须不均**：低频值噪声调制疏密，否则像均匀噪点滤镜
  */
 
+import { createOffscreenCanvas } from '../platform/offscreen';
+
 /** 贴图边长（设计像素）。128 会有可见周期，512 生成耗时翻倍，256 最划算。 */
 const TILE = 256;
 
@@ -75,14 +77,8 @@ function valueNoise(x: number, y: number, grid: number, seed: number): number {
 
 /** 建一张离屏画布；拿不到就返回 null（离线 SVG 录制器走这条）。 */
 function newTileCanvas(size: number): TileCanvas | null {
-  if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
-    const c = document.createElement('canvas');
-    c.width = size;
-    c.height = size;
-    return c as unknown as TileCanvas;
-  }
-  const wx = (globalThis as { wx?: { createOffscreenCanvas?: (o: { type: '2d'; width: number; height: number }) => TileCanvas } }).wx;
-  return wx?.createOffscreenCanvas?.({ type: '2d', width: size, height: size }) ?? null;
+  // 小游戏端要 wx/tt 的离屏工厂，Web 端用 DOM —— 分支收在 platform/offscreen 里
+  return createOffscreenCanvas(size, size) as unknown as TileCanvas | null;
 }
 
 /**

@@ -23,3 +23,27 @@ export const platform: Platform =
   __TARGET__ === 'wechat' ? wechatPlatform
   : __TARGET__ === 'douyin' ? douyinPlatform
   : webPlatform;
+
+/**
+ * 挂全局异常钩子。
+ *
+ * 放在这里而不是各平台模块顶层：模块顶层的 `if (typeof wx !== 'undefined')`
+ * 是副作用，bundler 不敢摇，微信包里会混进 `tt.onError`、抖音包里混进
+ * `wx.onError`（被 typeof 挡住不会执行，但「跨端命名空间零污染」这条纪律就破了）。
+ *
+ * 必须在任何业务代码之前调用 —— 启动期崩溃才接得住。
+ */
+platform.installErrorReporting?.();
+
+/**
+ * 确保已获得隐私授权（微信合规）。
+ *
+ * 平台没有这套能力（Web / 抖音 / 老基础库）时**直接放行** ——
+ * 拦下来等于「老设备永远进不了游戏」，而合规要求的对象是能弹授权的那些版本。
+ *
+ * 放在这里而不是让调用方写 `platform.privacy?.ensureAuthorized()`：
+ * 「拿不到就放行」这条规则只该写一次，写两遍就会有一处写成 `?? false`。
+ */
+export function ensurePrivacyAuthorized(): Promise<boolean> {
+  return platform.privacy?.ensureAuthorized() ?? Promise.resolve(true);
+}

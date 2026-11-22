@@ -41,6 +41,39 @@ function stableMockCode(): string {
 }
 
 /**
+ * 写剪贴板（浏览器）。
+ *
+ * 两条路：`navigator.clipboard` 需要**安全上下文**（https / localhost），
+ * 内网 http 调试时不满足，所以再挂一个 `execCommand` 兜底 ——
+ * 否则本地调试时会发现「复制链接」永远失败。
+ */
+async function copyText(text: string): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // 落到下面的 execCommand
+    }
+  }
+  if (typeof document === 'undefined') return false;
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Web 平台实现。广告用假倒计时模拟，登录返回 mock code。
  */
 export const webPlatform: Platform = {
@@ -48,6 +81,20 @@ export const webPlatform: Platform = {
 
   async login() {
     return { code: stableMockCode() };
+  },
+
+  /**
+   * 启动参数 = URL 的 search。
+   *
+   * Web 端没有「热启动」这回事（刷新即重载），所以只有这一处来源。
+   */
+  launchQuery(): Record<string, string> {
+    if (typeof location === 'undefined') return {};
+    try {
+      return Object.fromEntries(new URLSearchParams(location.search).entries());
+    } catch {
+      return {};
+    }
   },
 
   async request<T>(url: string, method: 'GET' | 'POST', data?: unknown, header?: Record<string, string>): Promise<T> {
@@ -137,13 +184,11 @@ export const webPlatform: Platform = {
       }
     }
 
-    try {
-      await navigator.clipboard.writeText(url);
-      return 'copied';
-    } catch {
-      return 'failed';
-    }
+    return (await copyText(url)) ? 'copied' : 'failed';
   },
+
+  /** 复制链接（与 `share` 内部的兜底同一个实现，避免两处不一致）。 */
+  clipboard: { set: copyText },
 
   vibrate(pattern: number | number[] = 15) {
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {

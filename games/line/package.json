@@ -19,7 +19,10 @@
     "level:inspect": "vite --open /tools/level-inspector.html",
     "ui:gallery": "tsx tools/ui-gallery.ts",
     "audio:check": "bash scripts/audio-check.sh",
-    "build:douyin": "tsc --noEmit && vite build --mode douyin && node scripts/copy-dy-assets.mjs"
+    "build:douyin": "tsc --noEmit && vite build --mode douyin && node scripts/copy-dy-assets.mjs",
+    "verify:targets": "node scripts/verify-targets.mjs",
+    "verify:targets:build": "node scripts/verify-targets.mjs --build",
+    "release:check": "npm run typecheck && npm test && node scripts/verify-targets.mjs"
   },
   "devDependencies": {
     "typescript": "^5.5.4",

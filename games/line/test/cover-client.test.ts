@@ -19,7 +19,7 @@ import {
   coveredCount,
   undoCoverStep,
 } from '../src/game/coverState';
-import { decodeGrid, decodeSolution, type LevelEntryWithSolution } from '../src/core/cover/v3/codec';
+import { decodeSolution, type LevelEntryWithSolution } from '../src/core/cover/v3/codec';
 import { buildRuleSet, replay } from '../src/core/cover/v3/rules';
 import { CoverCell, cellType } from '../src/core/cover/v3/types';
 
@@ -33,35 +33,18 @@ function loadLevels(): LevelEntryWithSolution[] {
 
 const LEVELS = loadLevels();
 
-/**
- * 关卡里是否含传送门。
- *
- * ## 为什么这些关卡要从「参考解能走通」的断言里排除（2026-11-20）
- *
- * 传送语义改成「进入即传送」，而现有 252 个传送门关卡是
- * 「传送门摆在解路径中间、被物理踩过去」生成的 —— 强制传送后
- * 那些夹在中间格（如第 153 关的 (3,0)）永远进不去，参考解必然失效。
- *
- * 关卡表由用户重新生成中；新表到位后这些断言里的过滤应当删掉。
- */
-function hasPortal(entry: LevelEntryWithSolution): boolean {
-  const grid = decodeGrid(entry.grid, entry.w * entry.h);
-  for (let i = 0; i < grid.length; i++) if (cellType(grid[i]) === CoverCell.PORTAL) return true;
-  return false;
-}
-
-/** 过滤掉传送门关卡，保留可全量校验的部分。 */
-const LEVELS_NO_PORTAL = LEVELS.filter((e) => !hasPortal(e));
-
 describe('cover 客户端状态机', () => {
   it('关卡表可读取且有 1000 关', () => {
     expect(LEVELS.length).toBe(1000);
   });
 
-  it('参考解能按状态机一步步走完并通关（抽样 60 关，不含传送门关卡）', () => {
-    // 均匀抽样：覆盖 7 个世界与各类机制
-    // 传送门关卡待重新生成（见 `hasPortal` 的说明），暂不参与
-    const picks = pickSamples(LEVELS_NO_PORTAL, 60);
+  it('参考解能按状态机一步步走完并通关（抽样 60 关，含传送门关卡）', () => {
+    // 均匀抽样：覆盖 7 个世界与各类机制（含传送门）
+    //
+    // 传送门关卡现在也参与：它们的参考解是**专门拼接**出来的，
+    // 跳跃边的两端就是传送门对 —— 走上传送门的那一步一次吃掉两格
+    // （入口 + 出口），下面 `pos += consumed` 正好跨过去。
+    const picks = pickSamples(LEVELS, 60);
     expect(picks.length).toBeGreaterThan(0);
 
     for (const entry of picks) {
@@ -210,8 +193,8 @@ describe('cover 客户端状态机', () => {
     }
   });
 
-  it('状态机的判定与 rules.ts 的回放校验一致（除传送门关卡外的全部）', () => {
-    for (const entry of LEVELS_NO_PORTAL) {
+  it('状态机的判定与 rules.ts 的回放校验一致（全部关卡，含传送门）', () => {
+    for (const entry of LEVELS) {
       const level = decodeCoverLevel(entry);
       const runtime = buildCoverRuntime(level);
       const state = createCoverState(runtime);

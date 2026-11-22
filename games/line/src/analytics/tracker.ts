@@ -19,10 +19,14 @@ const API_BASE = __API_BASE__;
 /** 埋点事件名。 */
 export type EventName =
   | 'app_start' | 'login_success'   | 'level_start' | 'tile_light' | 'level_pass'
-  | 'level_fail' | 'level_abandon' | 'hint_use' | 'skip_use'
+  // 没有 `level_fail`：cover 玩法没有"失败"这个状态（松手只是宽限期，
+  // 玩家随时可以接着拖）。真正值得记的两种"没通关"是
+  // `level_abandon`（作废重起一笔）与退出关卡 —— 后者靠 `level_start`
+  // 的会话时长就能看出来。留一个永远不上报的事件名，只会让人以为漏埋了。
+  | 'level_abandon' | 'hint_use' | 'skip_use'
   | 'level_load_fail' | 'progress_report_failed' | 'progress_report_rejected' | 'canvas_resize'
-  | 'ad_start' | 'ad_complete' | 'ad_abort' | 'ad_error'
-  | 'skin_unlock' | 'skin_equip' | 'skin_page_view' | 'theme_equip' | 'theme_page_view'
+  | 'ad_start' | 'ad_complete' | 'ad_abort' | 'ad_error' | 'ad_blocked'
+  | 'skin_unlock' | 'skin_equip' | 'skin_page_view' | 'theme_equip' | 'theme_unlock' | 'theme_page_view'
   | 'leaderboard_view' | 'share_click' | 'share_success'
   | 'challenge_start' | 'challenge_result'
   // 大厅体系（T23）

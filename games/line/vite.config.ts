@@ -1,4 +1,6 @@
 import { defineConfig } from 'vite';
+// 纯函数模块（构建期后端地址校验）—— vite.config.ts 与 vitest 都能直接 import。
+import { resolveApiBase } from './scripts/api-base';
 
 /**
  * 本地开发端口。
@@ -16,8 +18,20 @@ import { defineConfig } from 'vite';
  */
 const PORT = Number(process.env.PORT ?? 50002);
 
-/** 后端 API 地址。同样可用 `API_BASE` 覆盖。 */
-const API_BASE = process.env.API_BASE ?? 'http://127.0.0.1:50001';
+/**
+ * 后端 API 地址。
+ *
+ * ## 为什么要单独抽一个模块
+ *
+ * 原来这里是一行 `process.env.API_BASE ?? 'http://127.0.0.1:50001'`。
+ * 本地开发没问题，但 `build:wx` / `build:douyin` 没设环境变量时，
+ * **产出的包里就带着 `127.0.0.1:50001`** ——
+ * 线上包连的是玩家自己手机的环回地址，登录静默失败、进度不同步、
+ * 排行榜空白，而 `boot()` 的 try/catch 把错误全兜住了，**日志一句都没有**。
+ *
+ * 现在小游戏构建**必须**显式给 `API_BASE`，否则构建直接失败。
+ * 校验逻辑放在 `scripts/api-base.mjs`（纯函数，可被测试直接调用）。
+ */
 
 export default defineConfig(({ command, mode }) => {
   // ── 三端构建目标 ──
@@ -51,11 +65,25 @@ export default defineConfig(({ command, mode }) => {
   const debugEnabled =
     process.env.DEBUG === 'true' ||
     (process.env.DEBUG !== 'false' && command === 'serve');
+
+  // ── 后端地址：小游戏构建必须显式给 ──
+  //
+  // 小游戏构建漏了 `API_BASE` 时，产出的包会指向 `127.0.0.1:50001`，
+  // 线上连的是玩家自己手机的环回地址 —— 登录静默失败、进度不同步、
+  // 排行榜空白，而且**日志里一句报错都没有**（`boot()` 全 try/catch 兜住了）。
+  //
+  // 与其发出去再排查半天，不如**构建期就失败**。
+  const target = isWx ? 'wx' : isDy ? 'douyin' : 'web';
+  const resolved = resolveApiBase(target, process.env.API_BASE);
+  if (resolved.error) {
+    throw new Error(`\n[构建配置错误] ${resolved.error}\n`);
+  }
+
   return {
     server: { port: PORT, host: '0.0.0.0', strictPort: true },
     define: {
       __TARGET__: JSON.stringify(isWx ? 'wechat' : isDy ? 'douyin' : 'web'),
-      __API_BASE__: JSON.stringify(API_BASE),
+      __API_BASE__: JSON.stringify(resolved.base),
       __DEBUG__: JSON.stringify(debugEnabled ? 'true' : 'false'),
     },
     build: {

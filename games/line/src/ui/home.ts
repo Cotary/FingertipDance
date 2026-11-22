@@ -62,6 +62,13 @@ export interface HomePageState {
   starCount: number;
   /** 累计重来次数（票券「重来累计」格）。 */
   totalRetries: number;
+  /**
+   * 是否显示「分享挑战」入口（服务端 `features.shareChallenge`）。
+   *
+   * 缺省 / undefined = 显示。配置没拉到时不能把入口藏了 ——
+   * 分享是核心玩法的一部分，不能因为一次网络失败就消失。
+   */
+  shareOn?: boolean;
 }
 
 // ── 版式刻度（设计稿 CSS × 2；y 已减去 36 的假状态栏）──
@@ -150,7 +157,10 @@ export function drawHomePage(ctx: CanvasRenderingContext2D, st: HomePageState, n
   // 首页自己不做选关：一屏只有「当前关」，而分享的乐趣在于挑一关
   // 「我打得漂亮 / 我卡了很久」的关卡。选关交给地图 —— 那里本来就是
   // 全部关卡的列表，不用另造一个选择器。
-  const shareBtn = drawShareStrip(ctx);
+  //
+  // `shareOn === false` 时整条不画（服务端功能开关关掉了分享挑战）：
+  // 画出来却被点击拦截，比不画更让人困惑。
+  const shareBtn = st.shareOn === false ? null : drawShareStrip(ctx);
 
   // ── 底注（居中，设计稿全页唯一一条居中文字）──
   const tip = '每关首次「提示」需看激励视频 · 跳过不给星';
@@ -161,7 +171,7 @@ export function drawHomePage(ctx: CanvasRenderingContext2D, st: HomePageState, n
     1167, 17, C.mutedSoft, 3.74, 500,
   );
 
-  return [btn, shareBtn];
+  return shareBtn ? [btn, shareBtn] : [btn];
 }
 
 /** 票券：左「继续 / 047」、右「∞ / 无尽」、撕口下三格读数。 */

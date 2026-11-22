@@ -1,7 +1,6 @@
-import { platform, type ShareChannel } from './platform';
+import { platform, configureAds, configureDouyinAds, ensurePrivacyAuthorized, type ShareChannel } from './platform';
 import { ApiError } from './platform/apiError';
-import { configureAds } from './platform/wechat';
-import { fetchFriends, fetchLeaderboard, fetchProfile, fetchStars, login, fetchConfig, reportCoverProgress, reportCoverSkip, reportCoverChallenge, createShareChallenge, fetchChallengeInfo, fetchCoverHint, reportEvent, debugJump, type ServerConfig, type CoverChallengeOutcome } from './net/api';
+import { fetchFriends, fetchLeaderboard, fetchProfile, fetchStars, login, fetchConfig, localPlatformCode, reportCoverProgress, reportCoverSkip, reportCoverChallenge, createShareChallenge, fetchChallengeInfo, fetchCoverHint, reportEvent, debugJump, debugRepairProgress, unlockReward, reportAdWatch, updateProfile, type ServerConfig, type CoverChallengeOutcome } from './net/api';
 import { CoverSession } from './game/coverSession';
 import { CoverLevelStore } from './game/coverLevelStore';
 import { buildCoverRuntime, decodeCoverLevel } from './game/coverLevel';
@@ -14,12 +13,12 @@ import { drawCoverTrail } from './render/coverTrail';
 import { Fx } from './render/fx';
 import { audio } from './render/audio';
 import { SKINS, skinById } from './render/skins';
-import { drawSkinsPage, pickThemeChip, themeIdAt, isThemeOwned, unlockedThemeCount, shelfCount, stepThemeScroll, clampShelfScroll, type SkinsPageState } from './ui/skins';
-import { themeById } from './render/themes';
+import { drawSkinsPage, pickThemeChip, pickSkinChip, themeIdAt, isThemeOwned, isSkinOwned, ownedSkinCount, unlockedThemeCount, shelfCount, stepThemeScroll, stepSkinScroll, clampShelfScroll, clampSkinScroll, type SkinsPageState } from './ui/skins';
+import { themeById, applyThemeUnlocks } from './render/themes';
 import { enterTotalMs, enterTempo, enterSettleDelays } from './render/themes/kit';
 import { cellType, CoverCell } from './core/cover/v3/types';
 import { ads } from './ads/ads';
-import { needsAdForHint, canSkipToday, markSkippedToday } from './ads/rewardRules';
+import { needsAdForHint, markSkippedToday, applyRewardFrequency, skipBlockReason } from './ads/rewardRules';
 import { tracker } from './analytics/tracker';
 import {
   drawHud, drawPlayFootnote, drawPlayTip, drawPlayLegend, drawPlaySub, drawResult, drawButton, hitButton,
@@ -27,24 +26,26 @@ import {
 } from './ui/hud';
 import { drawHomePage, type HomePageState } from './ui/home';
 import {
-  createMapState, pickMapNode, scrollToLevel, isLevelPlayable, stepMapScroll,
+  createMapState, pickMapNode, scrollToLevel, isLevelPlayable, isLevelCleared, stepMapScroll,
   pickRail, railScrollAt, type MapViewState,
 } from './ui/mapview';
 import { drawMapView } from './ui/mapdraw';
 import { drawRankPage, createRankState, type RankPageState } from './ui/leaderboard';
 import { drawProfilePage, type ProfilePageState } from './ui/profile';
 import { drawStatsPanel } from './ui/statsPanel';
+import { drawAgeGate, KEY_AGE_ACK } from './ui/ageGate';
 import { drawSharePanel, type SharePanelState } from './ui/sharePanel';
 import { drawNav, pickNavTab, type NavTab } from './ui/nav';
 import { LOBBY_THEME } from './ui/theme';
 import { drawWallWipe, WIPE_MS } from './ui/wipe';
 import { CLAY, CLAY_UI, clayBlock, clayText } from './ui/clay';
 import { drawLobbyGround } from './ui/ground';
-import { publishProfile } from './platform/openData';
-import { parseChallenge, buildShareQuery } from './game/challenge';
+import { drawBootSplash } from './ui/splash';
+import { publishProfile, refreshOpenData } from './platform/openData';
+import { parseChallenge, parseChallengeFrom, buildShareQuery, resolveShareBase } from './game/challenge';
 import { DEBUG_ENABLED } from './core/debug';
 import { applyDebugJumpInput, createDebugJumpState, drawDebugJump, type DebugJumpState } from './ui/debugjump';
-import { renderPoster, shareCopy, shareCopyCount } from './ui/share';
+import { renderPoster, renderShareCard, shareCopy, shareCopyCount, type PosterCanvas } from './ui/share';
 
 /**
  * 画布的 CSS 尺寸与设备像素比。
@@ -260,6 +261,84 @@ type Phase =
   | 'result';
 
 let config: ServerConfig | null = null;
+
+/**
+ * 应用服务端下发的运营配置。
+ *
+ * ## 为什么集中在一个函数里
+ *
+ * 这些值分散在广告、分享、提示、跳过、主题五处消费。
+ * 各消费点自己去 `config?.xxx` 取值的话，「配置没拉到时用什么」
+ * 这个问题就会被回答五遍，而且五遍未必一致 ——
+ * 最糟的一种是某一处忘了兜底，界面直接少一个按钮。
+ *
+ * 这里一次性把配置**推到各模块**，消费点只问模块本身：
+ * `ads` 知道自己的频控、`rewardRules` 知道免费次数、主题表知道自己什么时候解锁。
+ *
+ * 广告位 ID 两端**不共用**（各自后台创建），混填的表现是
+ * 「广告加载失败」—— 客户端看起来只是「点了没反应」。
+ */
+function applyServerConfig(cfg: ServerConfig): void {
+  const ad = cfg.ad;
+  if (ad) {
+    const ids = {
+      rewardedVideoId: ad.rewardedVideoId,
+      interstitialId: ad.interstitialId,
+      bannerId: ad.bannerId,
+    };
+    if (platform.name === 'wechat') {
+      configureAds(ids);
+    } else if (platform.name === 'douyin') {
+      // 抖音端这条此前**从未被调用**：`boot()` 只判了 wechat，
+      // 于是抖音包一直在用 `adunit-placeholder`。现在按平台各配各的。
+      configureDouyinAds(ids);
+    }
+    ads.applyFrequency(ad);
+    applyRewardFrequency(ad);
+  }
+
+  // 主题只覆盖「解锁条件」。list 为空时 `applyThemeUnlocks` 会还原本地值 ——
+  // 服务端不下发就不动，避免一次配置失误清空玩家的主题墙。
+  applyThemeUnlocks(cfg.themes);
+}
+
+/**
+ * 功能开关。
+ *
+ * `config` 还没拉回来 / 拉取失败时一律按**开**处理：
+ * 分享、提示、跳过都是核心玩法的一部分，
+ * 不能因为一次网络失败就让它们从界面上消失。
+ */
+function featureOn(name: 'hint' | 'skip' | 'shareChallenge'): boolean {
+  if (!config?.features) return true;
+  return config.features[name] !== false;
+}
+
+/**
+ * 分享链接的基址。
+ *
+ * ## 为什么不能直接 `location.origin`
+ *
+ * 小游戏端**没有 `location`**（`wx` / `tt` 环境里访问它是 undefined）。
+ * 这也是之前审计出的崩溃点之一：从「复制链接」走一遍就会抛
+ * `Cannot read properties of undefined`。
+ *
+ * 优先级：
+ *   1. Web 端用当前页面地址（本地调试时复制出来的链接能直接打开）
+ *   2. 服务端下发的 `shareUrlPrefix`（小游戏端的唯一真源）
+ *   3. `location` 存在时的 origin（兜底：老服务端不下发前缀）
+ *
+ * 都没有就返回空串，由调用方提示「分享域名未配置」——
+ * 拼一个 `?l=47` 出去，好友点开只会看到首页。
+ */
+function shareBaseUrl(): string {
+  return resolveShareBase({
+    isWeb: platform.name === 'web',
+    shareUrlPrefix: config?.shareUrlPrefix,
+    location: (globalThis as { location?: { origin?: string; pathname?: string } }).location,
+  });
+}
+
 let phase: Phase = 'loading';
 /**
  * 战绩弹层是否打开。
@@ -271,6 +350,21 @@ let phase: Phase = 'loading';
  */
 let statsPanelOpen = false;
 let statsPanelButtons: Button[] = [];
+
+/**
+ * 适龄提示弹层。
+ *
+ * ## 为什么是全局模态，而不是只挂在我的页
+ *
+ * 它是**首次启动**就要出现的合规提示 —— 那时玩家还在大厅或直接进关。
+ * 挂在某一页上就得在每页都判一次，还不如做成压在所有页面之上的模态。
+ *
+ * 与 `statsPanelOpen` / `sharePanelOpen` 的区别：那两个是玩家主动打开的，
+ * 这个是我们主动弹的；所以它在 `onDown` 里**最先**拦截，
+ * 包括调试面板都要让位（合规提示没点掉之前，什么都不该被点到）。
+ */
+let ageGateOpen = false;
+let ageGateButtons: Button[] = [];
 
 /**
  * 分享抽屉（我的页「分享挑战」点开）。
@@ -341,6 +435,7 @@ function showToast(msg: string, ms = 2400): void {
 }
 
 let skinsPage: SkinsPageState = {
+  tab: 'themes',
   equipped: 'wood',
   selected: 'wood',
   unlocked: new Set(['wood', 'mint']),
@@ -348,6 +443,7 @@ let skinsPage: SkinsPageState = {
   themeSelected: '',
   themeEquipped: '',
   maxLevel: 0,
+  unlockedThemes: new Set(),
   // 调试构建里八套全部可试 —— 否则测试环境要先打通 1000 关才能看到深海
   themeAllUnlocked: DEBUG_ENABLED,
 };
@@ -361,6 +457,7 @@ let skinsPage: SkinsPageState = {
 function syncSkinsPage(): void {
   skinsPage.equipped = progress.current.currentSkin;
   skinsPage.unlocked = new Set(progress.current.unlockedSkins);
+  skinsPage.unlockedThemes = new Set(progress.current.unlockedThemes ?? []);
   skinsPage.themeEquipped = progress.current.currentTheme ?? '';
   skinsPage.maxLevel = progress.current.maxLevel;
   // 展台默认摆「正在用的那一套」，而不是每次都从第一格开始
@@ -411,6 +508,8 @@ let mapRailGrab: number | null = null;
  * 是为了区分「想选这套主题」和「想往下看」—— 没有它，每次滑动都会顺手改掉选中项。
  */
 let shelfDragStart: {
+  /** 拖的是哪一块：主题货架 / 皮肤网格（两块的滚动字段不同） */
+  kind: 'theme' | 'skin';
   y: number;
   scroll: number;
   moved: boolean;
@@ -513,6 +612,24 @@ let profileButtons: Button[] = [];
 let challenge: ReturnType<typeof parseChallenge> = null;
 /** 挑战结算结果。cover 模式的对比维度是「重来次数」。 */
 let challengeResult: { win: boolean; myUndos: number; bestUndos: number; fromName: string; isNewBest: boolean } | null = null;
+
+/**
+ * 冷启动流程（登录 / 配置 / 关卡表）是否已经走完。
+ *
+ * 小游戏冷启动时 `onShow` **也会触发一次**，那时关卡表还没加载，
+ * 贸然按它带的 query 进关卡会直接抛（`levels` 是空的）。
+ * 冷启动的参数由 `boot()` 里的 `parseChallenge()` 读，这里只用它挡掉那次重复。
+ */
+let booted = false;
+
+/**
+ * 上一次热启动已经处理过的挑战指纹。
+ *
+ * 从后台切回来（看广告、回微信消息）也会触发 `onShow`，但 `query` 为空；
+ * 有些机型会把上次的 query 再带一遍 —— 用指纹去重，避免「切个后台回来
+ * 又被弹进好友那一关」。指纹相同 = 同一条链接，不重复进入。
+ */
+let hotLaunchKey = '';
 
 /**
  * 画布坐标 → 设计坐标。
@@ -662,18 +779,37 @@ async function gotoTab(tab: NavTab): Promise<void> {
         threeStarCount: Object.values(progress.current.stars ?? {}).filter((s) => s === 3).length,
         currentLevel: progress.currentLevel,
         uid: progress.current.uid,
+        // 只在**真有头像**时算填过：服务端对没填过的用户下发空串，
+        // 本地又会把空昵称兜成「玩家」，两个都判断不了"填没填过"。
+        profileFilled: !!progress.current.avatar,
       };
       reportEvent('profile_view', { max_level: progress.current.maxLevel });
       break;
   }
 }
 
-/** 拉取总榜。 */
-async function loadGlobalRank(): Promise<void> {
+/**
+ * 排行榜每页条数。
+ *
+ * 与服务端 `leaderboard.DefaultPageSize` 对齐：客户端只是"想要的窗口大小"，
+ * 服务端仍会兜住上限（100）。两边不一致时以服务端回的 `limit` 为准 ——
+ * 这里只负责分页按钮的步进，不承担正确性。
+ */
+const RANK_PAGE_SIZE = 50;
+
+/** 拉取总榜（offset = 窗口起点）。 */
+async function loadGlobalRank(offset = 0): Promise<void> {
   rankPage.global.loading = true;
   try {
-    const res = await fetchLeaderboard();
-    rankPage.global = { list: res.list, myRank: res.myRank, total: res.total, loading: false };
+    const res = await fetchLeaderboard(offset, RANK_PAGE_SIZE);
+    rankPage.global = {
+      list: res.list,
+      myRank: res.myRank,
+      total: res.total,
+      loading: false,
+      offset: res.offset ?? offset,
+      pageSize: RANK_PAGE_SIZE,
+    };
   } catch {
     rankPage.global.loading = false;
   }
@@ -980,43 +1116,63 @@ async function onChallengeWin(steps: number, timeMs: number, path: number[]) {
 /**
  * 调试模式：跳到任意一关。
  *
- * ## 为什么要分两步（先跳服务端，再进关卡）
+ * ## 它**不改进度**（2026-11-21 改）
  *
- * 客户端的调试开关只负责「**界面**允许点任意一关」（`isLevelPlayable`）。
- * 服务端的 `max_level` 不动的话，地图上那一关仍然画成「调试解锁」的蓝灰色，
- * 而且玩家打完这一关、通关上报回来时 `max_level` 会突然跳到那一关 ——
- * 中间的关卡被一次性「吞掉」，看起来像 bug。
+ * 旧实现先让服务端把 `max_level` 推到目标关的前一关，好让目标关变成
+ * 「当前关」、地图显示对得上。代价是**玩家的真实进度被永久顶高**：
+ * 点开第 405 关看一眼，`max_level` 就从真实的 153 变成 404，
+ * 地图随即把 1..404 画成已通关 —— 而分享选关按星级判定又说 405 没过。
  *
- * 所以先让服务端把 `max_level` 推到目标关的**前一关**：
- * 目标关成为「当前关」，中间那些关显示为已通关（无星）。
+ * 现在跳关只做一次「服务端调试开关是否开着」的探针（403 = 关着），
+ * 进关本身完全靠客户端（`enterLevel` 直接拉关卡数据）。
+ * 真正的进度只由通关上报 / 看广告跳过推进，跳关一个字节都不写。
  *
  * ## 服务端调不通怎么办
  *
- * 服务端的调试开关是**独立**的（配置项 `debug.enabled`）。
- * 万一服务端没开调试，这个请求会 403 —— 那就**只进关卡，不跳进度**。
- * 客户端的调试入口本身不依赖服务端。
- *
- * 服务端拒绝时也要提示一下，否则测试会以为「点了没反应」。
+ * 打印一句说明就行，**照常进关** —— 调试入口不依赖服务端。
+ * 两种失败分开报：403 = 我们自己把开关关了；其他 = 后端没起 / DB 没开。
+ * 原来一律提示「服务端调试未开启」，DB 挂了的时候会把人往配置上带，白查半天。
  */
 async function debugJumpToLevel(idx: number): Promise<void> {
   try {
-    const res = await debugJump(idx);
-    progress.sync({ maxLevel: res.maxLevel });
-    mapPage.currentLevel = progress.currentLevel;
-    mapPage.stars = progress.current.stars;
+    await debugJump(idx);
   } catch (e) {
-    console.warn('[debug] 跳关请求失败，仅本地进入关卡', e);
-    // 两种失败必须分开报：
-    // - 403 = 服务端调试开关关着（`debug.enabled: false`），这是我们自己关的；
-    // - 其他 = 后端连不上 / 超时，多半是本地服务没起或数据库没开。
-    // 原来一律提示「服务端调试未开启」，DB 挂了的时候会把人往配置上带，白查半天。
+    console.warn('[debug] 跳关探针失败，照常进入关卡', e);
     const msg = String((e as Error)?.message ?? e);
-    showToast(msg.includes('403') ? '服务端调试未开启，仅本地进入' : '服务端没响应，已直接进入');
+    showToast(msg.includes('403') ? '服务端调试未开启，照常进入' : '服务端没响应，照常进入');
   }
 }
 
 /**
- * 调试模式：跳到任意一关（先同步服务端进度，再进关卡）。
+ * 调试模式：把 `max_level` 重算回「真打过的最高关」。
+ *
+ * 被旧版跳关顶坏过进度的账号（地图上的「当前关」远超过真实进度、
+ * 中间那些关显示已通关却一颗星都没有）用这个修。
+ * 修完把地图页的状态跟着刷新，否则画面还停在旧的当前关。
+ */
+async function repairProgressFromDebug(): Promise<void> {
+  try {
+    const res = await debugRepairProgress();
+    progress.sync({ maxLevel: res.maxLevel });
+    mapPage.currentLevel = progress.currentLevel;
+    mapPage.stars = progress.current.stars;
+    mapPage.scrollTarget = scrollToLevel(mapPage.currentLevel);
+    const msg = `进度已修正：当前第 ${progress.currentLevel} 关`;
+    debugPanel.note = msg;
+    debugPanel.noteAt = Date.now();
+    showToast(msg, 2200);
+    console.log('[debug] 进度已按成绩表重算，max_level =', res.maxLevel);
+  } catch (e) {
+    const msg = String((e as Error)?.message ?? e);
+    const text = msg.includes('403') ? '服务端调试未开启，没法修' : '修进度失败：服务端没响应';
+    debugPanel.note = text;
+    debugPanel.noteAt = Date.now();
+    showToast(text);
+  }
+}
+
+/**
+ * 调试模式：跳到任意一关（探一下服务端开关，再进关卡）。
  *
  * 失败也要进关卡 —— 调试入口不依赖服务端是否开了调试。
  */
@@ -1034,6 +1190,7 @@ async function jumpAndEnter(idx: number): Promise<void> {
  */
 function applyDebugJumpKey(id: string): void {
   if (id === 'dj:close') { debugPanel.open = false; return; }
+  if (id === 'dj:repair') { void repairProgressFromDebug(); return; }
   if (id === 'dj:open') {
     debugPanel.open = true;
     debugPanel.openedAt = Date.now();
@@ -1256,23 +1413,52 @@ async function useHint() {
   const st = session.state;
   if (!st) return;
 
-  // `paused` = 松手后那 1.5 秒宽限期。路径没清、线头还在，
-  // 问一句「下一步」完全合理 —— 旧实现只认 idle/dragging，
+  // `paused` = 松手后停住（没有倒计时），路径和线头都还在。
+  // 这时点提示和拖动中点一样合理 —— 旧实现只认 idle/dragging，
   // 玩家刚抬手就问提示，点下去毫无反应。
   if (st.phase !== 'idle' && st.phase !== 'dragging' && st.phase !== 'paused') return;
 
   // 首次使用需看广告
   let viaAd = false;
   if (needsAdForHint(st.runtime.level.idx, st.hintUsed)) {
+    // 今日激励视频额度用完（运营配的上限）：直接说清楚。
+    // 让玩家盯着「提示准备中…」等十来秒再失败，比直接拒绝更让人困惑。
+    if (ads.rewardedQuotaLeft() <= 0) {
+      showToast('今天的激励视频次数用完了，明天再来');
+      return;
+    }
     // 激励视频在微信端有自己的界面，但 web / 调试环境的模拟广告只是干等三秒。
     // 不说一句，这三秒就是纯「点了没反应」。
     showToast('提示准备中…', 3200);
     const ok = await ads.showRewarded('hint');
-    if (!ok) return; // 中途退出 → 不给提示
+    if (!ok) {
+      // 中途退出 / 额度刚好被别人占掉：说一声，别让玩家以为提示坏了
+      showToast('广告没看完，这次不给提示');
+      return;
+    }
     // 等广告的这几秒里玩家可能已经换了关 / 结算：不能往旧状态上贴提示
     if (session.state !== st) return;
     viaAd = true;
   }
+
+  // ── 提示 = **从空盘重来**，而不是接在当前线头后面 ──
+  //
+  // 旧实现把玩家已走的格子当障碍，在线头后面求「剩余路线」。
+  // 一旦玩家走岔，这条剩余路线只能围着错路打转，提示越长越误导。
+  // 现在的语义是「点提示 = 清空这一笔，从头告诉你整关怎么走」。
+  //
+  // 清空**不计重来**（`restartForHint` 不碰 `undos`）：这不是玩家走错，
+  // 是提示功能的一部分；首次提示还要看广告，再扣星就太贵了。
+  //
+  // 放在广告之后：中途退出广告的玩家不该既没看到提示、又丢了已有的线。
+  session.restartForHint();
+  if (session.state !== st) return;
+  // 清掉落子 / 沥金动效的时刻表 —— 旧的路径已经没了，
+  // 残留的动画还会在空格子上闪一下，看起来像没清干净。
+  dropAt = new Map();
+  trailAt = 0;
+  pressCell = -1;
+  shakeCell = -1;
 
   // ── 提示：**优先问服务端**（它拿参考解切片，O(1)，永远给得出）──
   //
@@ -1282,36 +1468,43 @@ async function useHint() {
   // 服务端有参考解时直接切后缀，比前端解快且稳。
   // 网络不通 / 服务端没这关的数据时**退回前端求解** —— 不能因为断网就不给提示。
   const levelIdx = st.runtime.level.idx;
-  const walked = st.path.map((l) => st.runtime.rs.flatOf[l]);
+  // 路径刚被清空：请求空盘提示，服务端会返回整条参考解。
+  const walked: number[] = [];
   let served = false;
   try {
     const r = await fetchCoverHint(levelIdx, walked);
     // 等网络这段时间里玩家可能已经换关 / 结算
     if (session.state !== st) return;
+    // **也可能已经重新起笔**。此时提示是按空盘算的，
+    // 贴到一条已经画了几格的线上会整体指错 —— 宁可这次不给，也不指错路。
+    if (st.path.length > 0) return;
     if (r.fromReference && r.cells.length > 0) {
       session.setHint(r.cells);
-      showToast(`跟着亮的路走，还剩 ${r.cells.length} 格`, 1900);
+      showToast(`已从头开始 · 跟着亮的路走，共 ${r.cells.length} 格`, 1900);
       reportEvent('hint_use', { level_idx: levelIdx, via_ad: viaAd, solve_ms: 0 });
       served = true;
     }
-    // `fromReference=false` = 玩家走岔了，参考解接不回来。
-    // 这时**不要**直接用前端的「退回到哪」—— 交给下面兜底统一处理，
-    // 免得两条路径给出不一致的提示。
+    // `fromReference=false` = 参考解接不回来（空盘请求理论上不会出现）。
+    // 交给下面兜底统一处理，免得两条路径给出不一致的提示。
   } catch {
     // 网络失败 → 下面走前端求解
   }
   if (served) return;
 
+  // 网络请求期间玩家可能已经重新起笔。此时空盘提示不再成立，
+  // 再跑本地求解也只会算「当前线头之后」—— 正是这次改动要拆掉的旧语义。
+  if (st.path.length > 0) return;
+
   const hint = findCoverHint(st);
   if (!hint.found || hint.cells.length === 0) {
-    // 走岔了 → 告诉他「退回到哪里还有救」
+    // 空盘都求不出解：理论上只剩「关卡数据损坏」这一种。
+    // 兜底仍保留 backtrackTo 分支，但正常不会走到（空盘没有可回退的线）。
     if (hint.backtrackTo !== undefined) {
       session.setHint([hint.backtrackTo]);
       showToast('这条线已经走不通了，退回到高亮格试试');
       reportEvent('hint_use', { level_idx: levelIdx, via_ad: viaAd, dead_end: 1 });
     } else {
-      // 真给不出（理论上只剩「关卡数据缺参考解」这一种）也要说一声，
-      // 静默失败是最糟的反馈：玩家会以为按钮坏了，然后一直点。
+      // 给不出也要说一声：静默失败是最糟的反馈，玩家会以为按钮坏了。
       showToast('这一关暂时给不出提示');
     }
     return;
@@ -1319,8 +1512,8 @@ async function useHint() {
 
   session.setHint(hint.cells);
   // 一次给整条，玩家只需要顺着亮的那头走。
-  // 报一下还剩多少格 —— 不然「路线到底有多长」只能靠数亮点，越走越没底。
-  showToast(`跟着亮的路走，还剩 ${hint.cells.length} 格`, 1900);
+  // 报一下总格数 —— 不然「路线到底有多长」只能靠数亮点，越走越没底。
+  showToast(`已从头开始 · 跟着亮的路走，共 ${hint.cells.length} 格`, 1900);
   reportEvent('hint_use', { level_idx: levelIdx, via_ad: viaAd, solve_ms: hint.ms });
 }
 
@@ -1328,8 +1521,15 @@ async function useHint() {
 async function useSkip() {
   const st = session.state;
   if (!st) return;
-  if (!canSkipToday(st.runtime.level.idx)) {
-    console.log('本关今天已跳过');
+  // 说清「为什么不能跳」—— 旧实现只 console.log，
+  // 玩家点了一下什么都没发生，会以为按钮坏了。
+  const blocked = skipBlockReason(st.runtime.level.idx);
+  if (blocked) {
+    showToast(blocked);
+    return;
+  }
+  if (ads.rewardedQuotaLeft() <= 0) {
+    showToast('今天的激励视频次数用完了，明天再来');
     return;
   }
   const ok = await ads.showRewarded('skip');
@@ -1362,15 +1562,156 @@ function equipSelectedTheme() {
   reportEvent('theme_equip', { theme_id: id || 'classic' });
 }
 
-/** 从服务端刷新进度（切后台回前台时）。 */
-async function refreshProgress() {
+/**
+ * 装备一套棋子皮肤。
+ *
+ * 未拥有的直接忽略 —— 界面不给按钮，但"画"和"点"是两条路径，
+ * 防守要放在动作侧（和 `equipSelectedTheme` 同一条规矩）。
+ */
+function equipSkinAt(index: number) {
+  const skin = SKINS[index];
+  if (!skin) return;
+  if (!isSkinOwned(skinsPage, skin)) return;
+  if (progress.current.currentSkin === skin.id) return;
+
+  progress.equipSkin(skin.id);
+  skinsPage.equipped = skin.id;
+  skinsPage.selected = skin.id;
+  audio.tap();
+  vibeAt('tap');
+  reportEvent('skin_equip', { skin_id: skin.id, skin_tier: skin.tier });
+}
+
+/** 激励视频额度用完的统一提示（主题 / 皮肤两条路共用）。 */
+function rewardedQuotaBlocked(): boolean {
+  if (ads.rewardedQuotaLeft() > 0) return false;
+  showToast('今天的激励视频次数用完了，明天再来');
+  return true;
+}
+
+/**
+ * 看广告解锁当前展台上的主题。
+ *
+ * ## 顺序：广告 → 服务端 → 本地
+ *
+ * 服务端成功才算解锁。反过来（先本地 unlock）在断网时会变成
+ * "看着解锁了、换台设备又锁上"—— 玩家会认为广告白看。
+ */
+async function unlockThemeByAd(): Promise<void> {
+  const id = skinsPage.themeSelected ?? '';
+  const t = themeById(id);
+  if (!t || t.unlock.type !== 'ad' || isThemeOwned(skinsPage, t)) return;
+  if (rewardedQuotaBlocked()) return;
+
+  const ok = await ads.showRewarded('skin_unlock');
+  if (!ok) return;
+
+  try {
+    await unlockReward('theme', id);
+  } catch (e) {
+    console.warn('[theme] 解锁上报失败', e);
+    showToast('网络不通，解锁没保存，稍后再试一次', 3000);
+    return;
+  }
+
+  progress.unlockTheme(id);
+  syncSkinsPage();
+  audio.unlock();
+  audio.probe(id);
+  reportEvent('theme_unlock', { theme_id: id, via_ad: true });
+  showToast('已解锁，点「使用」换上');
+}
+
+/** 看广告解锁一套棋子皮肤（同一条「广告 → 服务端 → 本地」顺序）。 */
+async function unlockSkinByAd(index: number): Promise<void> {
+  const skin = SKINS[index];
+  if (!skin || skin.unlockType !== 'ad' || isSkinOwned(skinsPage, skin)) return;
+  if (rewardedQuotaBlocked()) return;
+
+  const ok = await ads.showRewarded('skin_unlock');
+  if (!ok) return;
+
+  try {
+    await unlockReward('skin', skin.id);
+  } catch (e) {
+    console.warn('[skin] 解锁上报失败', e);
+    showToast('网络不通，解锁没保存，稍后再试一次', 3000);
+    return;
+  }
+
+  progress.unlockSkin(skin.id);
+  syncSkinsPage();
+  audio.unlock();
+  reportEvent('skin_unlock', { skin_id: skin.id, via_ad: true });
+  showToast(`已解锁「${skin.name}」，点一下就能换上`);
+}
+
+/**
+ * 「我的 → 昵称头像」：拉起平台授权，拿到后落库。
+ *
+ * ## 为什么必须由玩家点
+ *
+ * 微信的 `getUserProfile` 会弹授权框，**只能在用户手势里调用** ——
+ * 启动时自动调会被判定为诱导授权（提审直接拒）。
+ *
+ * ## 失败的三条路都要说清楚
+ *
+ * - 平台不支持（Web）：如实说「不支持」，不要静默；
+ * - 玩家拒绝授权：给一次重试的提示，不报错；
+ * - 服务端写失败：本地**不**假装成功 —— 否则重装后又变回首字，玩家会以为丢了。
+ */
+async function editProfile(): Promise<void> {
+  if (!platform.profile) {
+    showToast('当前环境不支持读取头像昵称', 2400);
+    return;
+  }
+  const info = await platform.profile.request();
+  if (!info) {
+    showToast('没拿到昵称头像，可以再点一次', 2400);
+    return;
+  }
+
+  try {
+    const saved = await updateProfile({ nickname: info.nickname, avatar: info.avatar });
+    progress.sync({
+      nickname: saved.nickname || progress.current.nickname,
+      avatar: saved.avatar || '',
+    });
+    profilePage = {
+      ...profilePage,
+      nickname: saved.nickname || profilePage.nickname,
+      avatar: saved.avatar || profilePage.avatar,
+      profileFilled: true,
+    };
+    // 开放数据域里的好友榜也要跟着更新，否则好友看到的还是旧名字
+    publishMyProfile();
+    showToast('昵称头像已保存', 2000);
+    audio.unlock();
+  } catch (e) {
+    console.warn('[profile] 保存昵称头像失败', e);
+    showToast('网络不通，资料没保存', 2600);
+  }
+}
+
+/** 从服务端刷新进度（切后台回前台时）。 */async function refreshProgress() {
   try {
     const res = await fetchProfile();
     progress.sync({
       maxLevel: res.maxLevel,
       unlockedSkins: res.unlockedSkins,
+      // 服务端是**解锁状态的真相**：本地可能因为换机 / 清缓存少了几套。
+      // 这里整体覆盖（不是取并集）—— 否则退掉一套广告主题后，
+      // 本地那条"我有"会永远留着，后台改配置对玩家完全无效。
+      unlockedThemes: res.unlockedThemes,
       totalTimeMs: res.totalTimeMs,
       totalSteps: res.totalSteps,
+      // 统计口径也在服务端：切后台回来顺手对齐一次。
+      // 老服务端缺这两个字段时 `sync` 会跳过（不会把本地数字冲成 0）。
+      adWatchCnt: res.adWatchCnt,
+      totalRetries: res.totalRetries,
+      // 昵称头像也回：换设备登录时「我的」页要显示上次填的那份。
+      nickname: res.nickname || progress.current.nickname,
+      avatar: res.avatar || progress.current.avatar,
     });
     syncSkinsPage();
   } catch { /* 用本地缓存兜底 */ }
@@ -1416,6 +1757,12 @@ function publishMyProfile() {
  * @param from     从哪一页开的（关掉抽屉时回这里）
  */
 function openSharePanel(levelIdx: number, undos: number | null, from: Phase = 'map') {
+  // 功能开关：分享挑战整体关掉时，三个入口（首页 / 我的 / 结算）一起挡在这里。
+  // 分散到各入口各判一次的话，早晚会漏掉一个。
+  if (!featureOn('shareChallenge')) {
+    showToast('分享挑战暂未开放');
+    return;
+  }
   const nickname = progress.current.nickname || '我';
   // 文案游标以关号为起点：同一关每次打开都是同一条，不会「刚才看着不错，再打开变了」
   sharePanel.copyIndex = levelIdx % shareCopyCount();
@@ -1449,8 +1796,24 @@ function rollShareCopy() {
   vibeAt('tap');
 }
 
-/** 分享抽屉：真的把海报画出来（750×1334）。 */
-function buildInvitePoster() {
+/**
+ * 分享抽屉：真的把海报画出来（750×1334）。
+ *
+ * ## 二维码的内容从哪来
+ *
+ * 用 `sharePanel.query`（面板打开时已生成的那份 query）拼出完整链接。
+ * **不重新生成 token** —— 海报是要存到相册 / 分享出去的，
+ * 每次生成一个不同的 token 会让「图上的码」和「发的链接」对不上，
+ * 好友扫了码进去看到的是**另一次挑战**。
+ *
+ * 真正的分享（`sendInvite`）会另外拿一份带 token 的 query，
+ * 那时海报已经画好了 —— 所以二维码里的链接不带 token，
+ * 好友照样能进这一关，只是胜负退回「跟自己的历史最佳比」。
+ * 这是有意的取舍：**图上能扫进去**比**图上带战绩**重要。
+ */
+function buildInvitePoster(): PosterCanvas | null {
+  const base = shareBaseUrl();
+  const url = base && sharePanel.query ? `${base}?${sharePanel.query}` : '';
   return renderPoster(
     { idx: sharePanel.levelIdx, w: 6, h: 6 },
     progress.current.currentSkin,
@@ -1459,6 +1822,7 @@ function buildInvitePoster() {
     { text: sharePanel.copy },
     sharePanel.uid,
     0,
+    url,
   );
 }
 
@@ -1502,26 +1866,88 @@ async function buildShareQueryWithToken(): Promise<string> {
   });
 }
 
+/** 上一条卡图的缓存：key = 影响画面的全部输入，path = 已经落好的临时文件。 */
+let shareCardCache: { key: string; path: string } | null = null;
+
+/**
+ * 分享抽屉：出 5:4 卡片图，导出成本地文件路径（微信 / 抖音的 `imageUrl`）。
+ *
+ * ## 为什么不能直接把 9:16 海报塞进 `imageUrl`
+ *
+ * 微信聊天卡片的显示比例是 **5:4**（500×400 / 1080×864），
+ * 传别的比例会被**居中裁切**：750×1334 的海报塞进去，
+ * 上下两个大标题都被切掉，只剩中间那条金缮光迹 ——
+ * 看起来像一张空图，而且不会报错，分享出去照样「成功」。
+ *
+ * 所以另出一张横向卡图（`renderShareCard`），信息量少但排得下。
+ *
+ * ## 为什么要 `exportCanvas`
+ *
+ * `wx.shareAppMessage({ imageUrl })` 吃的是**本地文件路径**
+ * （`wxfile://tmp/...`），传 dataURL 会被静默忽略、退回默认图。
+ * 所以出完图还要落一次临时文件。
+ *
+ * ## 缓存
+ *
+ * 同一关、同一文案、同一链接的卡图是同一张。
+ * 每次点「发送」都重画 1080×864 + 落盘，在低端机上是几百毫秒的卡顿，
+ * 而玩家常常反复点（先发一个，再发一个）。key 里带上会影响画面的全部输入，
+ * 换文案 / 换关卡 / 换 token 都会失效重画。
+ *
+ * @param query 已带 token 的启动参数（二维码与卡片要指向同一次挑战）
+ * @returns 临时文件路径；这端不支持导出 / 出图失败时返回空串（**不挡分享**）
+ */
+async function buildShareCardImage(query: string): Promise<string> {
+  if (!platform.exportCanvas) return '';
+  const base = shareBaseUrl();
+  const url = base && query ? `${base}?${query}` : '';
+
+  const key = `${sharePanel.levelIdx}|${sharePanel.undos}|${sharePanel.copy}|${sharePanel.uid}|${url}`;
+  if (shareCardCache && shareCardCache.key === key) return shareCardCache.path;
+
+  const canvas = renderShareCard(
+    { idx: sharePanel.levelIdx, w: 6, h: 6 },
+    sharePanel.undos,
+    sharePanel.copy,
+    url,
+  );
+  if (!canvas) return '';
+
+  const path = await platform.exportCanvas(canvas);
+  if (!path) return '';
+  shareCardCache = { key, path };
+  return path;
+}
+
 /**
  * 分享抽屉：调起一次分享。
  *
  * @param channel `friend` / `timeline`
  */
 async function sendInvite(channel: ShareChannel) {
-  const poster = buildInvitePoster();
-  // 微信卡片最佳比例是 5:4，9:16 的海报直接当 imageUrl 会被裁得很难看。
-  // 这里**不传** imageUrl：宁可让微信用它自己的默认图，也不要传一张会被裁坏的。
-  // （要出真正的 5:4 卡图是另一件事，见 platform/types.ts 的注释。）
-  void poster;
-
   // 先落服务端挑战记录再分享 —— 链接里带 token，胜负由服务端判
   const query = await buildShareQueryWithToken();
   sharePanel.query = query;
+
+  // 5:4 卡片图。只在「发给朋友」时带：朋友圈走的是系统菜单，
+  // 微信不让我们定制内容，传了也用不上。
+  //
+  // **出图失败不挡分享** —— 一张配图比「分享按钮没反应」轻得多，
+  // 退回微信默认图也能发出去。
+  let imageUrl = '';
+  if (channel === 'friend') {
+    try {
+      imageUrl = await buildShareCardImage(query);
+    } catch (e) {
+      console.warn('分享卡图生成失败，退回默认图', e);
+    }
+  }
 
   const res = await platform.share({
     title: sharePanel.copy,
     query,
     channel,
+    ...(imageUrl ? { imageUrl } : {}),
   });
 
   if (res === 'sent') {
@@ -1548,37 +1974,95 @@ async function copyInviteLink() {
   // 否则从「复制链接」发出去的挑战，好友通关时服务端判不了胜负。
   const query = await buildShareQueryWithToken();
   sharePanel.query = query;
-  const url = `${location.origin}${location.pathname}?${query}`;
+  const base = shareBaseUrl();
+  if (!base) {
+    // 没有 location、服务端也没下发前缀：拼出来的链接好友打不开首页以外的东西。
+    // 与其复制一条坏链接，不如说清楚 —— 运营会去后台把「分享链接前缀」填上。
+    showToast('分享域名还没配置，去后台填「分享链接前缀」');
+    return;
+  }
+  const url = `${base}?${query}`;
   let ok = false;
-  try {
-    await navigator.clipboard.writeText(url);
-    ok = true;
-  } catch { /* 落到下面的失败文案 */ }
+  if (platform.clipboard) {
+    try {
+      ok = await platform.clipboard.set(url);
+    } catch { /* 落到失败文案 */ }
+  } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
+    // 老平台对象上没有 clipboard 时退回浏览器 API（Web 端）
+    try {
+      await navigator.clipboard.writeText(url);
+      ok = true;
+    } catch { /* 落到失败文案 */ }
+  }
 
   if (ok) {
     showToast('链接已复制');
     reportEvent('share_success', { level_idx: sharePanel.levelIdx, channel: 'copy' });
     sharePanelOpen = false;
   } else {
-    showToast('复制没成功，长按上面的链接试试');
+    // 小游戏里**没有**「长按上面的链接」这回事 —— 没有可长按的文本。
+    // 只能说清「复制失败」，别给一个做不到的指引。
+    showToast('复制没成功，稍后再试一次');
   }
 }
 
-/** 分享抽屉：保存海报。 */
-function saveInvitePoster() {
+/**
+ * 分享抽屉：保存海报。
+ *
+ * ## 三端三条路
+ *
+ * - **Web**：`<a download>` + `toDataURL`（浏览器直接下载）
+ * - **小游戏**：`canvasToTempFilePath` → `saveImageToPhotosAlbum`
+ *   （见 `platform/saveImage.ts`）
+ *
+ * ## 为什么不能只提示「请长按海报保存」
+ *
+ * 海报是 **canvas 渲染**的，不是 `<img>` —— canvas 的像素不是 DOM 节点，
+ * **没有长按菜单**。原来那句提示是个假承诺：玩家按半天什么也不会发生，
+ * 而且面板是模态层，长按也不会触发任何东西。
+ */
+async function saveInvitePoster() {
   const poster = buildInvitePoster();
-  if (platform.name === 'web' && poster.toDataURL) {
+  if (!poster) {
+    // 拿不到离屏画布（既无 DOM 也没有小游戏离屏 API）
+    showToast('当前环境不支持保存海报');
+    return;
+  }
+
+  // ── Web：直接下载 ──
+  if (platform.name === 'web') {
+    if (!poster.toDataURL) {
+      showToast('当前环境不支持保存海报');
+      return;
+    }
     const a = document.createElement('a');
     a.href = poster.toDataURL('image/png');
     a.download = `invite-${sharePanel.levelIdx}.png`;
     a.click();
-    showToast('海报已保存');
-  } else if ((platform.name === 'wechat' || platform.name === 'douyin') && poster.toDataURL) {
-    // 小游戏端保存到相册要 temp 文件 + saveImageToPhotosAlbum，
-    // 且都需要用户授权。这里先如实告知，不乱承诺。
-    showToast('请长按海报保存到相册');
-  } else {
+    showToast('海报已下载');
+    return;
+  }
+
+  // ── 小游戏：存相册 ──
+  if (!platform.saveImage) {
     showToast('当前环境不支持保存海报');
+    return;
+  }
+
+  const r = await platform.saveImage(poster);
+  switch (r) {
+    case 'saved':
+      showToast('已保存到相册');
+      return;
+    case 'denied':
+      // 授权被拒：再点一次还是弹同一个框，得引导去设置里开权限
+      showToast('需要相册权限：请在设置里允许后重试', 3500);
+      return;
+    case 'unsupported':
+      showToast('当前环境不支持保存到相册');
+      return;
+    default:
+      showToast('保存失败，请重试');
   }
 }
 
@@ -1654,6 +2138,9 @@ async function openFriends() {
 
   // 发布自己的进度到开放数据域
   publishMyProfile();
+  // 开放数据域自己有 30 秒缓存：刚通关就点进来时，
+  // 不主动刷一下会看到自己上一关的分数
+  refreshOpenData();
 
   // 开放数据域首帧需要时间
   setTimeout(() => { rankPage.friends.loadingOpenData = false; }, 500);
@@ -1662,6 +2149,18 @@ async function openFriends() {
 /** 指针按下。 */
 function onDown(clientX: number, clientY: number) {
   const d = toDesign(clientX, clientY);
+
+  // ── 适龄提示：合规模态，压在最前面 ──
+  //
+  // 放在调试面板之前：这是提审硬要求，没点掉之前连调试入口都不该响应。
+  // 按钮列表最后一项是整屏遮罩（id 同为 ageGateOk），
+  // 所以点卡片外任何地方都等于「我知道了」—— 不会出现"点不动"的死路。
+  if (ageGateOpen) {
+    for (const b of ageGateButtons) {
+      if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
+    }
+    return;
+  }
 
   // ── 调试面板压在所有页面之上 ──
   //
@@ -1765,17 +2264,24 @@ function onDown(clientX: number, clientY: number) {
     return;
   }
   if (phase === 'skins') {
-    // 按钮优先（「使用」压在大卡上，先判它就不会出现「点按钮顺手换了主题」）
+    // 按钮优先（「使用」压在大卡上 / 皮肤卡整张是热区，
+    // 先判它就不会出现「点按钮顺手把列表推走」）
     for (const b of skinButtons) {
       if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
     }
 
     // 货架：按下记起点，抬手时若没移动才算「选中」。
     // 只在大卡以下才起拖 —— 在大卡上滑动不该把货架推走。
-    const scroll = skinsPage.themeScroll ?? 0;
-    const chip = pickThemeChip(d.x, d.y, scroll);
-    skinsPage.themeFling = 0;
+    const isSkins = (skinsPage.tab ?? 'themes') === 'skins';
+    const scroll = isSkins ? (skinsPage.skinScroll ?? 0) : (skinsPage.themeScroll ?? 0);
+    const chip = isSkins
+      ? pickSkinChip(d.x, d.y, scroll)
+      : pickThemeChip(d.x, d.y, scroll);
+    if (isSkins) skinsPage.skinFling = 0;
+    else skinsPage.themeFling = 0;
+
     shelfDragStart = {
+      kind: isSkins ? 'skin' : 'theme',
       y: d.y,
       scroll,
       moved: false,
@@ -1783,8 +2289,12 @@ function onDown(clientX: number, clientY: number) {
       lastAt: Date.now(),
       v: 0,
     };
-    if (chip >= 0) pressedBtn = 'shelf:' + chip;
-    else shelfDragStart = null;
+
+    if (chip < 0) {
+      shelfDragStart = null;
+      return;
+    }
+    pressedBtn = (isSkins ? 'skin:' : 'shelf:') + chip;
     return;
   }
   if (phase === 'result') {
@@ -1824,8 +2334,10 @@ function onDown(clientX: number, clientY: number) {
   }
 
   if (hitButton(backHomeBtn, d.x, d.y)) { pressedBtn = 'backHome'; return; }
-  if (hitButton(hintBtn, d.x, d.y)) { pressedBtn = 'hint'; return; }
-  if (!challenge && hitButton(skipBtn, d.x, d.y)) { pressedBtn = 'skip'; return; }
+  // 功能开关关掉时**连热区一起去掉**：画都不画了还能点中，
+  // 玩家会因为「点了没反应」而以为卡了。
+  if (featureOn('hint') && hitButton(hintBtn, d.x, d.y)) { pressedBtn = 'hint'; return; }
+  if (!challenge && featureOn('skip') && hitButton(skipBtn, d.x, d.y)) { pressedBtn = 'skip'; return; }
   session.pointerDown(d.x, d.y);
 }
 
@@ -1845,7 +2357,9 @@ function onMove(clientX: number, clientY: number) {
     const wasMoved = shelfDragStart.moved;
     // 甩出去：与地图同一条衰减曲线（320ms），门槛 0.18 像素/毫秒
     if (wasMoved && Math.abs(shelfDragStart.v) > 0.18) {
-      skinsPage.themeFling = Math.max(-6, Math.min(6, shelfDragStart.v));
+      const v = Math.max(-6, Math.min(6, shelfDragStart.v));
+      if (shelfDragStart.kind === 'skin') skinsPage.skinFling = v;
+      else skinsPage.themeFling = v;
     }
     shelfDragStart = null;
     if (wasMoved) { pressedBtn = null; return; }
@@ -1874,7 +2388,9 @@ function onMove(clientX: number, clientY: number) {
     const dy = d.y - shelfDragStart.y;
     if (Math.abs(dy) > 8) shelfDragStart.moved = true;
     if (shelfDragStart.moved) {
-      skinsPage.themeScroll = clampShelfScroll(shelfDragStart.scroll - dy);
+      const next = shelfDragStart.scroll - dy;
+      if (shelfDragStart.kind === 'skin') skinsPage.skinScroll = clampSkinScroll(next);
+      else skinsPage.themeScroll = clampShelfScroll(next);
       const at = Date.now();
       const dt = Math.max(1, at - shelfDragStart.lastAt);
       const inst = -(d.y - shelfDragStart.lastY) / dt;
@@ -1924,6 +2440,21 @@ function onUp() {
 
     // 调试面板的键（入口牌子 `dj:open` 也走这里）
     if (DEBUG_ENABLED && id.startsWith('dj:')) { applyDebugJumpKey(id); return; }
+
+    // 适龄提示：点「我知道了」（或卡外）关闭，并落本地标记 ——
+    // 下次启动不再自动弹；但「我的 → 适龄提示」仍可再打开。
+    if (id === 'ageGateOk') {
+      ageGateOpen = false;
+      platform.storage.set(KEY_AGE_ACK, '1');
+      audio.tap();
+      vibeAt('tap');
+      return;
+    }
+    if (id === 'ageGatePrivacy') {
+      platform.privacy?.openContract?.();
+      audio.tap();
+      return;
+    }
 
     // 战绩弹层：只有关闭键，且必须抢在导航之前（模态）
     if (id === 'statsClose') {
@@ -1988,19 +2519,29 @@ function onUp() {
     if (id.startsWith('map:')) {
       const idx = parseInt(id.slice(4), 10);
 
-      // ── 分享选关模式：点哪一关就分享哪一关 ──
+      // ── 分享选关模式：只能选自己已经通过的关 ──
       //
-      // **不受进度限制** —— 分享不是玩，未解锁的关也可以发给好友；
-      // 好友点开才是真正在玩，而他本来就能玩（挑战链接直达）。
-      // 这里也不推进任何进度、不进关。
+      // 分享出去的是一份「同关挑战」，发一关自己都没打过的，既没有成绩也
+      // 不知道这关什么难度。所以这里用 `isLevelCleared`（按星级判定，
+      // 跳过关不算通过），未通过的关只给一句提示，不弹分享面板。
+      // 这里不推进任何进度、不进关。
       if (mapPage.shareMode) {
+        if (!isLevelCleared(idx, mapPage)) {
+          mapPage.toast = `先通过第 ${idx} 关，才能分享`;
+          mapPage.toastAt = Date.now();
+          return;
+        }
         openSharePanel(idx, null, 'map');
         return;
       }
 
       if (isLevelPlayable(idx, mapPage)) {
-        // 调试模式下点未解锁的关 → 先让服务端把进度推上去，
-        // 这样目标关就是「当前关」，地图显示才对得上。
+        // 调试模式下点未解锁的关 → **直接进关**。
+        //
+        // 旧注释说「先让服务端把进度推上去，地图显示才对得上」—— 那正是
+        // 2026-11-21 那次进度被顶坏的来源：点开第 405 关看一眼，
+        // `max_level` 就从真实的 153 变成 404，而且再也降不回来。
+        // 现在跳关接口只做「服务端调试开关开着没」的探针，一个字节都不写。
         //
         // `DEBUG_ENABLED &&` 让生产构建把这一整块 tree-shake 掉
         // （连同 `debugJump` 这个 API 一起）。
@@ -2020,8 +2561,15 @@ function onUp() {
 
     // 首页「分享挑战」条 → 进地图的选关分享模式
     if (id === 'homeSharePick') {
+      // 一关都没通过时，进去也是一张全灰的地图 —— 不如在门口说清楚。
+      if (progress.current.maxLevel < 1) {
+        showToast('先通过第 1 关，才能分享挑战');
+        return;
+      }
       mapPage = createMapState(progress.currentLevel, totalLevelCount(), progress.current.stars, DEBUG_ENABLED);
-      mapPage.scrollY = Math.min(mapPage.maxScrollY, scrollToLevel(progress.currentLevel));
+      // 选关模式下**停在最高已通关的那一关**，而不是「下一关」——
+      // 下一关必然不可选，停在它上面等于让玩家先看到一张点不动的图。
+      mapPage.scrollY = Math.min(mapPage.maxScrollY, scrollToLevel(Math.max(1, progress.current.maxLevel)));
       mapPage.shareMode = true;
       mapDragStart = null;
       phase = 'map';
@@ -2039,6 +2587,14 @@ function onUp() {
 
     // 排行榜 Tab
     if (id === 'tabGlobal') { rankPage.tab = 'global'; reportEvent('leaderboard_tab_switch', { tab: 'global' }); return; }
+    if (id === 'rankPrev') {
+      void loadGlobalRank(Math.max(0, rankPage.global.offset - rankPage.global.pageSize));
+      return;
+    }
+    if (id === 'rankNext') {
+      void loadGlobalRank(rankPage.global.offset + rankPage.global.pageSize);
+      return;
+    }
     if (id === 'tabFriends') {
       rankPage.tab = 'friends';
       reportEvent('leaderboard_tab_switch', { tab: 'friends' });
@@ -2068,6 +2624,15 @@ function onUp() {
     }
     // 我的页「分享挑战」—— 邀请：不带成绩，挑的是「当前该打的那一关」
     if (id === 'shareGame') { openSharePanel(progress.currentLevel, null, 'profile'); return; }
+    // 我的页「昵称头像」：微信资料必须由玩家手势触发，所以只能放在这里。
+    if (id === 'editProfile') { void editProfile(); return; }
+    // 我的页「适龄提示」：首次启动弹过一次，这里随时能回看
+    if (id === 'ageGate') {
+      ageGateOpen = true;
+      audio.tap();
+      vibeAt('tap');
+      return;
+    }
     if (id === 'profileStats') {
       // 两个弹层互斥，否则遮罩叠两层、点关闭只关掉最上面那层
       sharePanelOpen = false;
@@ -2092,7 +2657,12 @@ function onUp() {
     // `resultData.levelIdx` 才是刚打完的关号。
     else if (id === 'retry') {
       challengeResult = null;
-      progress.sync({ totalRetries: (progress.current.totalRetries ?? 0) + 1 });
+      // 这里**不再** `totalRetries += 1`。
+      //
+      // 「累计重来」的口径是「各关悔棋数之和」（服务端 `SUM(level_records.undos)`，
+      // 与后台玩家详情页一致）。按钮点一次只记 1，而玩家在关里撤销 20 步
+      // 再重开，真实的悔棋是 20 —— 两个数字混在一起，页面上的「累计重来」就没意义了。
+      // 现在它只从服务端同步（见 `boot()` 的 `progress.sync`）。
       const target = challenge ? challenge.levelIdx : (resultData?.levelIdx ?? pendingLevel);
       void enterLevel(target);
     }
@@ -2113,12 +2683,24 @@ function onUp() {
       syncSkinsPage();
       skinsPage.themeScroll = 0;
       skinsPage.themeFling = 0;
+      skinsPage.skinScroll = 0;
+      skinsPage.skinFling = 0;
       shelfDragStart = null;
       ads.showBanner();
       reportEvent('theme_page_view', { owned: unlockedThemeCount(skinsPage), total: shelfCount() });
     }
     else if (id === 'back') { phase = 'home'; ads.hideBanner(); }
     else if (id === 'equipTheme') equipSelectedTheme();
+    else if (id === 'themeTab') { skinsPage.tab = 'themes'; skinsPage.themeFling = 0; audio.tap(); }
+    else if (id === 'skinTab') {
+      skinsPage.tab = 'skins';
+      skinsPage.skinFling = 0;
+      audio.tap();
+      reportEvent('skin_page_view', { owned: ownedSkinCount(skinsPage), total: SKINS.length });
+    }
+    else if (id.startsWith('skin:')) equipSkinAt(parseInt(id.slice(5), 10));
+    else if (id.startsWith('skinAd:')) void unlockSkinByAd(parseInt(id.slice(7), 10));
+    else if (id === 'unlockThemeAd') void unlockThemeByAd();
     return;
   }
   if (phase === 'playing') {
@@ -2172,30 +2754,34 @@ if (platform.name === 'web') {
   if (DEBUG_ENABLED) bindDebugKeys();
   platform.onResize?.(applyResize);
 } else {
-  type TouchEvent = { touches: Array<{ clientX: number; clientY: number }> };
-  const wx = (globalThis as {
-    wx?: {
-      onTouchStart?: (cb: (e: TouchEvent) => void) => void;
-      onTouchMove?: (cb: (e: TouchEvent) => void) => void;
-      onTouchEnd?: (cb: () => void) => void;
-      onTouchCancel?: (cb: () => void) => void;
-      onHide?: (cb: () => void) => void;
-      onShow?: (cb: () => void) => void;
-    };
-  }).wx;
-  wx?.onTouchStart?.((e: TouchEvent) => { const t = e.touches[0]; if (t) onDown(t.clientX, t.clientY); });
-  wx?.onTouchMove?.((e: TouchEvent) => { const t = e.touches[0]; if (t) onMove(t.clientX, t.clientY); });
-  wx?.onTouchEnd?.(() => onUp());
-  wx?.onTouchCancel?.(() => onUp());
-  wx?.onHide?.(() => {
+  // ## 触摸一律走 `platform.onTouch`
+  //
+  // 以前这里直接读 `globalThis.wx.onTouchStart` —— 微信包能跑，
+  // **抖音包里一个触摸事件都收不到**（抖音只有 `tt`），
+  // 而且是可选链静默短路：没有任何报错，只是「点了不动」。
+  // 平台层的意义就是把这类差异收在一处，调用方不该知道命名空间叫什么。
+  platform.onTouch?.({
+    down: onDown,
+    move: onMove,
+    up: onUp,
+    // 系统打断不能当"松手"：来电挂断后玩家手指并没抬起，
+    // 当松手会立刻结算一局并不完整的路径。按取消处理（`CoverSession` 里会作废本段）。
+    cancel: onUp,
+  });
+
+  platform.onAppHide?.(() => {
     void tracker.flush();   // 补传埋点
     session.abandon();
   });
-  wx?.onShow?.(() => {
+
+  platform.onAppShow?.((query) => {
     // 从后台回来：窗口尺寸可能已经变了（横竖屏切换 / 状态栏高度变化）
     applyResize();
     void refreshProgress();
+    // 点好友分享卡片进来时，小游戏不重启，参数只在这里出现
+    void handleHotLaunch(query);
   });
+
   platform.onResize?.(applyResize);
 }
 
@@ -2237,7 +2823,11 @@ function frame() {
   // 必须每帧比对时间戳，不能靠 `setTimeout`：切后台时定时器被节流，
   // 回前台时「早该过期了」却还要等下一次触发。
   if (phase === 'playing') session.tick(now);
-  if (phase === 'skins') stepThemeScroll(skinsPage, dt);
+  if (phase === 'skins') {
+    // 两块的惯性各自推进：切分段时另一块的甩动不该继续跑
+    stepThemeScroll(skinsPage, dt);
+    stepSkinScroll(skinsPage, dt);
+  }
 
   // 渲染异常不能拖垮整个游戏。
   //
@@ -2308,6 +2898,15 @@ function renderFrame(now: number, dt: number): void {
   // 主题接管后由主题自己铺（每套的底纹是它成立的一半）。
   if (boardTheme) boardTheme.backdrop(ctx, visibleDesignBox(), now);
   else drawLobbyGround(ctx, visibleDesignBox());
+
+  // 冷启动：还没有任何页面可画。
+  //
+  // 不加这一段的话，`boot()` 等登录 / 配置 / 关卡表的几秒里屏幕上
+  //**只有一块不动的底色** —— 玩家以为卡死，审核当成加载失败。
+  if (phase === 'loading') {
+    drawBootSplash(ctx, now);
+    return;
+  }
 
   if (st && session.layout && playing) {
     const rs = st.runtime.rs;
@@ -2494,8 +3093,8 @@ function renderFrame(now: number, dt: number): void {
     // 「返回 / 跳过」是负向/低频动作，压到最下面一行灰底 —— 和金子拉开层级，
     // 也离盘面最远（误触代价最小）。
     if (chrome) {
-      drawPlayTip(ctx, hintBtn, pressedBtn === 'hint');
-    } else {
+      if (featureOn('hint')) drawPlayTip(ctx, hintBtn, pressedBtn === 'hint');
+    } else if (featureOn('hint')) {
       drawButton(ctx, hintBtn, pressedBtn === 'hint', undefined, chrome);
     }
 
@@ -2516,12 +3115,13 @@ function renderFrame(now: number, dt: number): void {
       );
     }
 
-    // 挑战关不给「跳过」：比的就是谁真能走完，花钱跳过是另一种玩法
+    // 挑战关不给「跳过」：比的就是谁真能走完，花钱跳过是另一种玩法。
+    // 功能开关关掉时同理 —— 不画、也不留热区。
     if (chrome) {
-      if (!challenge) drawPlaySub(ctx, skipBtn, pressedBtn === 'skip', chrome);
+      if (!challenge && featureOn('skip')) drawPlaySub(ctx, skipBtn, pressedBtn === 'skip', chrome);
       drawPlaySub(ctx, backHomeBtn, pressedBtn === 'backHome', chrome);
     } else {
-      if (!challenge) drawButton(ctx, skipBtn, pressedBtn === 'skip', undefined, chrome);
+      if (!challenge && featureOn('skip')) drawButton(ctx, skipBtn, pressedBtn === 'skip', undefined, chrome);
       drawButton(ctx, backHomeBtn, pressedBtn === 'backHome', undefined, chrome);
     }
 
@@ -2553,6 +3153,8 @@ function renderFrame(now: number, dt: number): void {
       skinCount: progress.current.unlockedSkins.length,
       starCount: totalStars(),
       totalRetries: progress.current.totalRetries ?? 0,
+      // 配置是异步拉回来的（可能比首屏晚），逐帧对齐一次最省心
+      shareOn: featureOn('shareChallenge'),
     };
     homeButtons = drawHomePage(ctx, homePage, now);
   }
@@ -2666,6 +3268,13 @@ function renderFrame(now: number, dt: number): void {
     sharePanelButtons = drawSharePanel(ctx, sharePanel);
   }
 
+  // ── 适龄提示（最上层，压过所有页面与弹层）──
+  //
+  // 画在提示条之前：「未同意隐私政策」这类提示恰恰要能盖在它上面。
+  if (ageGateOpen) {
+    ageGateButtons = drawAgeGate(ctx, !!platform.privacy?.openContract);
+  }
+
   // ── 全局提示条（最后画，压在所有页面之上）──
   drawToast(ctx, now);
 }
@@ -2763,7 +3372,67 @@ function drawToast(ctx: CanvasRenderingContext2D, now: number): void {
   ctx.globalAlpha = 1;
 }
 
-/** 启动。 */
+/**
+ * 挑战指纹：同一条分享链接的多个 query 字段里，只有这三项决定"是不是同一次挑战"。
+ *
+ * 不带 `undos` / `name`：那两项是文案，同一条链接被转发时可能被改，
+ * 但玩家点的仍是同一关、同一个对手 —— 不该因此重进关卡。
+ */
+function challengeSignature(c: ReturnType<typeof parseChallenge>): string {
+  if (!c) return '';
+  return `${c.token ?? ''}|${c.levelIdx}|${c.fromUid}`;
+}
+
+/**
+ * 热启动：游戏已经在运行时，玩家点了好友的分享卡片。
+ *
+ * ## 这条路径以前完全没有
+ *
+ * 小游戏被分享卡片唤起时**不会重启**，只会触发 `onShow`，
+ * 参数在 `res.query` 里。之前 `boot()` 只读 `getLaunchOptionsSync()`
+ * ——那是"本次进程第一次启动时"的参数，热启动时它还是老值。
+ * 表现：玩家在游戏里点朋友的卡片，界面纹丝不动，什么也没发生。
+ *
+ * 抖音和微信都是这套行为，两边都靠 `platform.onAppShow` 接。
+ */
+async function handleHotLaunch(query?: Record<string, string>): Promise<void> {
+  if (!booted || !query || !query.l) return;
+
+  const next = parseChallengeFrom(query);
+  if (!next) return;
+
+  const sig = challengeSignature(next);
+  // 同一条链接重复上报（部分机型切前后台会把 query 再带一遍）只认第一次
+  if (sig === hotLaunchKey) return;
+  hotLaunchKey = sig;
+
+  // 带 token：以服务端快照为准（与 `boot()` 里那段同一规则，只这一份实现）
+  if (next.token) {
+    const info = await fetchChallengeInfo(next.token);
+    if (info) {
+      next.fromName = info.fromName || next.fromName;
+      next.fromUid = info.fromUid || next.fromUid;
+      next.fromUndos = info.hasScore ? info.fromUndos : null;
+    }
+  }
+
+  challenge = next;
+  challengeResult = null;
+  reportEvent('challenge_start', {
+    level_idx: next.levelIdx,
+    from_uid: next.fromUid || undefined,
+    from_server: !!next.token,
+    hot: true,
+  });
+  try {
+    await enterLevel(next.levelIdx);
+  } catch (e) {
+    // 关卡数据异常不该把整个前台事件回调打断（同一条 onShow 还管着 resize / 进度刷新）
+    console.error('[hot-launch] 进入挑战关卡失败', e);
+    platform.logError?.('hot-launch', e);
+  }
+}
+
 /**
  * 启动。
  *
@@ -2780,6 +3449,21 @@ async function boot() {
   tracker.init();
   progress.restore();
 
+  // ── 广告计数：本地 +1，同时上报服务端 ──
+  //
+  // 挂在 `Ads` 的回调上而不是四个调用点各写一遍：
+  // 「看完」有两条路（正常结束 / SDK 挂了兜底发放），两条都该计。
+  // 本地先 +1 是为了即时反馈（「我的」页数字立刻变），
+  // 服务端回包再以它为准 —— 这样多设备/重装后能收敛到真实值。
+  ads.setOnWatched((placement) => {
+    progress.sync({ adWatchCnt: (progress.current.adWatchCnt ?? 0) + 1 });
+    void reportAdWatch(placement)
+      .then((res) => {
+        if (typeof res?.adWatchCnt === 'number') progress.sync({ adWatchCnt: res.adWatchCnt });
+      })
+      .catch(() => { /* 离线时保留本地 +1，下次登录以服务端为准 */ });
+  });
+
   // ── 声音：偏好与音色 ──
   //
   // 必须在 `restore()` 之后：装备的主题存在本地进度里。
@@ -2790,8 +3474,30 @@ async function boot() {
   profilePage.vibrateOn = platform.storage.get(KEY_VIBRATE) !== '1';
   audio.setVoice(progress.current.currentTheme);
 
-  // ① 登录（失败不致命）
-  try {
+  // ⓪ 适龄提示（首次启动）
+  //
+  // 放在最前面：它是提审要求，而且要在玩家看到任何界面之前出现 ——
+  // 挂在登录之后的话，登录失败 / 慢网络时它就永远不弹。
+  ageGateOpen = platform.storage.get(KEY_AGE_ACK) !== '1';
+
+  // ① 隐私授权（微信合规，必须在拿 openid 之前）
+  //
+  // `wx.login` 拿 openid 就是「收集个人信息」，所以授权要在它前面。
+  // 拒绝时**不拦着玩**：游戏本身不需要身份，本地进度照常存，
+  // 只是不同步到服务端（排行榜、好友、跨设备进度都没有）。
+  // 拦下来反而更糟 —— 玩家会以为游戏坏了，而且他不会再去点第二次。
+  platform.privacy?.installWatcher?.();
+  const privacyOK = await ensurePrivacyAuthorized();
+  if (!privacyOK) {
+    console.warn('[boot] 未获得隐私授权，本次不登录');
+    showToast('未同意隐私政策：进度只存在本机', 3000);
+  }
+
+  // ② 登录（失败不致命）
+  //
+  // 没授权就**不发 `wx.login`** —— 那是明确的个人信息收集。
+  // 其余流程照走（配置 / 关卡表 / 本地进度），游戏完整可玩。
+  if (privacyOK) try {
     const loginRes = await login();
     reportEvent('login_success', { uid: loginRes.uid, is_new: loginRes.maxLevel <= 0 });
     progress.sync({
@@ -2800,11 +3506,18 @@ async function boot() {
       // 于是 currentLevel 算成 2 —— 新玩家直接被跳过第 1 关。
       maxLevel: loginRes.maxLevel,
       unlockedSkins: loginRes.unlockedSkins,
+      unlockedThemes: loginRes.unlockedThemes,
       totalTimeMs: loginRes.totalTimeMs,
       totalSteps: loginRes.totalSteps,
       nickname: loginRes.nickname || '玩家',
       avatar: loginRes.avatar || '',
       uid: loginRes.uid,
+      // 两个统计项都以**服务端**为准：
+      // - `adWatchCnt` 由 `/api/cover/ad-watch` 累加（离线时本地先 +1）；
+      // - `totalRetries` 是 `SUM(level_records.undos)`，客户端不再自己数按钮次数。
+      // 老服务端不下发 `totalRetries`（undefined）时 `sync` 会跳过，保留本地值。
+      adWatchCnt: loginRes.adWatchCnt,
+      totalRetries: loginRes.totalRetries,
     });
     syncSkinsPage();
     // 登录成功后补传缓冲 —— 这批事件（app_start 等）现在能带上 uid 了。
@@ -2817,16 +3530,10 @@ async function boot() {
 
   // ② 服务器配置（失败用默认值）
   try {
-    config = await fetchConfig();
-    // 广告位 ID 两端**不共用**：各自后台创建，混填会导致加载失败。
-    // 服务端 `/api/config` 目前只下发一套 ad 字段，抖音侧
-    // 等平台配置就绪后再扩（届时按 platform 分字段下发）。
-    if (platform.name === 'wechat' && config.ad) {
-      configureAds({
-        rewardedVideoId: config.ad.rewardedVideoId,
-        interstitialId: config.ad.interstitialId,
-      });
-    }
+    // 平台由客户端声明：这个接口不鉴权，登录失败时也没有 token 可用。
+    // 服务端按 `?platform=` 下发对应的广告位 / 分享前缀 / 频控。
+    config = await fetchConfig(localPlatformCode());
+    applyServerConfig(config);
   } catch (e) {
     console.warn('[boot] 配置拉取失败，使用默认配置', e);
   }
@@ -2890,5 +3597,24 @@ async function boot() {
       .catch(() => { /* 忽略 */ });
   }
   reportEvent('app_start', {});
+
+  // 冷启动收尾：标记完成，并记住本次进入的挑战。
+  //
+  // 小游戏冷启动会先触发一次 `onShow`（早于 boot 完成，被 `booted` 挡住）；
+  // 少数机型还会在 boot 之后再补一次，指纹相同 → `handleHotLaunch` 直接返回，
+  // 不会把玩家从刚进的关里再弹一次。
+  booted = true;
+  hotLaunchKey = challengeSignature(challenge);
 }
-boot();
+
+void boot().catch((e) => {
+  // ## 启动流程自己失败时，不能把玩家留在启动页
+  //
+  // 四个 await 里每一步都各自兜了底，理论上不该走到这里；但「理论上」
+  // 已经在渲染循环上失手过一次（见 `frame()` 的注释）。
+  // 真出错时至少把玩家放进大厅 —— 关卡表是内置的，离线也能玩。
+  console.error('[boot] 启动失败', e);
+  platform.logError?.('boot', e);
+  booted = true;
+  if (phase === 'loading') phase = 'home';
+});

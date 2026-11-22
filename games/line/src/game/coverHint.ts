@@ -1,24 +1,27 @@
 /**
  * Cover 模式 v3：提示。
  *
- * ## 提示做什么
+ * ## 提示做什么（2026-11-21 起）
  *
- * 玩家走了一段，问「接下来该往哪走」。
- * 答案 = **在剩余盘面上求一条覆盖所有剩余格的路径**。
+ * 点提示 = **清空当前这一笔，从空盘给整关路线**。
+ * 调用方（`main.useHint`）会先 `session.restartForHint()`，再把空状态传进来。
+ *
+ * 旧行为是「在剩余盘面上求一条覆盖剩余格的路径」，接在当前线头后面。
+ * 问题是玩家一旦走岔，提示只能围着错路打转，越长越误导；
+ * 而提示该回答的是「这一关怎么走」，不是「在这条错路上怎么继续」。
+ *
+ * 本函数仍支持非空 `state`（求解剩余盘面）—— 那是给测试和未来的
+ * 「续接式提示」留的能力，但**按钮不走这条路**。
  *
  * ## 为什么不能直接查表
  *
  * 设计文档 §5.1 提到「参考解入库 → 提示 O(1) 查表」。
- * 但那只在玩家**严格沿着参考解走**时成立。
- * 玩家一旦走岔（走了另一条同样合法的哈密顿路径），
- * 参考解就接不回去了 —— 强行回退到参考解会让玩家的线突然倒退，体验极差。
- *
- * 所以这里的做法是：**实时求解剩余盘面**。
- * 代价是求解时间，但实测 11x11 盘只要几毫秒，完全可以在客户端实时做。
+ * 现在按钮固定从空盘问，参考解可以直接用；但客户端为了断网可用，
+ * 仍保留本地求解。服务端优先（见 `main.useHint`），失败才回落到这里。
  *
  * ## 求解的是「带预置障碍的盘面」
  *
- * 玩家已走的格不再是目标 —— 它们是障碍（不能重复走）。
+ * 空盘时没有障碍；非空 `state` 下，玩家已走的格是障碍（不能重复走）。
  * 求解时把它们预置成「已访问」，目标数 = 未访问格数。
  *
  * **不抽子图重编号**：重编号会改变局部编号，
@@ -31,9 +34,9 @@
  *
  * ## 关键实现细节：已拾取的钥匙 / 星星要带进来
  *
- * 玩家已经走过一半，可能已经拿了 1 号钥匙、已经过了 1 号星。
- * 剩余盘面的求解必须**从这个状态继续**，否则会给出「先去拿钥匙」的提示 ——
- * 而钥匙可能已经被拿走了（或者被走岔的路径消耗掉了）。
+ * 若传入的是中途状态，剩余盘面的求解必须**从那个状态继续**，
+ * 否则会给出「先去拿钥匙」的提示 —— 而钥匙可能已经被拿走了。
+ * 按钮现在的空盘调用不受影响，但保留这条约束给非空状态。
  */
 import { mulberry32 } from '../core/rng';
 import { solve } from '../core/cover/v3/solver';
@@ -328,8 +331,18 @@ function solveRemaining(
 
   const deadline = deadlineMs > 0 ? Date.now() + deadlineMs : 0;
 
-  // 纯网格模式：剪枝永远有效，找到的路径在完整规则下依然合法。
-  const plainRs = withPlain(src, true);
+  /**
+   * **传送门关卡必须走完整规则**。
+   *
+   * 「进入即传送」下，走进传送格 A 的一步会一次吃掉 `[A, B]`。
+   * 纯网格模式里传送格就是普通砖 —— 求出来的路径会**穿过**传送格而不传送，
+   * 复核时必然失败（`replayRemaining` 完整规则）。
+   *
+   * 传送门关卡的盘面是 5×6（约 26~28 格），比 9×9 小得多，
+   * 开着传送边的完整规则求解完全在预算内。
+   */
+  const usePortalRules = src.hasPortal;
+  const plainRs = usePortalRules ? src : withPlain(src, true);
 
   for (const jitter of RETRY_JITTERS) {
     const left = deadline > 0 ? deadline - Date.now() : 0;
@@ -342,11 +355,11 @@ function solveRemaining(
       budget,
       left,
       jitter,
-      false, // fullRules = false → 纯网格求解（快）
+      usePortalRules, // fullRules：传送门关卡按真实玩法求解（含传送边）
       state.keyMask,
       state.shardNext,
       pre,
-      true, // noPortal：纯网格模式下本来就无传送边，显式声明意图
+      !usePortalRules, // noPortal：非传送关卡显式关闭传送边（保住剪枝）
       false, // tryReverse：反向朝向不含线头，纯浪费预算
     );
     if (!res.path || res.path.length === 0) continue;
@@ -413,17 +426,18 @@ function solvableFrom(state: CoverState, keepLen: number): boolean {
   if (remaining === 0) return true;
 
   const res = solve(
-    withPlain(src, true),
+    // 传送门关卡走完整规则（含传送边）—— 原因同 `solveRemaining`。
+    src.hasPortal ? src : withPlain(src, true),
     mulberry32(0x5eed),
     head,
     20000,
     0,
     0,
-    false, // 纯网格求解（剪枝有效 → 快）
+    src.hasPortal, // fullRules
     keyMask,
     shardNext,
     pre,
-    true, // noPortal
+    !src.hasPortal, // noPortal
     false, // tryReverse：反向朝向不含线头
   );
   if (!res.path) return false;

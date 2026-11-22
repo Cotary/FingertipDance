@@ -37,6 +37,7 @@
 import { DESIGN_W, DESIGN_H } from '../render/layout';
 import { roundRect } from '../render/board';
 import { trackedText, trackedTextRight, trackedWidth, SERIF_FONT, type Button } from './hud';
+import { getOpenDataCanvas } from '../platform/openData';
 import type { FriendsPageState } from './friends';
 import type { FriendItem, LeaderboardItem } from '../net/api';
 
@@ -49,6 +50,10 @@ export interface GlobalRankData {
   myRank: number;
   total: number;
   loading: boolean;
+  /** 当前窗口起点（0 = 第一页）。翻页后 >0，此时不画领奖台。 */
+  offset: number;
+  /** 每页条数（与服务端默认一致）。 */
+  pageSize: number;
 }
 
 /** 排行榜页状态。 */
@@ -62,7 +67,7 @@ export interface RankPageState {
 export function createRankState(): RankPageState {
   return {
     tab: 'global',
-    global: { list: [], myRank: 0, total: 0, loading: true },
+    global: { list: [], myRank: 0, total: 0, loading: true, offset: 0, pageSize: 50 },
     friends: { friends: [], stats: { friendCount: 0, avgLevel: 0, maxLevel: 0 }, myRank: 0, loadingOpenData: true },
   };
 }
@@ -264,6 +269,18 @@ export function drawRankPage(ctx: CanvasRenderingContext2D, st: RankPageState, _
     trackedText(ctx, b.label, b.x + (b.w - lw) / 2, b.y + b.h / 2 + 8, 22, on ? R.onGold : R.muted, 5.72, on ? 700 : 400);
   }
 
+  // ── 好友榜：优先画开放数据域的真实好友榜 ──
+  //
+  // 服务端 `/api/friends` 里的"好友"是我们自己的好友关系（加过才算），
+  // 而微信开放数据域拿到的是**微信好友里玩过这个游戏的人** —— 那才是玩家
+  // 理解的"好友榜"。有就用它；Web / 抖音 / 老基础库没有这个能力，回落列表。
+  //
+  // 首帧（`loadingOpenData`）先不画：那时共享画布还是空的，
+  // 贴上去是一块黑，比"加载中"更像坏了。
+  if (st.tab === 'friends' && !st.friends.loadingOpenData && drawOpenDataBoard(ctx)) {
+    return [tabFriends, tabGlobal];
+  }
+
   // ── 数据 ──
   const rows: Row[] = [];
   let myRank = 0;
@@ -303,10 +320,96 @@ export function drawRankPage(ctx: CanvasRenderingContext2D, st: RankPageState, _
     return [tabFriends, tabGlobal];
   }
 
-  drawPodium(ctx, rows, myRank);
-  drawList(ctx, rows, myRank, total);
+  // ── 分页 ──
+  //
+  // 领奖台只属于**第一页**：第二页的前三名其实是全服第 51/52/53 名，
+  // 把他们摆到"冠军台"上读起来像在撒谎。翻页后整块让给列表。
+  const paged = st.tab === 'global' ? st.global : null;
+  const offset = paged?.offset ?? 0;
+  const pageSize = paged?.pageSize ?? 50;
+  const showPodium = offset === 0;
+  const pager = st.tab === 'global' && total > pageSize;
 
-  return [tabFriends, tabGlobal];
+  const listTop = showPodium ? M.listTop : 196;
+  // 分页条占 64 + 24 的呼吸，列表不能压到它底下
+  const listBottom = DESIGN_H - 120 - 28 - (pager ? 88 : 0);
+
+  if (showPodium) drawPodium(ctx, rows, myRank);
+  drawList(ctx, rows, myRank, total, listTop, listBottom);
+
+  const buttons = [tabFriends, tabGlobal];
+  if (pager) buttons.push(...drawPager(ctx, offset, total, rows.length));
+  return buttons;
+}
+
+/**
+ * 分页条：上一页 / 下一页 + 区间读数。
+ *
+ * 不可用的那一侧**照画但不返回** —— 直接不画会让整条在翻到首页时
+ * 突然右对齐再跳回来；画成灰的，玩家一眼知道"到顶了"。
+ */
+function drawPager(
+  ctx: CanvasRenderingContext2D,
+  offset: number,
+  total: number,
+  shown: number,
+): Button[] {
+  const y = DESIGN_H - 120 - 28 - 64;
+  const bw = 190;
+  const bh = 64;
+  const prev: Button = { x: M.pad, y, w: bw, h: bh, label: '上一页', kind: 'secondary', id: 'rankPrev' };
+  const next: Button = { x: DESIGN_W - M.pad - bw, y, w: bw, h: bh, label: '下一页', kind: 'secondary', id: 'rankNext' };
+
+  const hasPrev = offset > 0;
+  const hasNext = offset + shown < total;
+  drawPagerBtn(ctx, prev, hasPrev);
+  drawPagerBtn(ctx, next, hasNext);
+
+  const end = offset + shown;
+  const label = total > 0 ? `第 ${offset + 1}–${end} 名 / 共 ${total} 人` : '';
+  const w = trackedWidth(ctx, label, 20, 2.4, 500);
+  trackedText(ctx, label, (DESIGN_W - w) / 2, y + bh / 2 + 7, 20, R.muted, 2.4, 500);
+
+  const out: Button[] = [];
+  if (hasPrev) out.push(prev);
+  if (hasNext) out.push(next);
+  return out;
+}
+
+function drawPagerBtn(ctx: CanvasRenderingContext2D, b: Button, on: boolean): void {
+  roundRect(ctx, b.x, b.y, b.w, b.h, b.h / 2);
+  ctx.fillStyle = on ? R.rowBg : 'rgba(22,36,30,0.32)';
+  ctx.fill();
+  ctx.strokeStyle = on ? 'rgba(212,175,106,0.32)' : 'rgba(147,179,162,0.10)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  const size = 22;
+  const w = trackedWidth(ctx, b.label, size, 4.4, on ? 600 : 400);
+  trackedText(ctx, b.label, b.x + (b.w - w) / 2, b.y + b.h / 2 + 8, size, on ? R.ink : 'rgba(122,116,104,0.55)', 4.4, on ? 600 : 400);
+}
+
+/**
+ * 把开放数据域的好友榜画进版面。成功返回 true。
+ *
+ * 尺寸按**版面**给（`getOpenDataCanvas` 会顺带改共享画布尺寸并通知重画），
+ * 不能用默认屏幕尺寸 —— 那会被 `drawImage` 缩放成模糊的一片。
+ */
+function drawOpenDataBoard(ctx: CanvasRenderingContext2D): boolean {
+  const top = 196;
+  const w = DESIGN_W - M.pad * 2;
+  // 底栏上沿（`DESIGN_H - 120`）再留 28 的呼吸
+  const h = DESIGN_H - 120 - 28 - top;
+  if (h < 120) return false;
+
+  const od = getOpenDataCanvas(w, h);
+  if (!od) return false;
+  try {
+    ctx.drawImage(od.canvas, M.pad, top, w, h);
+    return true;
+  } catch {
+    // 共享画布刚改过尺寸时个别基础库会抛 —— 下一帧再画
+    return false;
+  }
 }
 
 function placeholder(ctx: CanvasRenderingContext2D, msg: string): void {
@@ -382,12 +485,26 @@ function drawPodium(ctx: CanvasRenderingContext2D, rows: Row[], myRank: number):
 
 // ────────────────────────────── 列表行 ──────────────────────────────
 
-function drawList(ctx: CanvasRenderingContext2D, rows: Row[], myRank: number, total: number): void {
-  const rest = rows.slice(3);
-  const avail = DESIGN_H - 120 - 28 - M.listTop; // nav 顶 − 底距 − 列表顶
-  const inPodium = myRank >= 1 && myRank <= 3;
-  const shownRest = rest;
-  const needMineBar = myRank > 0 && !inPodium && !shownRest.slice(0, 99).some((r) => r.rank === myRank);
+/**
+ * 列表区。
+ *
+ * `listTop` / `listBottom` 由调用方给：第一页要给领奖台让位（526 起），
+ * 翻页后整块上移（196 起）；底部还要给分页条留 88。
+ */
+function drawList(
+  ctx: CanvasRenderingContext2D,
+  rows: Row[],
+  myRank: number,
+  total: number,
+  listTop: number,
+  listBottom: number,
+): void {
+  // 第一页的前三名已经在领奖台上，列表从第 4 名开始；翻页后没有领奖台，全画
+  const skip = listTop === M.listTop ? 3 : 0;
+  const rest = rows.slice(skip);
+  const avail = listBottom - listTop;
+  const inPodium = skip === 3 && myRank >= 1 && myRank <= 3;
+  const needMineBar = myRank > 0 && !inPodium && !rest.slice(0, 99).some((r) => r.rank === myRank);
 
   // 要留「我的名次」条的位置：它 76 高 + 12 间距
   const reserved = needMineBar ? M.mineH + 12 : 0;
@@ -396,11 +513,11 @@ function drawList(ctx: CanvasRenderingContext2D, rows: Row[], myRank: number, to
 
   const shown = rest.slice(0, maxRows);
   shown.forEach((row, i) => {
-    drawRow(ctx, row, M.listTop + i * (M.rowH + M.rowGap), myRank);
+    drawRow(ctx, row, listTop + i * (M.rowH + M.rowGap), myRank);
   });
 
   if (needMineBar) {
-    const y = M.listTop + shown.length * (M.rowH + M.rowGap);
+    const y = listTop + shown.length * (M.rowH + M.rowGap);
     roundRect(ctx, M.pad, y, DESIGN_W - M.pad * 2, M.mineH, M.rowR);
     ctx.fillStyle = 'rgba(212,175,106,0.12)';
     ctx.fill();

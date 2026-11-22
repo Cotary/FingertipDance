@@ -3,5 +3,7 @@
   "showStatusBar": false,
   "networkTimeout": {
     "request": 10000
-  }
+  },
+  "openDataContext": "openDataContext",
+  "__usePrivacyCheck__": true
 }

@@ -42,6 +42,7 @@ import { fillGrain } from './grain';
 import { BOARD_BOTTOM, BOARD_TOP, DESIGN_W, type BoardLayout } from './layout';
 import { paintSkin, paletteOf, type Skin } from './skins';
 import { portalEntrance } from './themes/kit';
+import { createOffscreenCanvas } from '../platform/offscreen';
 
 /** 机制筹码的底盘：纸白，衬在皮肤色上也读得出符号。 */
 const CHIP: ClayColor = { base: '#FFF8EC', light: '#FFFFFF', dark: '#E2D3BE', shade: '#BCA78C' };
@@ -131,16 +132,7 @@ const PLATE_CACHE_MAX = 2;
 
 /** 建离屏画布；拿不到就返回 null（无 document 的录制 / 测试环境走直画兜底）。 */
 function newPlateCanvas(w: number, h: number): HTMLCanvasElement | null {
-  if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
-    const c = document.createElement('canvas');
-    c.width = w;
-    c.height = h;
-    return c;
-  }
-  const wx = (globalThis as {
-    wx?: { createOffscreenCanvas?: (o: { type: '2d'; width: number; height: number }) => HTMLCanvasElement };
-  }).wx;
-  return wx?.createOffscreenCanvas?.({ type: '2d', width: w, height: h }) ?? null;
+  return createOffscreenCanvas(w, h);
 }
 
 /** 把「属于板的格子」并成一条方角路径（外扩 pad，盖掉格缝）。 */

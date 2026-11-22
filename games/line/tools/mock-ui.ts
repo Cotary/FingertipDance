@@ -17,7 +17,10 @@ import { createMapState, scrollToLevel } from '../src/ui/mapview';
 import { drawRankPage, createRankState } from '../src/ui/leaderboard';
 import { drawProfilePage, type ProfilePageState } from '../src/ui/profile';
 import { drawStatsPanel } from '../src/ui/statsPanel';
+import { drawAgeGate } from '../src/ui/ageGate';
+import { drawBootSplash } from '../src/ui/splash';
 import { drawSharePanel, type SharePanelState } from '../src/ui/sharePanel';
+import { renderPoster, renderShareCard } from '../src/ui/share';
 import { drawSkinsPage, type SkinsPageState } from '../src/ui/skins';
 import { drawNav, type NavTab } from '../src/ui/nav';
 import { drawBoard, drawEndpoints } from '../src/render/board';
@@ -82,6 +85,8 @@ const board9 = (rank: number, nickname: string, maxLevel: number, totalTimeMs: n
 export const rankState = createRankState();
 rankState.global = {
   loading: false,
+  offset: 0,
+  pageSize: 50,
   myRank: 37,
   total: 1284,
   list: [
@@ -320,6 +325,10 @@ export const PAGES: PageDef[] = [
     void drawProfilePage(c, profileState, NOW);
     drawSharePanel(c, sharePanelState);
   } },
+  // 冷启动页：审核和玩家都会看到它，改版式时要能一眼核对
+  { key: 'boot', title: '启动 · 加载页', draw: (c) => void drawBootSplash(c, 400) },
+  // 适龄提示：提审硬要求，必须首启可见 —— 顺手放进画廊，改版式时能一眼核对
+  { key: 'age', title: '启动 · 适龄提示', draw: (c) => void drawAgeGate(c, true) },
   // 「分享选关」：地图页的另一个读法 —— 点任意关就发给好友。
   // 视觉上必须一眼看出是在选关（标题变「挑一关分享」、脚卡变「取消」），
   // 否则和普通地图长得一样，玩家会以为点下去是进关。
@@ -333,6 +342,40 @@ export const PAGES: PageDef[] = [
   { key: 'resultShare', title: '结算 · 分享抽屉', draw: (c) => {
     resultScreen(c);
     drawSharePanel(c, sharePanelState);
+  } },
+  // 5:4 分享卡片图。微信聊天卡片按 5:4 显示，9:16 海报塞进去会被居中裁掉
+  // 上下两个标题 —— 所以这张图必须单独看。
+  { key: 'shareCard', title: '分享 · 5:4 卡片图', draw: (c) => {
+    c.fillStyle = '#0D1712';
+    c.fillRect(0, 0, DESIGN_W, DESIGN_H);
+    const card = renderShareCard(
+      { idx: 247, w: 6, h: 6 },
+      0,
+      '不回头，一条线走到底。',
+      'https://game.example.com/p?l=247&undos=0',
+    );
+    if (!card) return; // RecordingCtx 没有离屏画布，跳过
+    const w = DESIGN_W - 72;
+    const h = (w * 864) / 1080;
+    c.drawImage(card as unknown as CanvasImageSource, 36, (DESIGN_H - h) / 2, w, h);
+  } },
+  // 9:16 海报（存相册 / 长图分享）。与上面的 5:4 卡图同一套配色，
+  // 放在一起看才能发现「同一个颜色在两种底色上是不是都看得清」。
+  { key: 'poster', title: '分享 · 9:16 海报', draw: (c) => {
+    c.fillStyle = '#0D1712';
+    c.fillRect(0, 0, DESIGN_W, DESIGN_H);
+    const poster = renderPoster(
+      { idx: 247, w: 6, h: 6 },
+      'mise',
+      0,
+      '小满',
+      { text: '不回头，一条线走到底。' },
+      100234,
+      0,
+      'https://game.example.com/p?l=247&undos=0',
+    );
+    if (!poster) return;
+    c.drawImage(poster as unknown as CanvasImageSource, 0, 0, DESIGN_W, DESIGN_H);
   } },
   { key: 'skins', title: '主题', nav: 'skins', draw: (c) => void drawSkinsPage(c, skinsState, NOW) },
   { key: 'themes', title: '棋盘主题', nav: 'skins', draw: (c) => void drawSkinsPage(c, themesState, NOW) },

@@ -132,8 +132,47 @@ export function estimateSolutions(
    */
   knownSolution?: number[],
 ): SolutionEstimate {
-  const rs = plainMode ? withPlain(rsIn, true) : rsIn;
+  /**
+   * **必须复制一份** —— 下面要把 `startAt` / `endAt` 清成 -1
+   * （解数只衡量棋盘拓扑的自由度，不该被「端点钉死」干扰）。
+   *
+   * 旧实现直接改传进来的规则集 → 调用方的规则集被污染
+   * （端点约束凭空消失）。
+   */
+  const rs = { ...(plainMode ? withPlain(rsIn, true) : rsIn) };
   if (rs.n === 0) return { count: 0, band: 'unique', samples: 0, hits: 0 };
+
+  /**
+   * **传送门关卡必须用完整规则求解**（哪怕 `plainMode = true`）。
+   *
+   * 旧实现有两个问题：
+   *
+   * 1. `plainMode` 参数**形同虚设** —— 它只把规则集切成「非纯网格」，
+   *    但 `solve` 内部仍然 `withPlain(rsIn, !fullRules)`，
+   *    也就是**永远按纯网格求解**。
+   * 2. 因此传送门关卡的解数算的是**纯网格路径**的条数。
+   *
+   * 在「传送门是可选边」的老语义下这无所谓（纯网格解永远合法）；
+   * 但「进入即传送」的新语义下**完全错了**：
+   * 纯网格解会**穿过**传送格而不传送 → 那不是这个游戏的合法解 →
+   * 解数被高估、难度分失真。
+   *
+   * ## 为什么其它关卡仍然走纯网格
+   *
+   * 难度分的唯一性项要**跨关卡可比**，而不同机制的约束强度差异
+   * 会污染这个比较 —— 所以冰块/单向门/钥匙门关卡的解数刻意只看
+   * 棋盘拓扑。
+   *
+   * 但传送门是**例外**：它不是「可选的额外路线」，
+   * 而是**必经的强制跳跃** —— 纯网格路径压根不是这个游戏的合法解。
+   * 拿它算解数等于在数另一个游戏的解。
+   *
+   * 成本可接受：关卡盘面是 5×6（约 26~28 格），
+   * 开着传送边搜索完全在预算内（实测 expanded 22~122 节点，毫秒级）。
+   */
+  const fullRules = rs.hasPortal;
+  /** 完整规则模式下要**开**传送边。 */
+  const noPortal = false;
 
   // Clear the pinned endpoints: the solution count measures the freedom of the
   // TOPOLOGY. Whether this particular level pins its start/end is a separate
@@ -256,6 +295,11 @@ export function estimateSolutions(
       // 确定性模式 -> 不限时（步数预算才是硬约束）；调试模式 -> 用剩余墙钟。
       deterministic ? 0 : Math.max(1, deadline - Date.now()),
       0.9,
+      fullRules,
+      0,
+      0,
+      undefined,
+      noPortal,
     );
     samples++;
     if (!res.path) continue;

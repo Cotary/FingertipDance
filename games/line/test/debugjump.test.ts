@@ -133,7 +133,7 @@ describe('调试面板 · 输入', () => {
 
   it('只有「进入」返回 true，其余按键都不触发进关', () => {
     const st = opened();
-    for (const id of ['dj:d:7', 'dj:back', 'dj:clear', 'dj:minus', 'dj:plus', 'dj:random', 'dj:w:153']) {
+    for (const id of ['dj:d:7', 'dj:back', 'dj:clear', 'dj:minus', 'dj:plus', 'dj:random', 'dj:w:153', 'dj:repair']) {
       expect(applyDebugJumpInput(st, id, TOTAL, CUR)).toBe(false);
     }
     expect(applyDebugJumpInput(st, 'dj:enter', TOTAL, CUR)).toBe(true);

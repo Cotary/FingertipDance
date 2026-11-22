@@ -31,10 +31,40 @@ export function decodeGrid(b64: string, len: number): Uint8Array {
   return out;
 }
 
-/** 解（拍平索引序列）→ "起点,步数,base64(方向序列)"。 */
+/**
+ * 解（拍平索引序列）→ "起点,步数,base64(方向序列)[,jumps]"。
+ *
+ * ## 传送跳跃（第 4 段）
+ *
+ * 「进入即传送」的语义下，走进传送格 `A` 的一步会一次吃掉 `[A, B]`
+ * （`B` 是 `A` 的搭档）。于是解里**相邻两格可能几何上不相邻** ——
+ * 那种步长没法用 2 bit 的方向编码表示（`dirFromDelta` 会抛「非法步长」）。
+ *
+ * 所以跳跃步单独记在第 4 段里：`stepIdx:targetFlat` 用 `;` 分隔。
+ *   - `stepIdx` 是**步的序号**（0 基，即 `path[stepIdx]` → `path[stepIdx+1]`）；
+ *   - `targetFlat` 是这一步走完之后线头所在的拍平索引。
+ * 跳跃步在 `dirs` 里仍然占一个**占位方向**（0），保证 `步数` 字段不变。
+ *
+ * **没有跳跃的关卡仍然只有 3 段** —— 格式是向后兼容的加法，
+ * 旧表 / 旧客户端 / 旧服务端都能继续读。
+ */
 export function encodeSolution(path: number[], w: number): string {
   const dirs: number[] = [];
-  for (let i = 1; i < path.length; i++) dirs.push(dirFromDelta(path[i] - path[i - 1], w));
+  /** 跳跃记录：`stepIdx:targetFlat`。 */
+  const jumps: string[] = [];
+  for (let i = 1; i < path.length; i++) {
+    const prev = path[i - 1];
+    const curr = path[i];
+    const dx = Math.abs((curr % w) - (prev % w));
+    const dy = Math.abs(Math.floor(curr / w) - Math.floor(prev / w));
+    if (dx + dy === 1) {
+      dirs.push(dirFromDelta(curr - prev, w));
+    } else {
+      // 非邻接步 = 传送跳跃：记下目标，占位方向 0。
+      jumps.push(`${i - 1}:${curr}`);
+      dirs.push(0);
+    }
+  }
   const bytes: number[] = [];
   for (let i = 0; i < dirs.length; i += 4) {
     let b = 0;
@@ -46,18 +76,43 @@ export function encodeSolution(path: number[], w: number): string {
   for (let i = 0; i < bytes.length; i += CHUNK) {
     bin += String.fromCharCode(...bytes.slice(i, i + CHUNK));
   }
-  return `${path[0]},${dirs.length},${btoa(bin)}`;
+  const base = `${path[0]},${dirs.length},${btoa(bin)}`;
+  return jumps.length > 0 ? `${base},${jumps.join(';')}` : base;
 }
 
-/** 解码解 → 拍平索引序列。 */
+/**
+ * 解码解 → 拍平索引序列。
+ *
+ * 支持两种格式：
+ *   - 3 段：`起点,步数,base64(方向序列)`（无传送）
+ *   - 4 段：`起点,步数,base64(方向序列),jumps`（`jumps` = `stepIdx:targetFlat;…`）
+ */
 export function decodeSolution(s: string, w: number): number[] {
   const parts = s.split(',');
   const start = parseInt(parts[0], 10);
   const steps = parseInt(parts[1], 10);
   const bin = atob(parts[2]);
+  /** 跳跃表：步序号 → 目标拍平索引。 */
+  const jumpMap = new Map<number, number>();
+  if (parts.length >= 4 && parts[3]) {
+    for (const rec of parts[3].split(';')) {
+      if (!rec) continue;
+      const at = rec.indexOf(':');
+      if (at < 0) continue;
+      const stepIdx = parseInt(rec.slice(0, at), 10);
+      const target = parseInt(rec.slice(at + 1), 10);
+      if (Number.isFinite(stepIdx) && Number.isFinite(target)) jumpMap.set(stepIdx, target);
+    }
+  }
   const path: number[] = [start];
   let cur = start;
   for (let i = 0; i < steps; i++) {
+    const jumped = jumpMap.get(i);
+    if (jumped !== undefined) {
+      cur = jumped;
+      path.push(cur);
+      continue;
+    }
     const b = bin.charCodeAt(Math.floor(i / 4));
     const d = (b >> (6 - (i % 4) * 2)) & 0b11;
     if (d === 0) cur -= w;

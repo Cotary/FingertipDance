@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>海报排版检查</title>
+  <style>
+    html, body { margin: 0; background: #0A0F0C; }
+    canvas { display: block; width: 375px; height: 667px; }
+  </style>
+</head>
+<body>
+<!--
+  海报排版检查台（开发用）。
+
+  只为验证 `src/ui/share.ts` 的排版：不经过游戏、不登录、不联网，
+  直接按最长的文案 + 两位三位的昵称/ID 渲染一张 750×1334 的海报。
+  用 `node tools/shot-cdp.mjs http://127.0.0.1:50002/tools/poster-check.html out.png 1500 375 667 2`
+  截图核对。
+-->
+<script type="module">
+  import { renderPoster } from '/src/ui/share.ts';
+
+  // 最坏情况：文案池最长的一条 + 常见昵称 + 三位 uid
+  const cases = [
+    { copy: '这关我重来 0 次，你呢？', nick: '玩家', uid: 333 },
+    { copy: '我卡在第 1000 关，你能连过去吗？', nick: '这是一位昵称特别长的玩家', uid: 123456 },
+  ];
+
+  for (const [i, c] of cases.entries()) {
+    const src = renderPoster({ idx: 6, w: 7, h: 7 }, 'wood', 0, c.nick, { text: c.copy }, c.uid);
+    const cv = document.createElement('canvas');
+    cv.width = 750;
+    cv.height = 1334;
+    cv.getContext('2d').drawImage(src, 0, 0);
+    // 第二张排在右边，方便一屏对照
+    cv.style.position = 'absolute';
+    cv.style.left = `${i * 380}px`;
+    document.body.appendChild(cv);
+  }
+</script>
+</body>
+</html>

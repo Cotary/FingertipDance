@@ -108,6 +108,8 @@ describe('大厅绘制冒烟', () => {
       myRank: 3,
       total: 10,
       loading: false,
+      offset: 0,
+      pageSize: 50,
     };
     const tabs1 = drawRankPage(ctx, st, 1000);
     expect(tabs1.map((b) => b.id)).toEqual(['tabFriends', 'tabGlobal']);
@@ -123,7 +125,9 @@ describe('大厅绘制冒烟', () => {
     const ctx = fakeCtx();
     const buttons = drawProfilePage(ctx, PROFILE, 1000);
     const ids = buttons.map((b) => b.id);
-    expect(ids).toEqual(['toggleSound', 'toggleVibrate', 'shareGame', 'profileStats']);
+    // 2026-11-22 加了「昵称头像」「适龄提示」两行：前者是微信资料的唯一入口
+    // （getUserProfile 必须手势触发），后者是提审要求的回看入口。
+    expect(ids).toEqual(['toggleSound', 'toggleVibrate', 'editProfile', 'shareGame', 'ageGate', 'profileStats']);
   });
 
   it('我的页不再有「清除缓存」空转按钮', () => {
@@ -143,16 +147,17 @@ describe('大厅绘制冒烟', () => {
       { equipped: 'wood', selected: 'wood', unlocked: new Set(['wood']), page: 0, themeSelected: 'mise', themeEquipped: 'mise', maxLevel: 0 },
       1000,
     );
-    expect(b1).toEqual([]);
+    // 分段永远在（皮肤入口不能靠"有没有内容"决定是否出现）
+    expect(b1.map((b) => b.id)).toEqual(['themeTab', 'skinTab']);
     // 换一套已解锁但没装备的 → 出现「使用」按钮
     const b2 = drawSkinsPage(
       ctx,
-      { equipped: 'wood', selected: 'wood', unlocked: new Set(['wood']), page: 0, themeSelected: 'ink', themeEquipped: 'mise', maxLevel: 200 },
+      { equipped: 'wood', selected: 'wood', unlocked: new Set(['wood']), page: 0, themeSelected: 'mingsha', themeEquipped: 'mise', maxLevel: 200 },
       1000,
     );
-    expect(b2.map((b) => b.id)).toEqual(['equipTheme']);
+    expect(b2.map((b) => b.id)).toEqual(['themeTab', 'skinTab', 'equipTheme']);
     // 金按钮落在屏内、在右半侧（设计稿右上角状态位）
-    const b = b2[0];
+    const b = b2[2];
     expect(b.x + b.w).toBeLessThanOrEqual(750);
     expect(b.y + b.h).toBeLessThanOrEqual(1334);
     expect(b.x).toBeGreaterThan(375);

@@ -35,6 +35,7 @@ import {
   RAIL, SCENE, SKIN_LEVELS, VIEW_BOTTOM, ROUTE_TOP,
   clamp, levelNear, mapNodePos, nodeRadius, nodeY,
   railGeometry, railYOf, screenYOf, screenXOf, camXOf, visibleRange,
+  isLevelCleared,
   type MapViewState,
 } from './mapview';
 
@@ -490,8 +491,18 @@ function drawNode(
   p: MapPalette,
   camX: number,
 ): void {
-  const current = idx === st.currentLevel;
-  const locked = idx > st.currentLevel;
+  // ## 分享模式下，「可点」的判据换了
+  //
+  // 平时：`idx < currentLevel` = 已过关，`idx > currentLevel` = 锁着。
+  // 分享选关：能不能点由 `isLevelCleared`（星级 > 0）决定 ——
+  // 看广告跳过的关、以及被旧版调试跳关顶上去的那一段，地图上都画着「已通关」，
+  // 却一颗星都没有，点下去只会得到「先通过第 N 关」。
+  //
+  // 所以分享模式下**画法必须跟着判据走**：不可分享的直接画成锁着的样子，
+  // 也不画「你在这里」（挑关的时候「我在哪」不是信息，反而抢注意力）。
+  const sharePick = st.shareMode;
+  const current = !sharePick && idx === st.currentLevel;
+  const locked = sharePick ? !isLevelCleared(idx, st) : idx > st.currentLevel;
   const r = nodeRadius(idx, y, st);
   const big = idx % 100 === 0 && idx > 0;
   const milestone = idx % 10 === 0 && idx > 0;
@@ -698,11 +709,11 @@ function drawHeader(ctx: CanvasRenderingContext2D, st: MapViewState, first: numb
 
   if (st.shareMode) {
     // 分享模式下标题改成**行动指令**：「挑一关」比「关卡地图」更能说明
-    // 玩家现在该干什么。右侧读数保留（还有用），但换成「点任意关分享」。
+    // 玩家现在该干什么。右侧说明选关范围 —— 只能选自己通关过的关。
     label(ctx, '挑一关分享', SCENE.x + 4, 62, 34, p.ink, { align: 'left', weight: 600, tracking: 10.88 });
     label(
       ctx,
-      '点任意关 → 发给好友',
+      '只能选已通关的关卡',
       SCENE.x + SCENE.w - 4, 62, 20, p.gold,
       { align: 'right', weight: 600, tracking: 4.4 },
     );

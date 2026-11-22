@@ -237,6 +237,31 @@ export class CoverSession {
     if (hadPath) this.emit({ type: 'abandoned', steps });
   }
 
+  /**
+   * 提示前清空当前这一笔：**路径归零，从头开始**。
+   *
+   * ## 为什么提示要从头给
+   *
+   * 提示是「这一关该怎么走」，不是「在当前这条线后面怎么接」。
+   * 玩家已经走岔时，接着线头求解只能围着错路打转；
+   * 而把整条线清掉再按空盘求解，才能给出真正能走通的完整路线。
+   *
+   * ## 为什么不加 `undos`
+   *
+   * 这不是玩家走错，是提示功能的一部分；首次提示还要先看广告，
+   * 再扣一颗星就太贵了。真正该扣星的是「按了别的格子重新起一笔」
+   * （`abandonPath`），两者不要混。
+   *
+   * 清空后停在 `idle`，玩家可以按提示的第一格重新起笔。
+   */
+  restartForHint(): void {
+    if (!this.state || this.state.phase === 'won') return;
+    resetPath(this.state);
+    this.state.phase = 'idle';
+    this.state.lastConsumed = [];
+    this.dragging = false;
+  }
+
   /** 当前路径（拍平索引序列）。 */
   flatPath(): number[] {
     if (!this.state) return [];

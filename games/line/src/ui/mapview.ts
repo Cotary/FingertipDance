@@ -502,7 +502,7 @@ export interface MapViewState {
    * 两份坐标漂移的风险。所以只加一个布尔量：同样的地图，读法换一套 ——
    *
    * - 节点点击 = 选中这一关并弹分享面板（不是进关）
-   * - 未解锁的关**也能分享**（分享不是玩，不该被进度限制）
+   * - **只能选自己已经通过的关**（见 `isLevelCleared`）；未通关的关点了给提示
    * - 页面顶部出一条说明带 + 取消，让玩家随时知道自己在什么模式里
    */
   shareMode: boolean;
@@ -601,6 +601,36 @@ export function createMapState(
 export function isLevelPlayable(idx: number, st: MapViewState): boolean {
   if (DEBUG_ENABLED && st.debugUnlockAll) return true;
   return idx <= st.currentLevel;
+}
+
+/**
+ * 这一关是否**已经通过**（分享选关用）。
+ *
+ * ## 判据为什么是星级
+ *
+ * `stars` 来自 `/api/progress/stars?mode=cover`，服务端**只为真正打过的关**
+ * 写星；看广告跳过的关卡会被排除（`skipped != 0` 不点亮）。
+ * 所以 `stars[idx] > 0` 严格等于「自己通过了这一关」。
+ *
+ * 只判 `idx < currentLevel` 会把跳过关也算进来 —— 那些关在地图上虽然
+ * 画成已过关，但玩家并没有真的打过，不该拿来当挑战发给好友。
+ *
+ * ## 星级表还没拉回来时
+ *
+ * 首屏 / 断网时 `stars` 是空对象。若此时一律判 false，
+ * 玩家明明有进度却一个关都选不了。退回到「当前关之前的都算」——
+ * 这是地图上「已过关」的显示口径，只作兜底，不做首选判据。
+ */
+export function isLevelCleared(idx: number, st: MapViewState): boolean {
+  if (idx < 1 || idx > st.levelCount) return false;
+
+  // 旧版本地缓存可能没有 stars 字段（`restore` 是浅合并），兜一下空表
+  const stars = st.stars ?? {};
+  const hasStars = Object.keys(stars).length > 0;
+  if (hasStars) return (stars[String(idx)] ?? 0) > 0;
+
+  // 星级表缺失：按地图的「已过关」口径兜底（不含当前这一关）
+  return idx < st.currentLevel;
 }
 
 /** 第一个 `nodeY >= y` 的关号。 */

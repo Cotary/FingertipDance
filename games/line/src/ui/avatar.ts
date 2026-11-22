@@ -86,17 +86,25 @@ interface RawImage extends LoadedImage {
   crossOrigin?: string;
 }
 
-/** 平台分支创建 Image。 */
+/**
+ * 平台分支创建 Image。
+ *
+ * 两套小游戏各有自己的 `createImage`：微信是 `wx.createImage`，
+ * 抖音是 `tt.createImage`。少接一个，那一端的头像就永远退化成首字
+ * （不会报错 —— 这是最难发现的一类"坏"）。
+ */
 function createImage(): RawImage | null {
   const g = globalThis as unknown as {
     wx?: { createImage?: () => RawImage };
+    tt?: { createImage?: () => RawImage };
     Image?: new () => RawImage;
   };
 
-  // 微信小游戏
-  if (g.wx?.createImage) {
+  // 小游戏（微信 / 抖音）
+  const api = g.wx ?? g.tt;
+  if (api?.createImage) {
     try {
-      return g.wx.createImage();
+      return api.createImage();
     } catch {
       return null;
     }

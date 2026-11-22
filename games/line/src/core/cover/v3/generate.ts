@@ -23,6 +23,7 @@ import { designShape, isConnected, fourNeighbors, type ShapeFamily, type DesignR
 import { carveAndVerify } from './carve';
 import { computeDiff, measure, type DiffContext, type Metrics } from './metrics';
 import { buildRuleSet, replay, type RuleSet } from './rules';
+import { splicePortals } from './portal';
 import { estimateSolutions } from './solcount';
 import { CoverCell, DIR, dirVec, packCell, cellType } from './types';
 
@@ -660,6 +661,7 @@ function injectMechanics(
   path: number[],
   plan: MechPlan,
   rng: Rng,
+  portalCells: ReadonlyArray<readonly [number, number]> = [],
 ): number {
   const n = rs.n;
   if (n < 10) return 0;
@@ -680,6 +682,21 @@ function injectMechanics(
    * 全部机制共用 —— 一个格只能承载一种机制。
    */
   const used = new Set<number>();
+
+  /**
+   * **传送门格预先占用**。
+   *
+   * 传送门格是**跳跃边的两端** —— 它们是整条解的骨架，
+   * 任何别的机制（冰块 / 单向门 / 星星 / 钥匙门）落在上面都会
+   * 破坏「走进传送格 → 传送到搭档」的对齐，参考解当场失效。
+   *
+   * 所以它们**最先**进 `used`，后来的机制自动避开。
+   */
+  for (const [entry, exit] of portalCells) {
+    used.add(entry);
+    used.add(exit);
+  }
+
   const pick = (): number | null => {
     const avail = interior.filter((v) => !used.has(v));
     if (avail.length === 0) return null;
@@ -782,10 +799,19 @@ function injectMechanics(
   }
 
   // --- 传送门：成对格 ---
+  //
+  // ⚠️ **传送门不能随便挑两个格**。
+  //
+  // 「进入即传送」语义下，走进传送格 A 的一步会一次吃掉 `[A, B]`。
+  // 参考解必须**正好**在这一步从 A 跳到 B —— 否则回放必然失败。
+  //
+  // 所以传送门格**只能来自 `portalCells`**（由 `splicePortals` 预先算好：
+  // 它们是跳跃边的两端，在解里逐位对齐）。
+  // 没有 `portalCells` 就**不放**传送门 —— 绝不退化成「随便两格」。
   for (let k = 0; k < plan.portal; k++) {
-    const a = pick();
-    const b = pick();
-    if (a === null || b === null) break;
+    const pair = portalCells[k];
+    if (!pair) break;
+    const [a, b] = pair;
     rs.typeOf[a] = CoverCell.PORTAL;
     rs.groupOf[a] = k;
     rs.typeOf[b] = CoverCell.PORTAL;
@@ -1039,13 +1065,29 @@ export function generateCandidate(
   rs.endAt = endAt;
 
   // 4. 参考解
-  const path = carve.path;
+  let path = carve.path;
 
-  // 5. 注入机制
+  // 5. 传送门：2-opt 拼接（**必须在注入机制之前**）
+  //
+  // 「进入即传送」语义下，走进传送格 A 的一步会一次吃掉 `[A, B]`。
+  // 参考解必须**正好**在这一步从 A 跳到 B，否则回放必然失败。
+  //
+  // 所以顺序是：**先拼接出一条带跳跃的解**，再把传送门放到跳跃的两端。
+  // 拼接保证：跳跃边两端在解里**逐位相邻**，与规则的消耗序列完全对齐。
   const plan = mechPlan(wp.mechs, cells.length);
-  injectMechanics(rs, path, plan, rng);
+  let portalCells: Array<[number, number]> = [];
+  if (plan.portal > 0) {
+    const spliced = splicePortals(rs, path, rng, plan.portal);
+    // 找不到可行的拼接对 → 这个候选直接作废（换种子重试）。
+    if (!spliced) return null;
+    path = spliced.path;
+    portalCells = spliced.portals.map((p) => [p.entry, p.exit] as [number, number]);
+  }
 
-  // 6. 写回 grid
+  // 6. 注入机制（传送门格已预留在 `used` 里）
+  injectMechanics(rs, path, plan, rng, portalCells);
+
+  // 7. 写回 grid
   for (let i = 0; i < rs.n; i++) {
     const flat = rs.flatOf[i];
     grid[flat] = packCell(rs.typeOf[i], rs.dirOf[i], rs.groupOf[i]);
@@ -1053,12 +1095,24 @@ export function generateCandidate(
   if (startAt >= 0) grid[rs.flatOf[startAt]] = packCell(CoverCell.START);
   if (endAt >= 0) grid[rs.flatOf[endAt]] = packCell(CoverCell.END);
 
-  // 7. 完整规则下回放校验
+  // 8. 完整规则下回放校验
   const rs2 = buildRuleSet(cells, grid, w, h);
   rs2.startAt = startAt;
   rs2.endAt = endAt;
   const rp = replay(rs2, path);
   if (!rp.ok) {
+    /**
+     * **传送门关卡不能退化成无机制盘面**。
+     *
+     * 旧逻辑在回放失败时把整盘机制清零（变成普通砖块）——
+     * 对传送门关卡来说，这等于「这一关没有传送门」，
+     * 而世界 5 的卖点恰恰是传送门。
+     *
+     * 传送门关卡的参考解是**专门拼接**出来的，回放本该必然通过；
+     * 失败说明有 bug 或规则不一致 —— 宁可丢掉这个候选，
+     * 也不能发出一关「名义上有传送门、实际没有」的关卡。
+     */
+    if (plan.portal > 0) return null;
     // 机制注入破坏了参考解（例如冰块滑行消耗了路径之外的格）→
     // 退化为无机制的盘面。**必须重建规则集**，否则拿旧的 rs2 回放仍会失败。
     for (let i = 0; i < rs.n; i++) {

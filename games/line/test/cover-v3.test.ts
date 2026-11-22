@@ -112,6 +112,19 @@ describe('cover v3 / 确定性', () => {
 });
 
 describe('cover v3 / 求解器', () => {
+  /**
+   * 纯网格模式找到的解，在完整规则下同样合法。
+   *
+   * ## 传送门关卡是例外（2026-11-20）
+   *
+   * 「进入即传送」下，走进传送格 A 的一步会一次吃掉 `[A, B]`。
+   * 纯网格模式里传送格就是普通砖 —— 求出来的路径会**穿过**传送格而不传送，
+   * 那在真实玩法下**根本不是合法解**。
+   *
+   * 所以：
+   *   - 非传送门关卡：纯网格解必须在完整规则下合法（不变式成立）；
+   *   - 传送门关卡：必须用**完整规则**求解，且解必须在完整规则下合法。
+   */
   it('纯网格模式找到的解，在完整规则下同样合法', () => {
     for (const idx of [20, 100, 400]) {
       const c = generateLevel(idx, SEED);
@@ -120,14 +133,27 @@ describe('cover v3 / 求解器', () => {
       const rs = buildRuleSet(cells, c.grid, c.w, c.h);
       rs.startAt = c.startAt;
       rs.endAt = c.endAt;
-      // 纯网格求解
+      const hasPortal = rs.portalOf.some((v) => v >= 0);
+
+      // 纯网格求解（非传送门关卡）
       const plain = withPlain(rs, true);
       const r = solve(plain, mulberry32(7), c.startAt, 200000, 2000);
       expect(r.path, `第 ${idx} 关纯网格求解应成功`).not.toBeNull();
       if (!r.path) continue;
-      // 完整规则下回放必须通过
-      const rp = replay(rs, r.path);
-      expect(rp.ok, `第 ${idx} 关纯网格解在完整规则下非法：${rp.error}`).toBe(true);
+      if (!hasPortal) {
+        // 完整规则下回放必须通过
+        const rp = replay(rs, r.path);
+        expect(rp.ok, `第 ${idx} 关纯网格解在完整规则下非法：${rp.error}`).toBe(true);
+      }
+
+      // 传送门关卡：必须用完整规则求解，且解合法
+      if (hasPortal) {
+        const rf = solve(rs, mulberry32(7), c.startAt, 200000, 2000, 0, true);
+        expect(rf.path, `第 ${idx} 关完整规则求解应成功`).not.toBeNull();
+        if (!rf.path) continue;
+        const rp = replay(rs, rf.path);
+        expect(rp.ok, `第 ${idx} 关完整规则解非法：${rp.error}`).toBe(true);
+      }
     }
   });
 

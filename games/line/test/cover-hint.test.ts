@@ -22,7 +22,8 @@ import {
   type CoverState,
 } from '../src/game/coverState';
 import { findCoverHint, findCoverHintWith } from '../src/game/coverHint';
-import { decodeSolution, type LevelEntryWithSolution } from '../src/core/cover/v3/codec';
+import { decodeSolution, decodeGrid, type LevelEntryWithSolution } from '../src/core/cover/v3/codec';
+import { cellType, CoverCell } from '../src/core/cover/v3/types';
 
 function loadLevels(): LevelEntryWithSolution[] {
   const file = path.resolve(__dirname, '../data/levels-v3.json');
@@ -180,5 +181,64 @@ describe('cover 提示', () => {
     // 要么找到（碰巧很快），要么明确没找到 —— 但不能抛异常
     expect(typeof hint.found).toBe('boolean');
     expect(hint.ms).toBeLessThan(1000);
+  });
+
+  /**
+   * **传送门关卡的提示必须按完整规则求解**。
+   *
+   * 「进入即传送」下，纯网格求解会**穿过**传送格而不传送 ——
+   * 那条路线在真实玩法下根本走不通。
+   *
+   * 所以传送门关卡的提示要开传送边，并且给出的每一格都能真的走。
+   */
+  it('传送门关卡的提示走完整规则，每一步都能真的走', () => {
+    const portals = LEVELS.filter((e) => {
+      const grid = decodeGrid(e.grid, e.w * e.h);
+      for (let i = 0; i < grid.length; i++) {
+        if (cellType(grid[i]) === CoverCell.PORTAL) return true;
+      }
+      return false;
+    });
+    expect(portals.length, '关卡表里应有传送门关卡').toBeGreaterThan(0);
+
+    for (const entry of pickSamples(portals, 40)) {
+      const state = startedState(entry);
+
+      // 起手后的提示
+      const hint = findCoverHint(state);
+      expect(hint.found, `第 ${entry.idx} 关起手后应有提示`).toBe(true);
+      if (!hint.found) continue;
+
+      // 提示的第一格必须能真的走（传送门关卡尤其如此）
+      const nextLocal = state.runtime.rs.localOf[hint.cells[0]];
+      const r = tryCoverMove(state, nextLocal);
+      expect(r, `第 ${entry.idx} 关提示的落点应可走`).toBe('moved');
+    }
+  });
+
+  it('传送门关卡：沿提示走完全程能通关（抽样 20 关）', () => {
+    const portals = LEVELS.filter((e) => {
+      const grid = decodeGrid(e.grid, e.w * e.h);
+      for (let i = 0; i < grid.length; i++) {
+        if (cellType(grid[i]) === CoverCell.PORTAL) return true;
+      }
+      return false;
+    });
+
+    for (const entry of pickSamples(portals, 20)) {
+      const state = startedState(entry);
+      const hint = findCoverHint(state);
+      expect(hint.found, `第 ${entry.idx} 关应有提示`).toBe(true);
+      if (!hint.found) continue;
+
+      setHintPlan(state, hint.cells);
+      for (const flat of hint.cells) {
+        const local = state.runtime.rs.localOf[flat];
+        if (state.visited[local]) continue;
+        const r = tryCoverMove(state, local);
+        expect(r, `第 ${entry.idx} 关沿提示走到 ${flat} 应可走`).toBe('moved');
+      }
+      expect(releaseCover(state), `第 ${entry.idx} 关应通关`).toBe(true);
+    }
   });
 });

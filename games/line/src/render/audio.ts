@@ -1,6 +1,16 @@
 /**
  * 音效合成器。不使用音频文件，全部用 WebAudio 生成。
- * 微信端无 WebAudio → 由 `platform.vibrate()` 兜底。
+ *
+ * ## 三端都能出声
+ *
+ * 浏览器有 `window.AudioContext`，小游戏**没有** —— 微信要
+ * `wx.createWebAudioContext()`、抖音要 `tt.createWebAudioContext()`。
+ * 这里不自己判平台，统一走 `platform/webaudio` 的 `createAudioContext()`
+ * （分支只写一份，见那个文件）。
+ *
+ * 小游戏端的上下文少一个 `createConvolver`：没有卷积节点就**整条湿声关掉**，
+ * 只留干声。硬塞一个 `buffer = null` 的卷积节点会把所有声音吞成闷响，
+ * 比没有混响难听得多。
  *
  * ## 这一版改了什么
  *
@@ -42,6 +52,7 @@ import {
   type SoundNote,
   type ThemeVoice,
 } from './voice';
+import { createAudioContext, hasConvolver, type MiniAudioContext } from '../platform/webaudio';
 
 /** 音符太多会爆音，也会糊成一片。这个窗口是实测调出来的。 */
 const BURST_WINDOW_MS = 70;
@@ -59,7 +70,7 @@ const BLOCKED_DEFAULT: SoundNote[] = [
 ];
 
 export class Audio {
-  private ctx: AudioContext | null = null;
+  private ctx: MiniAudioContext | null = null;
   private master: GainNode | null = null;
   private dryBus: GainNode | null = null;
   private conv: ConvolverNode | null = null;
@@ -81,18 +92,15 @@ export class Audio {
   /**
    * 惰性建图。必须在用户手势后首次调用（浏览器自动播放策略）。
    *
-   * 微信端 `window.AudioContext` 不存在 → 走 catch 返回 null，整条链静默降级，
+   * 拿不到上下文（老基础库 / 录制环境）→ 返回 null，整条链静默降级，
    * 由调用方的 `platform.vibrate()` 兜住手感。
    */
-  private ensure(): AudioContext | null {
+  private ensure(): MiniAudioContext | null {
     if (this.ctx) return this.ctx;
     try {
-      const Ctor =
-        window.AudioContext ??
-        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!Ctor) return null;
+      const ctx = createAudioContext();
+      if (!ctx) return null;
 
-      const ctx = new Ctor();
       const master = ctx.createGain();
       // 0.85 而不是 1：给叠音留头room，三个音同时响时不会削波
       master.gain.value = this.enabled ? 0.85 : 0;
@@ -106,16 +114,25 @@ export class Audio {
       wet.gain.value = 1;
       wet.connect(master);
 
-      const conv = ctx.createConvolver();
-      // 自己生成的 IR 已经限幅到 0.5，交给 Convolver 归一化会把暗的 IR 抬成糊
-      conv.normalize = false;
-      conv.connect(wet);
+      // 小游戏端没有卷积节点 → 湿声整条关掉，只留干声。
+      // 建一个 `buffer = null` 的卷积会吞掉所有声音（听起来像被捂住），
+      // 比"没有混响"糟得多。
+      let conv: ConvolverNode | null = null;
+      if (hasConvolver(ctx)) {
+        conv = ctx.createConvolver();
+        // 自己生成的 IR 已经限幅到 0.5，交给 Convolver 归一化会把暗的 IR 抬成糊
+        conv.normalize = false;
+        conv.connect(wet);
+      } else {
+        wet.gain.value = 0;
+      }
 
       this.ctx = ctx;
       this.master = master;
       this.dryBus = dry;
       this.conv = conv;
-      this.buildIR();
+      // 只有真的能卷积时才烘 IR —— 白算 25 万次循环对小游戏是纯浪费
+      if (conv) this.buildIR();
       return ctx;
     } catch {
       return null;
@@ -188,8 +205,9 @@ export class Audio {
   /** 合成一个音符，返回发声的声源节点（跳过开场时要停掉还没响的）。 */
   private note(ctx: AudioContext, n: SoundNote): AudioScheduledSourceNode[] {
     const dry = this.dryBus;
+    // 混响是可选层：小游戏端没有卷积节点，干声必须照样出
     const conv = this.conv;
-    if (!dry || !conv) return [];
+    if (!dry) return [];
 
     const t0 = ctx.currentTime + (n.delay ?? 0) / 1000;
     const dur = Math.max(0.02, n.dur / 1000);
@@ -239,10 +257,12 @@ export class Audio {
     }
 
     tail.connect(dry);
-    const send = ctx.createGain();
-    send.gain.value = n.wet ?? 0.3;
-    tail.connect(send);
-    send.connect(conv);
+    if (conv) {
+      const send = ctx.createGain();
+      send.gain.value = n.wet ?? 0.3;
+      tail.connect(send);
+      send.connect(conv);
+    }
 
     // ── 声源 ──
     if (n.wave === 'noise') {
@@ -299,7 +319,12 @@ export class Audio {
     // 而且 resume 返回的是 Promise，不接住的话失败会变成 unhandled rejection。
     const offline =
       typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
-    if (!offline && ctx.state === 'suspended') void ctx.resume().catch(() => {});
+    // 小游戏端的 `state` / `resume()` 不保证都有；缺一个就跳过，
+    // 不能因为"想恢复播放"把这一声整个吞掉
+    if (!offline && ctx.state === 'suspended' && typeof ctx.resume === 'function') {
+      const r = ctx.resume();
+      if (r && typeof (r as Promise<void>).catch === 'function') (r as Promise<void>).catch(() => {});
+    }
     const srcs: AudioScheduledSourceNode[] = [];
     for (const n of notes) srcs.push(...this.note(ctx, n));
     return srcs;

@@ -35,34 +35,25 @@ export interface Challenge {
   token: string | null;
 }
 
-/** 微信启动参数最小类型。 */
-interface WxLaunchOptions {
-  query?: Record<string, string>;
-}
-
-interface WxChallengeGlobal {
-  getLaunchOptionsSync?: () => WxLaunchOptions;
-}
-
-function wxGlobal(): WxChallengeGlobal | undefined {
-  return (globalThis as { wx?: WxChallengeGlobal }).wx;
+/**
+ * 从启动参数解析挑战信息。
+ *
+ * 参数来源由平台层负责（微信 / 抖音 `getLaunchOptionsSync`、Web `location.search`），
+ * 这里不再判断命名空间 —— 之前那段 if/else 漏了抖音，导致抖音端分享链接全失效。
+ */
+export function parseChallenge(): Challenge | null {
+  return parseChallengeFrom(platform.launchQuery?.() ?? undefined);
 }
 
 /**
- * 从启动参数解析挑战信息。
- * 微信：wx.getLaunchOptionsSync().query
- * Web：URL 的 search 参数
+ * 从一份 query 解析挑战。
+ *
+ * 拆出来是为了**热启动**：玩家在游戏里点好友的分享卡片时，
+ * 小游戏不重启，参数在 `onShow(res).query` 里而不是
+ * `getLaunchOptionsSync()` 里。两处必须用同一套解析，不能各写一份。
  */
-export function parseChallenge(): Challenge | null {
-  let query: Record<string, string> = {};
-
-  if (platform.name === 'wechat') {
-    const wx = wxGlobal();
-    const opts = wx?.getLaunchOptionsSync?.();
-    query = opts?.query ?? {};
-  } else if (typeof location !== 'undefined') {
-    query = Object.fromEntries(new URLSearchParams(location.search).entries());
-  }
+export function parseChallengeFrom(query: Record<string, string> | undefined | null): Challenge | null {
+  if (!query) return null;
 
   const lvl = query.l;
   if (!lvl) return null;
@@ -134,4 +125,37 @@ export function buildShareQuery(challenge: {
   if (challenge.uid) parts.push(`uid=${challenge.uid}`);
   if (challenge.name) parts.push(`name=${encodeURIComponent(challenge.name)}`);
   return parts.join('&');
+}
+
+/**
+ * 解析分享链接的基址。
+ *
+ * ## 为什么单独抽出来
+ *
+ * 小游戏端**没有 `location`**（`wx` / `tt` 容器里是 undefined）。
+ * 直接读 `location.origin` 会抛 `Cannot read properties of undefined` ——
+ * 这是之前审计出的崩溃点之一，而它只会在「复制链接」这条路上触发，
+ * 平时玩不出来。
+ *
+ * 优先级：
+ *   1. Web 端用当前页面地址 —— 本地调试复制出来的链接要能直接打开
+ *   2. 服务端下发的 `shareUrlPrefix` —— 小游戏端的唯一真源
+ *   3. `location` 存在时的地址（老服务端不下发前缀时的兜底）
+ *
+ * 返回空串表示「拼不出链接」，由调用方提示配置缺失 ——
+ * 拼一个 `?l=47` 发出去，好友点开只会看到首页。
+ *
+ * 纯函数（location 由调用方传入），不依赖运行环境，便于单测。
+ */
+export function resolveShareBase(opts: {
+  isWeb: boolean;
+  shareUrlPrefix?: string;
+  location?: { origin?: string; pathname?: string };
+}): string {
+  const loc = opts.location;
+  const local = loc?.origin ? `${loc.origin}${loc.pathname ?? '/'}` : '';
+  if (opts.isWeb && local) return local;
+  const prefix = (opts.shareUrlPrefix ?? '').trim().replace(/[?&]+$/, '');
+  if (prefix) return prefix;
+  return local;
 }

@@ -54,13 +54,41 @@ export interface Metrics {
   solutionCount: number;
 }
 
-/** 解的转弯数（拍平索引序列的方向变化次数）。 */
+/**
+ * 解的转弯数（拍平索引序列的方向变化次数）。
+ *
+ * ## 传送跳跃步
+ *
+ * 「进入即传送」下，解里**相邻两格可能几何上不相邻** ——
+ * 那是传送跳跃（从入口格跳到搭档格）。
+ *
+ * 跳跃步**不能**用「差值等于 ±w / ±1」来判方向 ——
+ * 差值可能是任意值，会掉进「不是 -w / w / -1 就是 +1」的兜底分支，
+ * 被误判成「向右」（dir = 3）。那样一来：
+ *   - 跳跃前后的方向对比全是噪声；
+ *   - 转弯数被严重低估 → 难度分失真。
+ *
+ * 所以跳跃步用**哨兵方向 4** 标记：它与任何方向都不同，
+ * 于是「进入跳跃」和「离开跳跃」各算一次转弯 —— 合理，
+ * 因为跳跃前后的走向确实发生了实质变化。
+ */
 export function countTurns(path: number[], w: number): number {
   let turns = 0;
   let prev = -1;
   for (let i = 1; i < path.length; i++) {
-    const d = path[i] - path[i - 1];
-    const dir = d === -w ? 0 : d === w ? 1 : d === -1 ? 2 : 3;
+    const a = path[i - 1];
+    const b = path[i];
+    const dx = Math.abs((b % w) - (a % w));
+    const dy = Math.abs(Math.floor(b / w) - Math.floor(a / w));
+    let dir: number;
+    if (dx + dy === 1) {
+      // 几何邻接：按差值定方向
+      const d = b - a;
+      dir = d === -w ? 0 : d === w ? 1 : d === -1 ? 2 : 3;
+    } else {
+      // 非邻接 = 传送跳跃：哨兵方向 4（与任何方向都不同）
+      dir = 4;
+    }
     if (prev !== -1 && dir !== prev) turns++;
     prev = dir;
   }

@@ -31,6 +31,7 @@ import { fillGrain } from '../grain';
 import type { GlyphDecor, GlyphPalette, GlyphShapes } from './glyphs';
 import type { LegendKind, LegendMark } from './types';
 import { arcPts, composeTheme, portalEntrance, truncatePts, type CellGeom, type Pt } from './kit';
+import { createOffscreenCanvas } from '../../platform/offscreen';
 
 // ────────────────────────────── 色板 ──────────────────────────────
 
@@ -1233,7 +1234,7 @@ const spriteCache = new Map<string, HTMLCanvasElement>();
  * 每画完一层就用 `destination-out` 把本体挖掉：贴片里只留**露在棋子外面**
  * 的那圈影子。不挖的话影子会糊在釉面上，整颗棋子发灰 —— 而釉面恰恰是亮的。
  */
-function shadowSprite(s: number, r: number, g: Glaze): HTMLCanvasElement {
+function shadowSprite(s: number, r: number, g: Glaze): HTMLCanvasElement | null {
   // 缓存键必须带上全部会影响像素的字段 —— 侧壁/缘光改成逐格不同之后，
   // 只按 (尺寸, 圆角, 强度) 缓存会把 frost 和 pale 混成同一张贴片
   const key = `${Math.round(s)}|${Math.round(r)}|${g.wall.near}|${g.wall.far}|${g.rim?.line ?? ''}|${g.rim?.glow ?? ''}`;
@@ -1251,9 +1252,12 @@ function shadowSprite(s: number, r: number, g: Glaze): HTMLCanvasElement {
   const pad = Math.ceil(s * 0.72);
   const box = s + pad * 2;
   const ssr = 2;
-  const cv = document.createElement('canvas');
-  cv.width = Math.ceil(box * ssr);
-  cv.height = Math.ceil(box * ssr);
+  const cv = createOffscreenCanvas(Math.ceil(box * ssr), Math.ceil(box * ssr));
+  if (!cv) {
+    // 拿不到离屏画布（node 测试 / 基础库过旧）：这一层影子直接不画。
+    // 回头改抛异常的话，整盘都画不出来 —— 少一圈影子的代价小得多。
+    return null;
+  }
   const c = cv.getContext('2d');
   if (c) {
     c.scale(ssr, ssr);
@@ -1416,10 +1420,13 @@ function drawTile(
   // ── 投影
   if (alpha > 0.02) {
     const pad = Math.ceil(s * 0.72);
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.drawImage(shadowSprite(s, r, g), x - pad, y - pad, s + pad * 2, s + pad * 2);
-    ctx.restore();
+    const shadow = shadowSprite(s, r, g);
+    if (shadow) {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(shadow, x - pad, y - pad, s + pad * 2, s + pad * 2);
+      ctx.restore();
+    }
   }
 
   ctx.save();

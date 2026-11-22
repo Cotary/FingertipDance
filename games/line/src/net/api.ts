@@ -4,6 +4,7 @@ import { deserializeLevel, type SerializedLevel } from '../core/levelTable';
 import type { LevelEntry as CoverLevelEntry } from '../core/cover/v3/codec';
 import { tracker } from '../analytics/tracker';
 import type { EventName } from '../analytics/tracker';
+import { isApiCode, ApiCode } from '../platform/apiError';
 
 const API = __API_BASE__;
 
@@ -17,7 +18,15 @@ export interface LoginResult {
   totalTimeMs: number;
   totalSteps: number;
   unlockedSkins: string[];
+  /** 看广告解锁的棋盘主题 id（里程碑 / 免费主题不在这里，见 progressStore）。 */
+  unlockedThemes?: string[];
   adWatchCnt: number;
+  /**
+   * 累计重来次数（服务端 `SUM(level_records.undos)`）。
+   *
+   * 缺失 = 老服务端没这个字段，此时保留本地上次的值，不要冲成 0。
+   */
+  totalRetries?: number;
 }
 
 /** 服务器配置。 */
@@ -29,8 +38,37 @@ export interface ServerConfig {
   /** cover 模式的总关数。 */
   coverLevelCount?: number;
   skins: Array<{ id: string; name: string; tier: string; unlockType: string; unlockValue: number }>;
-  ad: { rewardedVideoId: string; interstitialId: string };
+  /**
+   * 广告位与频控（按平台下发）。
+   *
+   * 后四个频控字段是**新增**的，老服务端不会下发 ——
+   * 所以都是可选的，客户端读不到就用本地默认值（见 `applyAdFrequency`）。
+   */
+  ad: {
+    rewardedVideoId: string;
+    interstitialId: string;
+    bannerId?: string;
+    interstitialIntervalSec?: number;
+    rewardedDailyLimit?: number;
+    hintFreeUses?: number;
+    skipDailyLimit?: number;
+  };
   features: { hint: boolean; skip: boolean; shareChallenge: boolean };
+  /**
+   * 分享链接前缀（小游戏端没有 `location`，只能靠它拼链接）。
+   *
+   * 空串 / 缺失 = 客户端回落到当前页面地址（Web）。
+   */
+  shareUrlPrefix?: string;
+  /**
+   * 主题的**解锁条件**（不是主题本体）。
+   *
+   * 客户端按 id 覆盖本地常量；没下发的 id 保持本地不变 ——
+   * 一次配置失误不会把玩家的主题墙清空。
+   */
+  themes?: Array<{ id: string; name: string; unlock: string; value: number }>;
+  /** 本次按哪个平台下发（1 微信 / 2 抖音 / 3 Web），用于自检映射。 */
+  platform?: number;
   serverTime: number;
 }
 
@@ -51,28 +89,167 @@ export interface ProgressResult {
 /** 令牌存取。 */
 let token: string | null = platform.storage.get('token');
 
-/** 带令牌的请求。 */
-function authed<T>(url: string, method: 'GET' | 'POST', data?: unknown): Promise<T> {
-  return platform.request<T>(API + url, method, data, token ? { Authorization: `Bearer ${token}` } : undefined);
+/**
+ * 正在进行的重新登录（并发去重）。
+ *
+ * 令牌过期的那一刻往往有好几个请求同时在飞（进度、星级、好友榜、
+ * 埋点补传）。每个都各自 `login()` 一次的话：微信 `wx.login` 一次
+ * 换一个 code，服务端每次都走一遍 code2session → 多花几百毫秒、
+ * 还可能撞上平台侧的调用频控。所以全仓共用同一个 Promise。
+ */
+let reloginInFlight: Promise<void> | null = null;
+
+/** 重新登录一次（并发去重）。 */
+function relogin(): Promise<void> {
+  if (!reloginInFlight) {
+    reloginInFlight = login()
+      .then(() => { /* token 已由 login 写入 */ })
+      .finally(() => { reloginInFlight = null; });
+  }
+  return reloginInFlight;
+}
+
+/**
+ * 带令牌的请求。
+ *
+ * ## 令牌过期必须自动重登，不能只把错误抛给调用方
+ *
+ * 服务端 JWT 有效期 72 小时（`config.prod.yaml` 的 `jwt.ttl_hours`）。
+ * 玩家玩到第三天之后，**所有**带鉴权的请求一律返回 4001 —— 而每一个
+ * 调用点都在自己的 `try/catch` 里把它当「网络问题」吞掉：
+ *
+ * - `refreshProgress` 静默失败 → 进度不再同步（玩家看到的是"数字不动了"）
+ * - 通关上报失败 → 走「乐观更新本地」，可是下次登录服务端会把它冲掉
+ * - 排行榜空白、好友榜空、分享拿不到 token
+ *
+ * 全部都没有报错，只有一句 `console.warn`，而真机上没人看得到。
+ *
+ * 所以 4001 在这里处理：清掉旧令牌 → 重登一次 → 重试原请求。
+ * **只重试一次**：重登后还是 4001 说明不是过期（签名错 / 后端换了
+ * secret / 账号被封），再重试就是死循环。
+ */
+async function authed<T>(url: string, method: 'GET' | 'POST', data?: unknown): Promise<T> {
+  const call = (t: string | null) =>
+    platform.request<T>(API + url, method, data, t ? { Authorization: `Bearer ${t}` } : undefined);
+
+  try {
+    return await call(token);
+  } catch (e) {
+    if (!isApiCode(e, ApiCode.Unauthorized)) throw e;
+    // 无令牌时不该走到这里（那说明调用方用错了接口），避免无谓的一次重登
+    if (!token) throw e;
+    await relogin();
+    return call(token);
+  }
 }
 
 /** 登录并保存令牌。 */
 export async function login(): Promise<LoginResult> {
   const { code } = await platform.login();
-  const res = await platform.request<LoginResult>(API + '/api/login', 'POST', { code });
+  // ⚠️ `platform` 必须带上。
+  //
+  // 不带时服务端 `platformOf("")` 按**微信**处理（那是为老客户端留的兼容分支），
+  // 结果抖音玩家在库里全被记成 `platform=1` —— 于是 `/api/config` 按平台下发时，
+  // 抖音端永远拿到微信那一份广告位、频控和分享前缀。
+  // 这个 bug 不会报错，只会「配了不生效」，最难查。
+  const res = await platform.request<LoginResult>(API + '/api/login', 'POST', {
+    code,
+    platform: platform.name,
+  });
   token = res.token;
   platform.storage.set('token', token);
   return res;
 }
 
-/** 拉取服务器配置。 */
-export function fetchConfig(): Promise<ServerConfig> {
-  return platform.request<ServerConfig>(API + '/api/config', 'GET');
+/**
+ * 本机平台编号（与 `users.platform` / 服务端 `line.PlatformCodeOf` 同一套）。
+ *
+ * 1 微信 / 2 抖音 / 3 Web（浏览器调试、H5 落地页）。
+ */
+export function localPlatformCode(): number {
+  switch (platform.name) {
+    case 'wechat': return 1;
+    case 'douyin': return 2;
+    default: return 3;
+  }
+}
+
+/**
+ * 拉取服务器配置（**按平台**）。
+ *
+ * ## 为什么平台要客户端自己声明
+ *
+ * `/api/config` 不鉴权，而且客户端在登录之前（甚至登录失败时）就要拿到它 ——
+ * 那时没有 token，服务端推断不出平台。所以由这里带 `?platform=`。
+ *
+ * 不传也会成功（服务端按微信处理），这样老版本不会被新接口卡住。
+ */
+export function fetchConfig(platformCode?: number): Promise<ServerConfig> {
+  const p = platformCode ?? localPlatformCode();
+  return platform.request<ServerConfig>(`${API}/api/config?platform=${p}`, 'GET');
 }
 
 /** 拉取当前用户进度（切后台回前台时刷新）。 */
-export function fetchProfile(): Promise<{ maxLevel: number; unlockedSkins: string[]; totalTimeMs: number; totalSteps: number }> {
+export function fetchProfile(): Promise<{
+  nickname?: string;
+  avatar?: string;
+  maxLevel: number;
+  unlockedSkins: string[];
+  /** 看广告解锁的棋盘主题 id。 */
+  unlockedThemes?: string[];
+  totalTimeMs: number;
+  totalSteps: number;
+  /** 累计看广告次数（服务端 `users.ad_watch_cnt`）。 */
+  adWatchCnt?: number;
+  /**
+   * 累计重来次数。
+   *
+   * **服务端按 `SUM(level_records.undos)` 算**（与后台玩家详情页同一口径），
+   * 不是客户端「点了几次重来按钮」。老服务端不会下发，缺失时保持本地值。
+   */
+  totalRetries?: number;
+}> {
   return authed('/api/profile', 'GET');
+}
+
+/**
+ * 更新昵称 / 头像。
+ *
+ * 微信的 `getUserProfile` 必须由用户手势触发，拿到的昵称头像要落库 ——
+ * 否则换台设备就没了（「我的」页又退回一个首字圆球）。
+ * 空字段不覆盖：只换头像时不会把昵称清掉。
+ */
+export function updateProfile(
+  patch: { nickname?: string; avatar?: string },
+): Promise<{ nickname: string; avatar: string }> {
+  return authed('/api/profile', 'POST', patch);
+}
+
+/**
+ * 上报一次「看完激励视频」。
+ *
+ * 服务端只做 `ad_watch_cnt + 1` 并把新值带回来（见 `ad_watch.go`），
+ * 不改进度、不发奖 —— 所以失败也无所谓：本地数字照常 +1，
+ * 下次登录时以服务端为准。
+ */
+export function reportAdWatch(placement: string): Promise<{ adWatchCnt: number }> {
+  return authed('/api/cover/ad-watch', 'POST', { placement });
+}
+
+/**
+ * 上报一次「看广告解锁」（主题 / 皮肤）。
+ *
+ * 服务端只接受**配置里标成 ad 档**的 id（见 `cover_unlock.go`），
+ * 所以这里传的 id 不是权限，只是"想解锁哪一个"。
+ *
+ * 失败要当成失败处理：本地解锁了、服务端没写进去，换机就丢 ——
+ * 玩家会认为「广告白看了」。调用方负责在这时提示重试。
+ */
+export function unlockReward(
+  kind: 'theme' | 'skin',
+  id: string,
+): Promise<{ ok: boolean; already: boolean }> {
+  return authed('/api/cover/unlock', 'POST', { kind, id });
 }
 
 /** 拉取关卡表。 */
@@ -327,18 +504,34 @@ export function reportChallenge(
 }
 
 /**
- * 跳到指定关卡（**仅调试模式**）。
+ * 调试跳关的**登记接口**（仅调试模式）。
  *
  * 服务端只在配置了 `debug.enabled: true` 时才允许这个接口（否则 403）。
  * 客户端的调试开关（构建期常量 `__DEBUG__`）与服务端的是**两个独立开关** ——
  * 客户端只管界面，服务端自己把关。
  *
- * 跳关**只推进 `max_level`，不写成绩表** ——
- * 详见服务端 `debug_jump.go` 的说明（补写记录会让之后的真实成绩
- * 永远刷不了新纪录）。
+ * ## 它不改任何进度（2026-11-21 起）
+ *
+ * 旧实现会把 `users.max_level` 推到目标关的前一关，玩家真实的第 153 关
+ * 会被「点开 405 看一眼」永久顶成 404；地图随后把 1..404 画成已通关，
+ * 而分享选关按星级判定又说 405 没过 —— 玩家看到的就是自相矛盾的两句话。
+ *
+ * 现在这个请求只用来确认「服务端调试开关是否开着」，
+ * 返回的 `maxLevel` 是**原样回读**，调用方不许再拿它去同步本地进度。
  */
 export function debugJump(levelIdx: number): Promise<{ ok: boolean; maxLevel: number; jumpedTo: number }> {
   return authed('/api/debug/jump', 'POST', { levelIdx });
+}
+
+/**
+ * 把 `max_level` 重算回「真打过的最高关」（**仅调试模式**）。
+ *
+ * 给被旧版调试跳关顶坏进度的账号一个退回真实值的口子：
+ * 服务端按 `level_records` 里 `skipped=0` 的最高关重写 `users.max_level`。
+ * 正常账号调用它是幂等的（本来就是这个值）。
+ */
+export function debugRepairProgress(): Promise<{ ok: boolean; maxLevel: number }> {
+  return authed('/api/debug/repair-progress', 'POST', {});
 }
 
 /** 好友条目（服务端返回）。 */
@@ -369,9 +562,17 @@ export interface LeaderboardItem {
   totalTimeMs: number;
 }
 
-/** 拉取总榜。 */
-export function fetchLeaderboard(): Promise<{ list: LeaderboardItem[]; myRank: number; total: number }> {
-  return authed('/api/leaderboard', 'GET');
+/**
+ * 拉取总榜（分页）。
+ *
+ * 服务端会自己收口 `offset` / `limit` 的合法范围（负数 / 超大值），
+ * 客户端传进来只是"想看的窗口"。
+ */
+export function fetchLeaderboard(
+  offset = 0,
+  limit = 50,
+): Promise<{ list: LeaderboardItem[]; myRank: number; total: number; offset?: number; limit?: number }> {
+  return authed(`/api/leaderboard?offset=${Math.max(0, offset)}&limit=${Math.max(1, limit)}`, 'GET');
 }
 
 /** 拉取好友列表。 */

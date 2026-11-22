@@ -358,6 +358,19 @@ export function tryCoverMove(state: CoverState, target: number): CoverMoveResult
  * 遇到冰块就**停**（不自动滑行）—— 冰块会改变移动粒度，
  * 自动补齐跨过冰块会让玩家的意图和实际走向不一致。
  *
+ * ## 传送门
+ *
+ * 「进入即传送」下，走进传送格的那一步 `consumed` 长度是 **2**
+ * （`[入口, 出口]`）—— 与冰块滑行的「长度 > 1」形态一样，但语义不同：
+ *
+ *  - **冰块**：多消耗的几格在**同一直线上**，继续沿 `dir` 走是自然的
+ *    → 旧行为是**放弃自动补齐**（`return null`），交给正常单步处理；
+ *  - **传送门**：出口搭档在**盘上别处**，与 `dir` 毫无关系
+ *    → 继续沿 `dir` 走毫无意义，必须**在出口搭档处收手**。
+ *
+ * 所以传送门分支：吃掉 `[入口, 出口]` 后直接结束补齐。
+ * 出口搭档恰好就是 target 时返回成功（`target` 达成）。
+ *
  * @returns 消耗的局部编号序列；走不到 target 返回 null
  */
 function autoFill(
@@ -377,6 +390,27 @@ function autoFill(
   for (let guard = 0; guard < r.n + 2; guard++) {
     const consumed = stepMove(r, at, dir, simVisited, simKeyMask, simShardNext);
     if (!consumed) return null;
+
+    /**
+     * **传送门**：走进入口的那一步一次吃掉 `[入口, 出口]`。
+     *
+     * 出口搭档不在 `dir` 的延长线上 —— 继续沿 `dir` 补齐毫无意义。
+     *
+     * `autoFill` 是**原子操作**：要么补齐到 `target`（返回消耗序列），
+     * 要么什么都不做（返回 null，让调用方按「拖到别处」处理）。
+     * 传送的出口不在目标方向上 → 这一趟补齐**失败** → 返回 null。
+     */
+    if (consumed.length === 2 && r.typeOf[consumed[0]] === CoverCell.PORTAL) {
+      if (consumed[1] !== target) return null;
+      for (const x of consumed) {
+        simVisited[x] = 1;
+        consumedAll.push(x);
+        if (r.typeOf[x] === CoverCell.KEY) simKeyMask |= 1 << r.groupOf[x];
+        if (r.typeOf[x] === CoverCell.SHARD) simShardNext = r.groupOf[x] + 1;
+      }
+      return consumedAll;
+    }
+
     // 冰块：不自动滑行，交给正常单步处理
     if (consumed.length > 1) return null;
     const c = consumed[0];

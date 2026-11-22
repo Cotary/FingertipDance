@@ -1,5 +1,8 @@
-import type { Platform, ShareResult } from './types';
+import type { Platform, ShareResult, SaveableCanvas } from './types';
 import { ApiError } from './apiError';
+import { wechatPrivacy, wechatProfile } from './privacy';
+import { saveCanvasToAlbum, exportCanvasToTempFile } from './saveImage';
+import { stringifyDetail } from './detail';
 
 /** 声明微信全局对象，避免类型报错。 */
 declare const wx: any;
@@ -17,6 +20,23 @@ export const wechatPlatform: Platform = {
         fail: (err: any) => reject(new Error('wx.login 失败: ' + err.errMsg)),
       });
     });
+  },
+
+  /**
+   * 启动参数。分享挑战的 `l` / `undos` / `c` 都在这里。
+   *
+   * **注意它只代表"本次进程第一次启动"** —— 游戏在运行时点分享卡片
+   * 走的是 `onAppShow(res).query`，两者都要接。
+   */
+  launchQuery(): Record<string, string> {
+    // `wx?.` 挡不住「wx 未声明」的 ReferenceError（可选链只防 null/undefined 属性），
+    // 所以先显式判断全局存在
+    if (typeof wx === 'undefined') return {};
+    try {
+      return wx.getLaunchOptionsSync?.()?.query ?? {};
+    } catch {
+      return {};
+    }
   },
 
   request<T>(url: string, method: 'GET' | 'POST', data?: unknown, header?: Record<string, string>): Promise<T> {
@@ -196,6 +216,107 @@ export const wechatPlatform: Platform = {
    * 「能发到朋友圈」这件事是真的，只是内容不由我们决定。
    */
   shareChannels: ['friend', 'timeline'] as const,
+
+  // 隐私授权 + 昵称头像（合规要求，见 privacy.ts 的说明）
+  privacy: wechatPrivacy,
+  profile: wechatProfile,
+
+  /**
+   * 复制分享链接。
+   *
+   * 小游戏端**没有 `navigator.clipboard`** —— 直接调会抛
+   * `ReferenceError`，落到「长按上面的链接试试」这句假提示上
+   * （屏幕上根本没有可长按的文本）。走 `wx.setClipboardData`。
+   */
+  clipboard: {
+    set(text: string): Promise<boolean> {
+      return new Promise((resolve) => {
+        if (typeof wx === 'undefined' || typeof wx.setClipboardData !== 'function') {
+          resolve(false);
+          return;
+        }
+        wx.setClipboardData({
+          data: text,
+          success: () => resolve(true),
+          // 用户拒绝/系统拒绝都算失败 —— 调用方据此改文案，不要假装成功
+          fail: () => resolve(false),
+        });
+      });
+    },
+  },
+
+  /**
+   * 保存海报到相册。
+   *
+   * 走 `canvasToTempFilePath` → `saveImageToPhotosAlbum` 两步
+   * （见 platform/saveImage.ts 的说明）。
+   */
+  saveImage(canvas: SaveableCanvas) {
+    return saveCanvasToAlbum(canvas);
+  },
+
+  /**
+   * 导出画布成临时文件（分享卡片图要用）。
+   *
+   * 微信的 `shareAppMessage({ imageUrl })` 只吃**本地文件路径**，
+   * 传 dataURL 会被忽略 —— 卡片就退回默认图。
+   */
+  exportCanvas(canvas: SaveableCanvas) {
+    return exportCanvasToTempFile(canvas);
+  },
+
+  /**
+   * 绑定触摸。
+   *
+   * 小游戏没有 DOM，`canvas.addEventListener` 不存在 ——
+   * 触摸只能从 `wx.onTouch*` 拿。
+   */
+  onTouch(bind) {
+    if (typeof wx === 'undefined') return;
+    wx.onTouchStart?.((e: any) => {
+      const t = e?.touches?.[0] ?? e?.changedTouches?.[0];
+      if (t) bind.down(t.clientX, t.clientY);
+    });
+    wx.onTouchMove?.((e: any) => {
+      const t = e?.touches?.[0] ?? e?.changedTouches?.[0];
+      if (t) bind.move(t.clientX, t.clientY);
+    });
+    wx.onTouchEnd?.(() => bind.up());
+    wx.onTouchCancel?.(() => bind.cancel());
+  },
+
+  onAppHide(cb) {
+    if (typeof wx === 'undefined') return;
+    wx.onHide?.(() => cb());
+  },
+
+  /**
+   * 回前台。
+   *
+   * `res.query` 是这次唤起的参数（点分享卡片进来的情况），
+   * 冷启动的那次 onShow 也带 query —— 调用方用 `booted` 标志区分。
+   */
+  onAppShow(cb) {
+    if (typeof wx === 'undefined') return;
+    wx.onShow?.((res: any) => cb(res?.query ?? {}));
+  },
+
+  /**
+   * 实时日志。
+   *
+   * 微信小游戏后台「运维中心 → 实时日志」可查最近 7 天，
+   * 这是玩家手机上崩了之后唯一能拿到现场的地方。
+   */
+  logError(tag: string, detail: unknown) {
+    try {
+      const mgr = wx?.getRealtimeLogManager?.();
+      if (!mgr) return;
+      mgr.setFilterMsg?.(tag);
+      mgr.error?.(tag, stringifyDetail(detail));
+    } catch { /* 日志失败不影响游戏 */ }
+  },
+
+  installErrorReporting: installWxErrorReporting,
 };
 
 /** 广告位 ID，从 /api/config 的 ad 字段获取后写入这里。 */
@@ -208,4 +329,36 @@ export function configureAds(ids: { rewardedVideoId?: string; interstitialId?: s
   if (ids.rewardedVideoId) rewardedAdId = ids.rewardedVideoId;
   if (ids.interstitialId) interstitialAdId = ids.interstitialId;
   if (ids.bannerId) bannerAdId = ids.bannerId;
+}
+
+/**
+ * 全局未捕获异常 → 实时日志。
+ *
+ * ## 为什么要在启动最早期挂上
+ *
+ * 启动阶段抛的异常恰恰是最致命的（白屏、进不去游戏），而那时业务侧的
+ * try/catch 还没铺到那里。由 `platform/index.ts` 在模块求值后立即调用，
+ * 早于 `boot()`。
+ *
+ * 微信后台「运维中心 → 实时日志」能查最近 7 天，是玩家手机上崩了之后
+ * 唯一能看到现场的地方；只写 console 在真机上没人看得到。
+ */
+export function installWxErrorReporting(): void {
+  if (typeof wx === 'undefined') return;
+  try {
+    wx.onError?.((err: any) => {
+      const text = typeof err === 'string'
+        ? err
+        : `${err?.message ?? ''}\n${err?.stack ?? ''}`;
+      try {
+        wx.getRealtimeLogManager?.()?.error?.('uncaught', stringifyDetail(text));
+      } catch { /* 日志失败不影响游戏 */ }
+    });
+    // Promise 里漏掉的 reject 不会进 onError，要单独接
+    wx.onUnhandledRejection?.((res: any) => {
+      try {
+        wx.getRealtimeLogManager?.()?.error?.('unhandled-rejection', stringifyDetail(res?.reason ?? res));
+      } catch { /* noop */ }
+    });
+  } catch { /* 老基础库没有这些钩子 */ }
 }
