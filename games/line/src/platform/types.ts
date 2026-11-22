@@ -143,6 +143,38 @@ export interface Platform {
    * 平台实现整块被摇掉。
    */
   installErrorReporting?(): void;
+  /**
+   * 弹系统键盘输入一段文字（小游戏没有 `<input>`）。
+   *
+   * ## 为什么不能自己画一个输入框
+   *
+   * Canvas 画得出方框和光标，但**画不出输入法** —— 中文输入要候选词、
+   * 要拼音组合，这些只有系统键盘能做。自己画的结果是玩家只能打英文。
+   *
+   * 所以文字输入一律走平台键盘：微信 `wx.showKeyboard`、抖音 `tt.showKeyboard`
+   * （同形同参）。回车确认后 `hideKeyboard` 并回传文本。
+   *
+   * 拿不到能力时返回 `unsupported` —— 调用方据此隐藏输入入口，
+   * **不要**退化成"自己画一个"，那会产出一个只能打英文的假输入框。
+   */
+  inputText?(opts: {
+    /** 输入框初始内容 */
+    defaultValue?: string;
+    /** 键盘右下角按钮文案（最多 4 字） */
+    confirmText?: string;
+    /** 最多几个字 */
+    maxLength?: number;
+    /** 提示语（多行） */
+    placeholder?: string;
+  }): Promise<KeyboardResult>;
+  /**
+   * 从相册选一张图。
+   *
+   * 微信 `wx.chooseMedia`（2.10.0+，旧的 `chooseImage` 已废弃但仍在），
+   * 抖音 `tt.chooseImage`。**没有相册权限时会失败**，那是正常的用户选择，
+   * 不当作错误。
+   */
+  pickImage?(): Promise<PickImageResult>;
   /** 开放数据域是否可用（微信端）。 */
   readonly openDataAvailable: boolean;
   /**
@@ -277,6 +309,24 @@ export interface PlatformClipboard {
 
 /** 分享通道。 */
 export type ShareChannel = 'friend' | 'timeline' | 'douyin';
+
+/**
+ * 键盘输入结果。
+ *
+ * - `ok` —— 玩家点了「完成」，`text` 是他输入的内容（可能是空串）
+ * - `cancel` —— 玩家点了「取消」或点掉了
+ * - `unsupported` —— 这端没有键盘能力（老基础库 / Web）
+ */
+export type KeyboardResult =
+  | { kind: 'ok'; text: string }
+  | { kind: 'cancel' }
+  | { kind: 'unsupported' };
+
+/** 相册选图结果。 */
+export type PickImageResult =
+  | { kind: 'ok'; path: string }
+  | { kind: 'cancel' }
+  | { kind: 'unsupported' };
 
 /**
  * 屏幕触摸回调集合。

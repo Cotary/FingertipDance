@@ -23,6 +23,7 @@ import type { Platform, ShareResult, SaveableCanvas } from './types';
 import { ApiError } from './apiError';
 import { saveCanvasToAlbum, exportCanvasToTempFile } from './saveImage';
 import { stringifyDetail } from './detail';
+import { inputTextOn, pickImageOn } from './input';
 
 declare const tt: any;
 
@@ -430,4 +431,12 @@ export const douyinPlatform: Platform = {
   },
 
   installErrorReporting: installDouyinErrorReporting,
+
+  inputText(opts) {
+    return inputTextOn('tt', opts);
+  },
+
+  pickImage() {
+    return pickImageOn('tt');
+  },
 };

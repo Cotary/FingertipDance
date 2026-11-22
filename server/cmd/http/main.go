@@ -17,6 +17,7 @@ import (
 	"github.com/tupss/f-game/server/internal/games/line"
 	"github.com/tupss/f-game/server/internal/modules/admin"
 	"github.com/tupss/f-game/server/internal/modules/adrev"
+	"github.com/tupss/f-game/server/internal/modules/feedback"
 	"github.com/tupss/f-game/server/internal/modules/friend"
 	"github.com/tupss/f-game/server/internal/modules/leaderboard"
 	"github.com/tupss/f-game/server/internal/modules/profile"
@@ -170,6 +171,11 @@ func main() {
 		// 更新昵称 / 头像：微信的 `getUserProfile` 必须由用户手势触发，
 		// 不能塞进启动流程，所以是有这个显式的「完善资料」写接口（见 profile.UpdateHandler）。
 		auth.POST("/profile", profile.UpdateHandler(db))
+		// 新手引导完成标记。引导关是前端临时生成的，服务端没有关卡数据
+		// 可校验，所以只接受客户端信号 —— 该字段不影响任何奖励（见 handler 说明）。
+		auth.POST("/tutorial/done", profile.TutorialDoneHandler(db))
+		// 意见反馈（文字 + 可选截图）。落库供后台查看，见 modules/feedback。
+		auth.POST("/feedback", feedback.SubmitHandler(db))
 		auth.GET("/progress/stars", line.StarsHandler(db))
 		// 以下三个是经典模式的写接口，已废弃（保留兼容老客户端）
 		auth.POST("/progress", line.ProgressHandler(db, rdb, line.DefaultSkins()))

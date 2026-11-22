@@ -75,6 +75,17 @@ type User struct {
 	// 里程碑主题不在这里 —— 它由 `max_level` 推导，不落盘。
 	UnlockedThemes []string
 	AdWatchCnt     int
+	// TutorialDone 是否走完新手引导（3 关全部完成才算）。
+	//
+	// ## 为什么这个状态必须落库
+	//
+	// 引导关是前端临时生成的，不占正式关号、不写 `level_records` ——
+	// 所以它**无法从任何已有数据推导**：引导期间 `max_level` 一直是 0，
+	// 和「注册完就走的玩家」完全一样。
+	//
+	// 只存本地的话：换设备要重走三关；后台也看不出「多少人卡在引导」，
+	// 而后者是最重要的首日流失指标。
+	TutorialDone bool
 }
 
 // coverMode 是 `level_records.mode` 里 cover 玩法（现行玩法）的取值，
@@ -179,6 +190,8 @@ func LoginHandler(cfg *core.Config, issuer *core.TokenIssuer, db *core.DB) gin.H
 			// 客户端不再自己加（见 sumRetries 的说明）。
 			"totalRetries": sumRetries(db, user.ID),
 			"isNew":        isNew,
+			// 新手引导是否走完。客户端据此决定要不要弹引导入口。
+			"tutorialDone": user.TutorialDone,
 		})
 	}
 }
@@ -188,14 +201,15 @@ func ProfileHandler(db *core.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		uid := core.UIDFromContext(c)
 		row := db.QueryRow(
-			"SELECT nickname, avatar, max_level, total_time_ms, total_steps, unlocked_skins, unlocked_themes, ad_watch_cnt FROM users WHERE id=$1",
+			"SELECT nickname, avatar, max_level, total_time_ms, total_steps, unlocked_skins, unlocked_themes, ad_watch_cnt, tutorial_done FROM users WHERE id=$1",
 			uid,
 		)
 		var maxLevel, totalSteps, adWatchCnt int
 		var totalTimeMs int64
 		var nickname, avatar, skinsJSON, themesJSON string
+		var tutorialDone bool
 		if err := row.Scan(&nickname, &avatar, &maxLevel, &totalTimeMs, &totalSteps,
-			&skinsJSON, &themesJSON, &adWatchCnt); err != nil {
+			&skinsJSON, &themesJSON, &adWatchCnt, &tutorialDone); err != nil {
 			core.Fail(c, core.CodeInternal, "用户不存在")
 			return
 		}
@@ -221,7 +235,36 @@ func ProfileHandler(db *core.DB) gin.HandlerFunc {
 			"unlockedThemes": themes,
 			"adWatchCnt":     adWatchCnt,
 			"totalRetries":   sumRetries(db, uid),
+			"tutorialDone":   tutorialDone,
 		})
+	}
+}
+
+// TutorialDoneHandler 标记新手引导已完成。
+//
+// ## 为什么由客户端决定「完成了」
+//
+// 引导关是前端临时生成的（不占正式关号、不发 `/cover/verify`）——
+// 服务端根本没有这几关的关卡数据可校验。所以这里只能信任客户端的信号。
+//
+// 可接受的理由：这个字段**不影响任何奖励**。它只决定「下次启动要不要
+// 再弹引导」，误标成 true 的代价是玩家少看一次教学，不是刷资源。
+// 如果以后引导要发奖励，就必须改成服务端校验（发引导关的关卡数据 + 回放）。
+//
+// ## 幂等
+//
+// `tutorial_done = true` 是单向的：已经为 true 时不再写 `updated_at`
+// 之类的字段（这里没有这个列，但道理一样）。重复上报是常态
+// （客户端离线重试、切后台再回来）。
+func TutorialDoneHandler(db *core.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		uid := core.UIDFromContext(c)
+		_, err := db.Exec("UPDATE users SET tutorial_done = true WHERE id = $1", uid)
+		if err != nil {
+			core.Fail(c, core.CodeInternal, "记录引导状态失败")
+			return
+		}
+		core.OK(c, gin.H{"tutorialDone": true})
 	}
 }
 
@@ -341,13 +384,14 @@ func findOrCreate(db *core.DB, hash, enc, nickname, avatar string, platform int,
 // queryByHash 按 openid 哈希查询用户。
 func queryByHash(db *core.DB, hash string) (*User, error) {
 	row := db.QueryRow(
-		"SELECT id, openid, openid_hash, nickname, avatar, max_level, total_time_ms, total_steps, unlocked_skins, unlocked_themes, ad_watch_cnt FROM users WHERE openid_hash=$1",
+		"SELECT id, openid, openid_hash, nickname, avatar, max_level, total_time_ms, total_steps, unlocked_skins, unlocked_themes, ad_watch_cnt, tutorial_done FROM users WHERE openid_hash=$1",
 		hash,
 	)
 	var u User
 	var skinsJSON, themesJSON string
 	if err := row.Scan(&u.ID, &u.OpenIDEnc, &u.OpenIDHash, &u.Nickname, &u.Avatar,
-		&u.MaxLevel, &u.TotalTimeMs, &u.TotalSteps, &skinsJSON, &themesJSON, &u.AdWatchCnt); err != nil {
+		&u.MaxLevel, &u.TotalTimeMs, &u.TotalSteps, &skinsJSON, &themesJSON, &u.AdWatchCnt,
+		&u.TutorialDone); err != nil {
 		return nil, err
 	}
 	_ = json.Unmarshal([]byte(skinsJSON), &u.UnlockedSkins)

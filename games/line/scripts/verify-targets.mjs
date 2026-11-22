@@ -57,6 +57,30 @@ function countOf(text, needle) {
   return text.split(needle).length - 1;
 }
 
+/**
+ * 数「平台命名空间调用」的次数。
+ *
+ * ## 为什么不能直接数 `tt.` 出现次数
+ *
+ * 压缩后的产物里，局部变量名经常正好是 `tt` —— 实测这轮就撞上了：
+ * `const tt = tutorialResult` 之后 `tt.isLast` 出现 4 次，
+ * 旧判据把微信包判成"混进了抖音代码"，而实际一行 `tt.` 平台调用都没有。
+ *
+ * 误报比漏报更坏：门禁一叫狼来了，下次真的混进去就没人当回事了。
+ *
+ * 判据收紧成「像平台调用的形态」：
+ *
+ * - `tt.xxx(` —— 方法调用（`tt.login(...)` / `tt.onTouchStart(...)`）
+ * - `typeof tt` —— 存在性判断（这是平台代码最典型的开头）
+ *
+ * 只读属性的 `tt.isLast` 不算：真实平台代码不会在压缩后留下这种形态。
+ */
+function countPlatformCalls(text, ns) {
+  const callRe = new RegExp(`\\b${ns}\\.[A-Za-z_$][\\w$]*\\s*\\(`, 'g');
+  const typeofRe = new RegExp(`typeof\\s+${ns}\\b`, 'g');
+  return (text.match(callRe)?.length ?? 0) + (text.match(typeofRe)?.length ?? 0);
+}
+
 function readIfExists(p) {
   return existsSync(p) ? readFileSync(p, 'utf8') : null;
 }
@@ -97,9 +121,9 @@ const wxJs = readIfExists(wxJsPath);
 if (!wxJs) {
   check('FAIL', 'wx', '产物存在', `缺 ${wxJsPath}（先跑 npm run build:wx）`);
 } else {
-  const tt = countOf(wxJs, 'tt.');
-  check(tt === 0 ? 'PASS' : 'FAIL', 'wx', '不含 tt. 命名空间', `出现 ${tt} 次`);
-  check(countOf(wxJs, 'wx.') > 0 ? 'PASS' : 'FAIL', 'wx', '含 wx. 命名空间', '平台实现已打包');
+  const tt = countPlatformCalls(wxJs, 'tt');
+  check(tt === 0 ? 'PASS' : 'FAIL', 'wx', '不含 tt 平台调用', `出现 ${tt} 次`);
+  check(countPlatformCalls(wxJs, 'wx') > 0 ? 'PASS' : 'FAIL', 'wx', '含 wx 平台调用', '平台实现已打包');
 
   const loopback = countOf(wxJs, '127.0.0.1') + countOf(wxJs, 'localhost:');
   check(loopback === 0 ? 'PASS' : 'FAIL', 'wx', 'API 地址不是环回', `出现 ${loopback} 次`);
@@ -148,9 +172,9 @@ const dyJs = readIfExists(dyJsPath);
 if (!dyJs) {
   check('FAIL', 'dy', '产物存在', `缺 ${dyJsPath}（先跑 npm run build:douyin）`);
 } else {
-  const wx = countOf(dyJs, 'wx.');
-  check(wx === 0 ? 'PASS' : 'FAIL', 'dy', '不含 wx. 命名空间', `出现 ${wx} 次`);
-  check(countOf(dyJs, 'tt.') > 0 ? 'PASS' : 'FAIL', 'dy', '含 tt. 命名空间', '平台实现已打包');
+  const wx = countPlatformCalls(dyJs, 'wx');
+  check(wx === 0 ? 'PASS' : 'FAIL', 'dy', '不含 wx 平台调用', `出现 ${wx} 次`);
+  check(countPlatformCalls(dyJs, 'tt') > 0 ? 'PASS' : 'FAIL', 'dy', '含 tt 平台调用', '平台实现已打包');
 
   const loopback = countOf(dyJs, '127.0.0.1') + countOf(dyJs, 'localhost:');
   check(loopback === 0 ? 'PASS' : 'FAIL', 'dy', 'API 地址不是环回', `出现 ${loopback} 次`);

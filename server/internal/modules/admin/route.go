@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -102,6 +103,56 @@ func Register(r *gin.Engine, cfg *core.Config, issuer *core.TokenIssuer, db *cor
 			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 			c.Data(http.StatusOK, "text/html; charset=utf-8",
 				[]byte(LevelsPage(db, core.AdminFromContext(c), limit)))
+		})
+		// ── 意见反馈 ──
+		//
+		// 列表 + 详情 + 图片三处分开放：列表不带图片正文（一页 20 条约 300KB/条），
+		// 图片单独一条路由让浏览器能缓存。
+		page.GET("/feedback", func(c *gin.Context) {
+			pg, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+			c.Data(http.StatusOK, "text/html; charset=utf-8",
+				[]byte(FeedbackPage(db, core.AdminFromContext(c), FeedbackFilter{
+					Status: c.Query("status"),
+					Page:   pg,
+					Size:   feedbackPageSize,
+				})))
+		})
+		page.GET("/feedback/:id", func(c *gin.Context) {
+			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+			if err != nil || id <= 0 {
+				c.String(http.StatusBadRequest, "反馈 ID 非法")
+				return
+			}
+			c.Data(http.StatusOK, "text/html; charset=utf-8",
+				[]byte(FeedbackDetailPage(db, core.AdminFromContext(c), id)))
+		})
+		// 图片单独出：`<img src>` 打到这里，浏览器可缓存、列表页不必背 base64
+		page.GET("/feedback/:id/image", func(c *gin.Context) {
+			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+			if err != nil || id <= 0 {
+				c.Status(http.StatusBadRequest)
+				return
+			}
+			b64, err := LoadFeedbackImage(db, id)
+			if err != nil || b64 == "" {
+				c.Status(http.StatusNotFound)
+				return
+			}
+			raw, err := base64.StdEncoding.DecodeString(b64)
+			if err != nil {
+				c.Status(http.StatusUnprocessableEntity)
+				return
+			}
+			// 不猜类型：微信压缩图是 jpeg，安卓相机可能是 jpeg/png。
+			// 用 `image/jpeg` 兜底会让 png 显示不出来，所以按魔数判。
+			c.Data(http.StatusOK, sniffImageMime(raw), raw)
+		})
+		page.POST("/feedback/status", func(c *gin.Context) {
+			id, _ := strconv.ParseInt(c.PostForm("id"), 10, 64)
+			if id > 0 {
+				_ = SetFeedbackStatus(db, id, c.PostForm("status"))
+			}
+			c.Redirect(http.StatusFound, fmt.Sprintf("/admin/feedback/%d", id))
 		})
 		page.GET("/ads", func(c *gin.Context) {
 			days, _ := strconv.Atoi(c.DefaultQuery("days", "30"))

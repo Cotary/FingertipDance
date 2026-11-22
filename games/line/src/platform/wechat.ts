@@ -3,6 +3,7 @@ import { ApiError } from './apiError';
 import { wechatPrivacy, wechatProfile } from './privacy';
 import { saveCanvasToAlbum, exportCanvasToTempFile } from './saveImage';
 import { stringifyDetail } from './detail';
+import { inputTextOn, pickImageOn } from './input';
 
 /** 声明微信全局对象，避免类型报错。 */
 declare const wx: any;
@@ -317,6 +318,14 @@ export const wechatPlatform: Platform = {
   },
 
   installErrorReporting: installWxErrorReporting,
+
+  inputText(opts) {
+    return inputTextOn('wx', opts);
+  },
+
+  pickImage() {
+    return pickImageOn('wx');
+  },
 };
 
 /** 广告位 ID，从 /api/config 的 ad 字段获取后写入这里。 */

@@ -167,7 +167,9 @@ func renderCard(platform int, cfg line.PlatformConfig, updatedAt, updatedBy stri
 	b.WriteString(checkbox(prefix+"feat_hint", "提示", cfg.Features.Hint))
 	b.WriteString(checkbox(prefix+"feat_skip", "跳过", cfg.Features.Skip))
 	b.WriteString(checkbox(prefix+"feat_shareChallenge", "分享挑战", cfg.Features.ShareChallenge))
+	b.WriteString(checkbox(prefix+"feat_mechIntro", "机制首见说明", cfg.Features.MechIntro))
 	b.WriteString(`</div>`)
+	b.WriteString(`<div class="tablehint">「机制首见说明」是在关卡里**第一次遇到**某种机制（单向门 / 星屑 / 钥匙门 / 传送门 / 冰面）时弹的一次性说明卡。首次出现在哪一关由客户端解码关卡表**自动推导**，不需要逐关配置；关掉这个开关则全部不弹。</div>`)
 
 	b.WriteString(`<h3>主题解锁</h3>`)
 	b.WriteString(`<div class="tablehint">只改「什么时候解锁」。主题本体（贴图 / 音效）在客户端包里；id 要对得上客户端，写错 id 的那行会被忽略。当前客户端认得的 id：<b>` + esc(knownThemeIDs()) + `</b>。</div>`)
@@ -267,6 +269,7 @@ func ReadPlatformForm(v url.Values, prefix string, base line.PlatformConfig) lin
 			Hint:           on("feat_hint"),
 			Skip:           on("feat_skip"),
 			ShareChallenge: on("feat_shareChallenge"),
+			MechIntro:      on("feat_mechIntro"),
 		},
 	}
 

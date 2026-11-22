@@ -2,6 +2,9 @@ package line
 
 import (
 	"encoding/json"
+	"os"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -148,5 +151,66 @@ func TestCoverProgressResultHasUnlockedSkins(t *testing.T) {
 	}
 	if len(arr) != 2 {
 		t.Fatalf("unlockedSkins 长度应为 2，实际 %d", len(arr))
+	}
+}
+
+// 机制首见说明卡的开关默认必须是**开**。
+//
+// 它是玩法引导的一部分，不是运营活动 —— 默认关掉等于这个功能从来没上线过，
+// 而且不报错（玩家只是永远看不到说明卡）。
+func TestMechIntroDefaultOn(t *testing.T) {
+	cfg := DefaultPlatformConfig()
+	if !cfg.Features.MechIntro {
+		t.Error("features.mechIntro 默认必须为 true")
+	}
+}
+
+// 首现位置由客户端解码关卡表推导，服务端**不该**再存一份。
+//
+// 这条断言是防回归的：一旦有人往配置里加 `mechIntroAt: {onway: 13}`，
+// 就意味着关卡表更新后要同步改配置，而漏改的表现是「提示卡在该出现时不出现」。
+func TestNoServerSideMechSchedule(t *testing.T) {
+	if _, ok := reflect.TypeOf(PlatformConfig{}).FieldByName("MechIntroAt"); ok {
+		t.Error("机制首现位置应由客户端从关卡表推导，不要在服务端配置里存一份")
+	}
+}
+
+// `/api/config` 的 `features` 必须下发**全部**字段。
+//
+// ## 这条测试为什么值得写
+//
+// `ConfigHandler` 里 `features` 是手写 map（不是直接序列化结构体）。
+// 于是「给 FeaturesConfig 加一个字段」和「在 handler 里补一行」
+// 是两件必须同时做的事 —— 而漏掉后者不会报错：
+//
+//   - 后台能存、库里能读、`go build` 通过；
+//   - 客户端收到的 JSON 里**没有这个键**，功能静默失效；
+//   - 表现是「配置改了不生效」，最难查的一类。
+//
+// 这一轮就踩了：`mechIntro` 加进配置结构后忘了补 handler，
+// 结果机制说明卡一张都不弹，直到实测 `/api/config` 才发现。
+//
+// 用反射对齐字段名，以后加字段忘了补 handler，这条会当场红。
+func TestConfigHandlerSendsAllFeatureFlags(t *testing.T) {
+	want := make([]string, 0, 4)
+	ft := reflect.TypeOf(FeaturesConfig{})
+	for i := 0; i < ft.NumField(); i++ {
+		tag := ft.Field(i).Tag.Get("json")
+		if tag == "" {
+			continue
+		}
+		want = append(want, tag)
+	}
+
+	src, err := os.ReadFile("handler.go")
+	if err != nil {
+		t.Fatalf("读源码失败: %v", err)
+	}
+	text := string(src)
+
+	for _, key := range want {
+		if !strings.Contains(text, `"`+key+`":`) {
+			t.Errorf("ConfigHandler 的 features 里缺 %q —— 加进配置结构后必须同步下发，否则客户端永远收不到", key)
+		}
 	}
 }

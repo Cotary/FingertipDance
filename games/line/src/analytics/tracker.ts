@@ -28,6 +28,27 @@ export type EventName =
   | 'ad_start' | 'ad_complete' | 'ad_abort' | 'ad_error' | 'ad_blocked'
   | 'skin_unlock' | 'skin_equip' | 'skin_page_view' | 'theme_equip' | 'theme_unlock' | 'theme_page_view'
   | 'leaderboard_view' | 'share_click' | 'share_success'
+  // ── 新手引导 ──
+  //
+  // `tutorial_step` 是每关开始的序号，`tutorial_done` 是三关走完。
+  // 后台算引导漏斗就靠这两个：`level_start` 里也带 `tutorial_step`，
+  // 所以「走到第 2 关就没再动」这类流失能直接查出来。
+  //
+  // 引导完成后**首关**的表现才真正决定留存，所以 `tutorial_done`
+  // 要带 `maxLevel`（那时通常还是 0），和后面的 `level_pass` 串起来看。
+  | 'tutorial_done' | 'tutorial_start'
+  // ── 意见反馈 ──
+  //
+  // `feedback_open` 与 `feedback_submit` 的差值 = 打开文案却放弃提交的人。
+  // 那个比例高说明输入体验有问题（键盘弹不出来 / 字数限制太紧），
+  // 而不是"玩家不想反馈"——两种结论的改法完全相反。
+  | 'feedback_open' | 'feedback_submit'
+  // ── 机制首见说明卡 ──
+  //
+  // `show` 与 `dismiss` 的差值 + dismiss 的 `reason` 一起看：
+  // `reason='play'` 占比高 = 玩家根本不读卡就上手（那这张卡设计得没用）；
+  // `reason='timeout'` 占比高 = 5 秒不够读（该加长或精简文案）。
+  | 'mech_card_show' | 'mech_card_dismiss'
   | 'challenge_start' | 'challenge_result'
   // 大厅体系（T23）
   | 'nav_click' | 'home_start_click' | 'map_level_click'

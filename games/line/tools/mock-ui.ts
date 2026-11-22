@@ -19,6 +19,11 @@ import { drawProfilePage, type ProfilePageState } from '../src/ui/profile';
 import { drawStatsPanel } from '../src/ui/statsPanel';
 import { drawAgeGate } from '../src/ui/ageGate';
 import { drawBootSplash } from '../src/ui/splash';
+import { drawFeedback } from '../src/ui/feedback';
+import { drawTutorialResult } from '../src/ui/tutorialResult';
+import { drawMechCard } from '../src/ui/mechCard';
+import { MECH_CARDS } from '../src/game/mechIntro';
+import { TUTORIAL_LEVELS } from '../src/game/tutorial';
 import { drawSharePanel, type SharePanelState } from '../src/ui/sharePanel';
 import { renderPoster, renderShareCard } from '../src/ui/share';
 import { drawSkinsPage, type SkinsPageState } from '../src/ui/skins';
@@ -55,6 +60,8 @@ export const homeState: HomePageState = {
   totalSkins: 16,
   starCount: 96,
   totalRetries: 23,
+  // 头像为空 → 显示「完善昵称头像」提示条（与真实新玩家一致）
+  showProfilePrompt: true,
 };
 
 // ── 地图 ──
@@ -329,6 +336,29 @@ export const PAGES: PageDef[] = [
   { key: 'boot', title: '启动 · 加载页', draw: (c) => void drawBootSplash(c, 400) },
   // 适龄提示：提审硬要求，必须首启可见 —— 顺手放进画廊，改版式时能一眼核对
   { key: 'age', title: '启动 · 适龄提示', draw: (c) => void drawAgeGate(c, true) },
+  // 引导结算：三关走完的确认页（不显示步数/星级/分享，只有"学会了什么"）
+  // 机制首见卡：关卡内弹一次，非模态（可直接开始拖线）
+  { key: 'mechCard', title: '关卡 · 机制首见', draw: (c) => {
+    gameScreen(c);
+    drawMechCard(c, MECH_CARDS[3], 1);
+  } },
+  { key: 'tutorialResult', title: '引导 · 结算', draw: (c) => {
+    gameScreen(c);
+    const t = TUTORIAL_LEVELS[1];
+    drawTutorialResult(c, { step: 2, total: 3, title: t.title, lines: t.lines, isLast: false });
+  } },
+  // 意见反馈：文字走系统键盘，截图从相册选。三处状态都要能看（空 / 已填 / 提交中）
+  { key: 'feedback', title: '我的 · 意见反馈', nav: 'profile', draw: (c) => {
+    void drawProfilePage(c, profileState, NOW);
+    drawFeedback(c, {
+      text: '第 47 关的冰面滑行看不懂，踩上去就直接滑到角落了，\n不知道该从哪里进。',
+      imagePath: 'wxfile://tmp/shot.jpg',
+      submitting: false,
+      notice: '',
+      canInput: true,
+      canPick: true,
+    });
+  } },
   // 「分享选关」：地图页的另一个读法 —— 点任意关就发给好友。
   // 视觉上必须一眼看出是在选关（标题变「挑一关分享」、脚卡变「取消」），
   // 否则和普通地图长得一样，玩家会以为点下去是进关。

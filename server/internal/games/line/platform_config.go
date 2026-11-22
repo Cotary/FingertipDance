@@ -84,6 +84,16 @@ type FeaturesConfig struct {
 	Hint           bool `json:"hint"`
 	Skip           bool `json:"skip"`
 	ShareChallenge bool `json:"shareChallenge"`
+	// MechIntro 是否在关卡里首次遇到新机制时弹一次说明卡。
+	//
+	// ## 为什么需要这个开关
+	//
+	// 提示卡是**自动推导**的（客户端解码关卡表，第一次遇到某种机制格就弹一次），
+	// 不需要运营配 1000 行。但"自动"意味着运营失去了对节奏的控制 ——
+	// 万一某次关卡表更新让提示集中在某一关全弹出来，得有一个一键关掉的口子。
+	//
+	// 默认 true：这是玩法引导的一部分，不是运营活动。
+	MechIntro bool `json:"mechIntro"`
 }
 
 // ThemeConfig 是主题的**解锁条件**（不是主题本体）。
@@ -118,7 +128,7 @@ func DefaultPlatformConfig() PlatformConfig {
 			HintFreeUses:            0,
 			SkipDailyLimit:          0,
 		},
-		Features: FeaturesConfig{Hint: true, Skip: true, ShareChallenge: true},
+		Features: FeaturesConfig{Hint: true, Skip: true, ShareChallenge: true, MechIntro: true},
 		Themes: []ThemeConfig{
 			{ID: "mise", Name: "秘色天青", Unlock: "free", Value: 0},
 			{ID: "mingsha", Name: "鸣沙丹青", Unlock: "milestone", Value: 60},

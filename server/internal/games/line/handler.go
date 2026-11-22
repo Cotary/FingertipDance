@@ -84,10 +84,20 @@ func ConfigHandler(load PlatformConfigLoader, skins []SkinConfig) gin.HandlerFun
 				"hintFreeUses":            cfg.Ad.HintFreeUses,
 				"skipDailyLimit":          cfg.Ad.SkipDailyLimit,
 			},
+			// ## 这里必须**逐个字段写**，不能用 `cfg.Features` 直接序列化
+			//
+			// 用结构体直接序列化会自动带上新加的字段，就不会漏 —— 但历史上
+			// 这里一直是手写 map，于是 `mechIntro` 加进配置结构后**忘了补这一行**：
+			// 后台能存、库里能读，客户端却永远收不到，机制说明卡一张都不弹，
+			// 而且没有任何报错（客户端把缺失当成"开"以外的任何处理都不对劲）。
+			//
+			// 所以这行新增字段时要同步加一条测试（见 cover_contract_test.go 的
+			// TestConfigHandlerSendsAllFeatureFlags）。
 			"features": gin.H{
 				"hint":           cfg.Features.Hint,
 				"skip":           cfg.Features.Skip,
 				"shareChallenge": cfg.Features.ShareChallenge,
+				"mechIntro":      cfg.Features.MechIntro,
 			},
 			// 主题的**解锁条件**（不是主题本体）。客户端按 id 覆盖本地常量，
 			// 没下发的 id 保持本地不变。

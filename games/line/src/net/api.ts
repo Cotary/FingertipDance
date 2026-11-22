@@ -27,6 +27,13 @@ export interface LoginResult {
    * 缺失 = 老服务端没这个字段，此时保留本地上次的值，不要冲成 0。
    */
   totalRetries?: number;
+  /**
+   * 新手引导是否已完成。
+   *
+   * 缺失（老服务端 / 服务端读不到）= 按「未完成」处理，但**不重置本地**：
+   * 客户端本地也记了一份，取两者之一为 true 就算完成（见 `boot()`）。
+   */
+  tutorialDone?: boolean;
 }
 
 /** 服务器配置。 */
@@ -53,7 +60,13 @@ export interface ServerConfig {
     hintFreeUses?: number;
     skipDailyLimit?: number;
   };
-  features: { hint: boolean; skip: boolean; shareChallenge: boolean };
+  /**
+   * 功能开关。
+   *
+   * `mechIntro` 是后加的（关卡里首次遇到新机制时弹说明卡），
+   * 老服务端不会下发 —— 缺失时按**开**处理（见 `featureOn`）。
+   */
+  features: { hint: boolean; skip: boolean; shareChallenge: boolean; mechIntro?: boolean };
   /**
    * 分享链接前缀（小游戏端没有 `location`，只能靠它拼链接）。
    *
@@ -234,6 +247,51 @@ export function updateProfile(
  */
 export function reportAdWatch(placement: string): Promise<{ adWatchCnt: number }> {
   return authed('/api/cover/ad-watch', 'POST', { placement });
+}
+
+/**
+ * 上报「新手引导已完成」。
+ *
+ * ## 为什么由客户端决定
+ *
+ * 引导关是前端临时生成的（负数关号，不占正式关号），服务端没有这几关的
+ * 关卡数据，也就没法回放校验。所以这里只能信任客户端信号。
+ *
+ * 可接受的理由：这个字段**不影响任何奖励** —— 它只决定「下次启动要不要
+ * 再弹引导」。如果以后引导要发奖励，就必须改成服务端校验。
+ *
+ * 幂等：重复上报是常态（离线重试、切后台回来），服务端 `UPDATE ... = true`。
+ */
+export function reportTutorialDone(): Promise<{ tutorialDone: boolean }> {
+  return authed('/api/tutorial/done', 'POST', {});
+}
+
+/**
+ * 提交一条意见反馈。
+ *
+ * ## 截图是 base64 字符串
+ *
+ * 小游戏没有 `FormData` / `multipart`，只能把图读成 base64 塞进 JSON。
+ * 客户端先压缩过（`chooseMedia` 的 `sizeType: ['compressed']`），
+ * 服务端限 1.5MB base64。**图太大时服务端会丢图保文字** ——
+ * 所以这里失败也不该让整条反馈丢掉。
+ *
+ * @param image base64（不含 `data:` 前缀）
+ */
+export function submitFeedback(input: {
+  content: string;
+  image?: string;
+  scene?: string;
+  levelIdx?: number;
+  context?: string;
+}): Promise<{ id: number }> {
+  return authed('/api/feedback', 'POST', {
+    content: input.content,
+    image: input.image ?? '',
+    scene: input.scene ?? '',
+    levelIdx: input.levelIdx ?? 0,
+    context: input.context ?? '',
+  });
 }
 
 /**

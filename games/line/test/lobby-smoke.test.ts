@@ -127,7 +127,21 @@ describe('大厅绘制冒烟', () => {
     const ids = buttons.map((b) => b.id);
     // 2026-11-22 加了「昵称头像」「适龄提示」两行：前者是微信资料的唯一入口
     // （getUserProfile 必须手势触发），后者是提审要求的回看入口。
-    expect(ids).toEqual(['toggleSound', 'toggleVibrate', 'editProfile', 'shareGame', 'ageGate', 'profileStats']);
+    // 2026-11-23 加「意见反馈」：玩家遇到问题的唯一出口。
+    expect(ids).toEqual([
+      'toggleSound', 'toggleVibrate', 'editProfile', 'shareGame', 'ageGate', 'feedback', 'profileStats',
+    ]);
+  });
+
+  it('我的页 7 行全部落在底栏之上（加行时必须重算行高，否则末行被静默丢弃）', () => {
+    // 这条是给"以后又想加一行"的人看的：`ui/profile.ts` 的绘制循环里有
+    // `if (ry + M.rowH > DESIGN_H - 120) return;` —— 超出的行**直接不画**，
+    // 而且不报错。历史上 4 行→6 行时就踩过，第 6 行整个消失。
+    const buttons = drawProfilePage(fakeCtx(), PROFILE, 1000);
+    const last = buttons[buttons.length - 1];
+    expect(last.id).toBe('profileStats');
+    // 底栏顶 1214（nav.ts），最后一行底部必须在它之上
+    expect(last.y + last.h).toBeLessThan(1214);
   });
 
   it('我的页不再有「清除缓存」空转按钮', () => {

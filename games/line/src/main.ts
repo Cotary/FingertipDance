@@ -1,6 +1,6 @@
 import { platform, configureAds, configureDouyinAds, ensurePrivacyAuthorized, type ShareChannel } from './platform';
 import { ApiError } from './platform/apiError';
-import { fetchFriends, fetchLeaderboard, fetchProfile, fetchStars, login, fetchConfig, localPlatformCode, reportCoverProgress, reportCoverSkip, reportCoverChallenge, createShareChallenge, fetchChallengeInfo, fetchCoverHint, reportEvent, debugJump, debugRepairProgress, unlockReward, reportAdWatch, updateProfile, type ServerConfig, type CoverChallengeOutcome } from './net/api';
+import { fetchFriends, fetchLeaderboard, fetchProfile, fetchStars, login, fetchConfig, localPlatformCode, reportCoverProgress, reportCoverSkip, reportCoverChallenge, createShareChallenge, fetchChallengeInfo, fetchCoverHint, reportEvent, debugJump, debugRepairProgress, unlockReward, reportAdWatch, updateProfile, reportTutorialDone, submitFeedback, type ServerConfig, type CoverChallengeOutcome } from './net/api';
 import { CoverSession } from './game/coverSession';
 import { CoverLevelStore } from './game/coverLevelStore';
 import { buildCoverRuntime, decodeCoverLevel } from './game/coverLevel';
@@ -34,6 +34,9 @@ import { drawRankPage, createRankState, type RankPageState } from './ui/leaderbo
 import { drawProfilePage, type ProfilePageState } from './ui/profile';
 import { drawStatsPanel } from './ui/statsPanel';
 import { drawAgeGate, KEY_AGE_ACK } from './ui/ageGate';
+import { drawTutorialResult } from './ui/tutorialResult';
+import { drawMechCard } from './ui/mechCard';
+import { drawFeedback, feedbackCardRect } from './ui/feedback';
 import { drawSharePanel, type SharePanelState } from './ui/sharePanel';
 import { drawNav, pickNavTab, type NavTab } from './ui/nav';
 import { LOBBY_THEME } from './ui/theme';
@@ -42,7 +45,16 @@ import { CLAY, CLAY_UI, clayBlock, clayText } from './ui/clay';
 import { drawLobbyGround } from './ui/ground';
 import { drawBootSplash } from './ui/splash';
 import { publishProfile, refreshOpenData } from './platform/openData';
+import { readFileBase64 } from './platform/input';
 import { parseChallenge, parseChallengeFrom, buildShareQuery, resolveShareBase } from './game/challenge';
+import {
+  tutorialByIndex, tutorialStepOf, nextTutorialIdx,
+  TUTORIAL_COUNT, FIRST_TUTORIAL_IDX, type TutorialLevel,
+} from './game/tutorial';
+import {
+  pickMechCard, markSeen, KEY_MECH_SEEN, TAUGHT_IN_TUTORIAL, type MechCard,
+} from './game/mechIntro';
+import type { LevelEntry } from './core/cover/v3/codec';
 import { DEBUG_ENABLED } from './core/debug';
 import { applyDebugJumpInput, createDebugJumpState, drawDebugJump, type DebugJumpState } from './ui/debugjump';
 import { renderPoster, renderShareCard, shareCopy, shareCopyCount, type PosterCanvas } from './ui/share';
@@ -309,8 +321,9 @@ function applyServerConfig(cfg: ServerConfig): void {
  * 分享、提示、跳过都是核心玩法的一部分，
  * 不能因为一次网络失败就让它们从界面上消失。
  */
-function featureOn(name: 'hint' | 'skip' | 'shareChallenge'): boolean {
+function featureOn(name: 'hint' | 'skip' | 'shareChallenge' | 'mechIntro'): boolean {
   if (!config?.features) return true;
+  // `!== false`：字段缺失（老服务端）也按开处理
   return config.features[name] !== false;
 }
 
@@ -608,10 +621,57 @@ function vibeAt(slot: VibeSlot): void {
 
 let profileButtons: Button[] = [];
 
+// ── 意见反馈弹层 ──
+//
+// 状态放模块级而不是 `profilePage` 里：弹层是全站模态，
+// 关掉之后 `profilePage` 会被重建（切页时），状态跟着丢会很怪。
+let feedbackOpen = false;
+let feedbackButtons: Button[] = [];
+/** 已输入的文字 / 已选的图 / 是否提交中 / 提示 */
+let feedbackText = '';
+let feedbackImage = '';
+let feedbackSubmitting = false;
+let feedbackNotice = '';
+
+/**
+ * 分享前「没填昵称」只提醒一次。
+ *
+ * 每次点分享都念一遍会变成骚扰 —— 玩家反而因此不想填。
+ * 只记内存（不落盘）：重启游戏后重新提醒一次是合理的，
+ * 那是新的一次会话。
+ */
+let shareNameHinted = false;
+
+/**
+ * 当前显示的「机制首见」说明卡（null = 不显示）。
+ *
+ * 只活在**关卡内**：换关、回大厅、进结算都清掉。
+ * `mechShownAt` 是它的出现时刻，用来做淡入与"几秒后自动淡出"。
+ */
+let mechCard: MechCard | null = null;
+let mechShownAt = 0;
+/** 已经见过的机制（本地持久化，见 game/mechIntro.ts 的说明）。 */
+let mechSeen: Set<number> = new Set();
+/** 卡片上的按钮（点整张卡关闭）。 */
+let mechButtons: Button[] = [];
+
 /** 当前挑战上下文（若来自好友分享）。 */
 let challenge: ReturnType<typeof parseChallenge> = null;
 /** 挑战结算结果。cover 模式的对比维度是「重来次数」。 */
 let challengeResult: { win: boolean; myUndos: number; bestUndos: number; fromName: string; isNewBest: boolean } | null = null;
+
+/**
+ * 当前是否在引导关里（非 null = 引导中）。
+ *
+ * ## 为什么不靠"关号是负数"来判断
+ *
+ * 关号负数确实能判断，但每个下游点都要自己写 `idx < 0` —— 漏一处就是
+ * 「引导关的星级写进了正式表」。用这个显式上下文，下游只判 `tutorialLevel`。
+ */
+let tutorialLevel: TutorialLevel | null = null;
+
+/** 引导关结算信息（结算页据此显示「第 2/3 步」和「下一关」）。 */
+let tutorialResult: { step: number; total: number; isLast: boolean } | null = null;
 
 /**
  * 冷启动流程（登录 / 配置 / 关卡表）是否已经走完。
@@ -840,7 +900,9 @@ session.on((e) => {
       // 没有级联的主题，印是当场落的，那就当场震
       vibeAt('seal');
     }
-    if (challenge) void onChallengeWin(e.steps, e.timeMs, e.path);
+    // 引导关优先：它不该走正式关的上报 / 星级 / 解锁皮肤 / 插屏广告
+    if (tutorialLevel) onTutorialWin();
+    else if (challenge) void onChallengeWin(e.steps, e.timeMs, e.path);
     else void onWin(e.steps, e.timeMs, e.path);
   }
   if (e.type === 'break') { audio.break(); vibeAt('trail'); }
@@ -1024,6 +1086,269 @@ async function onWin(steps: number, timeMs: number, path: number[], skipped = fa
     phase = 'result';
     setTimeout(() => { void ads.showInterstitial('result_interstitial'); }, 500);
   }, Math.max(1750, tail));
+}
+
+/**
+ * 进入一关引导。
+ *
+ * 与 `enterLevel` 的后半段（重置动画状态、arm 进场音）**共用同一套**，
+ * 因为引导关和正式关在"怎么玩"上完全一样：同一个盘面、同一套规则、
+ * 同一个会话。差别只在**通关之后**（见 `onWin` 里的 tutorial 分支）。
+ */
+function enterTutorialLevel(tut: TutorialLevel): void {
+  tutorialLevel = tut;
+  // 上一关的机制卡必须清掉。引导关**不弹**机制卡（它本来就在教），
+  // 但如果不清，上一关那张卡会残留在这块盘上 —— 讲的是别的东西，
+  // 而且点它还会写一条合并到「引导中」的 dismiss 埋点。
+  mechCard = null;
+  const level = tut.level;
+  session.load(buildCoverRuntime(level));
+  phase = 'playing';
+  winAnimStart = 0;
+  winCascadeMs = 0;
+  winSealAt = 0;
+  waveLit = new Set();
+  pressCell = -1;
+  pressAt = 0;
+  dropAt = new Map();
+  trailAt = 0;
+  waveAt = new Map();
+  shakeCell = -1;
+  shakeAt = 0;
+  fx.clear();
+  enterAt = Date.now();
+  armEnterCue();
+  // 埋点用负数关号，和正式关区分得开；`tutorial_step` 是后台看引导漏斗的口径
+  reportEvent('level_start', {
+    level_idx: level.idx,
+    diff: 0,
+    w: level.w,
+    h: level.h,
+    tutorial_step: tutorialStepOf(level.idx),
+  });
+}
+
+/**
+ * 引导关通关。
+ *
+ * ## 为什么单独一条路，而不是给正式关的 `onWin` 加 if
+ *
+ * 正式关的 `onWin` 里塞了上报、星级、解锁皮肤、乐观更新、插屏广告 ——
+ * 每一件在引导关都**不该发生**（新玩家第一局就弹插屏，
+ * 体验和收益都亏）。加 8 个 `if (!tutorial)` 比单独写一条路更容易漏。
+ *
+ * ## 最后一关通关要上报
+ *
+ * 三关全部完成才算「新手引导完成」。上报失败只记本地，
+ * 下次登录服务端会把它当"没完成"—— 所以这里失败要重试一次，
+ * 重试还失败就留在本地标记里，`boot()` 时补报（见 `flushTutorialDone`）。
+ */
+function onTutorialWin(): void {
+  const tut = tutorialLevel;
+  if (!tut) return;
+
+  winAnimStart = Date.now();
+  fx.clear();
+  const step = tutorialStepOf(tut.idx);
+  reportEvent('level_pass', {
+    level_idx: tut.idx,
+    steps: tut.level.required - 1,
+    time_ms: 0,
+    undos: session.state?.undos ?? 0,
+    skipped: false,
+    tutorial_step: step,
+  });
+
+  // 引导关的结算页要"下一关"按钮，但不该有分享 / 跳过
+  resultData = {
+    levelIdx: tut.idx,
+    steps: tut.level.required - 1,
+    shortest: tut.level.required - 1,
+    timeMs: 0,
+    unlockedSkin: null,
+    undos: session.state?.undos ?? 0,
+    skipped: false,
+    rejected: false,
+  };
+  // 引导关的"下一关"不是 `idx + 1`（那是 -2），由结算页自己按
+  // `nextTutorialIdx` 决定；这里只记"已通关"和进度序号。
+  tutorialResult = { step, total: TUTORIAL_COUNT, isLast: nextTutorialIdx(tut.idx) === null };
+
+  const sealMs = currentTheme()?.motion?.seal?.ms ?? 320;
+  const tail = winSealAt + sealMs + 700;
+  setTimeout(() => { phase = 'result'; }, Math.max(1750, tail));
+
+  // 最后一关：标记新手完成（本地先写，保证断网也不会重来一遍）
+  if (tutorialResult.isLast) {
+    progress.setTutorialDone();
+    void reportTutorialDone().catch(() => {
+      // 服务端没收到也不影响玩家继续玩；下次登录服务端会以为没完成，
+      // 由 `flushTutorialDone()` 在 boot 时补一次（见那里的说明）。
+    });
+  }
+}
+
+/**
+ * 引导关结算页的「下一关」。
+ *
+ * 三关串完后**不进正式关**，回大厅 —— 大厅的「开始游戏」就是第 1 关，
+ * 玩家在那儿已经学会怎么点了。
+ */
+function advanceTutorial(): void {
+  const tut = tutorialLevel;
+  if (!tut) return;
+  const next = nextTutorialIdx(tut.idx);
+  if (next === null) {
+    // 三关走完：清掉引导上下文，回大厅
+    tutorialLevel = null;
+    tutorialResult = null;
+    phase = 'home';
+    // 大厅的等级数字要跟着刷新（这里不改 maxLevel，只是重画）
+    syncHomeState();
+    reportEvent('tutorial_done', { steps: TUTORIAL_COUNT });
+    // 引导教过的机制立刻标记为已见 —— 不然第 33 关会再讲一遍星屑
+    markTutorialTaught();
+
+    // ── 顺势请他把昵称头像设上 ──
+    //
+    // 这是全局**意愿最高**的一刻：他刚学完、马上要开第一关、也即将分享。
+    // 再晚一点（等他被卡住）就变成"求他帮忙"，那时他只会关掉。
+    //
+    // 但仍然**不强制**：`getUserProfile` 会弹系统授权框，他拒绝就继续玩，
+    // 首页那条提示条还留着。三秒的 toast 只是把入口指给他看。
+    if (!progress.current.avatar) {
+      showToast('顺手设个头像昵称，好友才知道是谁在挑战', 3200);
+    } else {
+      showToast('引导完成，开始你的旅途', 2600);
+    }
+    return;
+  }
+  void enterLevel(next);
+}
+
+/**
+ * 回大厅，并清掉所有「只在关卡里成立」的上下文。
+ *
+ * ## 为什么必须收成一个函数
+ *
+ * 回大厅的入口有三个（结算页「返回」、游戏内「返回」、引导走完）。
+ * 各自写一遍清场的话，迟早漏一个 —— 而漏掉的后果不是崩溃，是**残留**：
+ * `tutorialLevel` 没清 → 下次进正式关仍被当成引导关（不写进度）；
+ * `mechCard` 没清 → 上一关的说明卡挂在新盘面上。
+ *
+ * 这类残留比"报错"难查得多：界面看起来正常，只是数据悄悄地不对。
+ */
+function backToHome(): void {
+  phase = 'home';
+  challenge = null;
+  challengeResult = null;
+  tutorialLevel = null;
+  tutorialResult = null;
+  mechCard = null;
+  syncHomeState();
+}
+
+/**
+ * 把本地进度同步到大厅页面状态。
+ *
+ * 抽出来是因为「回大厅」不止一个入口：启动完成、引导三关走完、从结算页返回。
+ * 三处各写一遍的话，漏掉一个字段的表现是——引导走完回大厅，
+ * 关卡数字还停在 1（玩家会以为自己的进度没动）。
+ */
+function syncHomeState(): void {
+  homePage = {
+    ...homePage,
+    maxLevel: progress.current.maxLevel,
+    currentLevel: progress.currentLevel,
+    levelCount: config?.coverLevelCount ?? config?.levelCount ?? levels.total,
+    nickname: progress.current.nickname || '玩家',
+    avatar: progress.current.avatar || '',
+    skinCount: progress.current.unlockedSkins.length,
+    totalSkins: SKINS.length,
+    starCount: totalStars(),
+    totalRetries: progress.current.totalRetries ?? 0,
+    // 昵称为空 → 提示完善。
+    //
+    // 判据用 `avatar` 而不是 `nickname`：服务端对新用户下发的是**空昵称**，
+    // 而客户端 `progress` 的默认昵称是「玩家」—— 用 nickname 判会恒为"已填"。
+    // 头像只有在玩家真的授权过之后才非空，这是可靠信号。
+    showProfilePrompt: !progress.current.avatar,
+  };
+}
+
+/**
+ * 判定这一关要不要弹「机制首见」说明卡。
+ *
+ * ## 为什么"第一次见到"由客户端算
+ *
+ * 1000 关的机制分布是生成器产出的（单向门首现第 13 关、星屑第 33 关、
+ * 钥匙门第 65 关、传送门第 153 关、冰面第 705 关）。让运营逐关标
+ * "这关弹什么"既做不完，也会和关卡表版本脱节。
+ *
+ * 所以扫这一关的 grid，看有哪些机制是**玩家还没见过**的。
+ * 见 `game/mechIntro.ts` 的完整说明。
+ *
+ * ## 三处不弹
+ *
+ * 1. 引导关（本来就在教，再弹一张是重复）
+ * 2. 挑战模式（好友链接进来的，突然弹一堆说明卡会打断"来比一比"的意图）
+ * 3. 运营关掉了 `features.mechIntro`
+ */
+function maybeShowMechCard(entry: LevelEntry): void {
+  if (!featureOn('mechIntro')) return;
+  if (tutorialLevel) return;
+  if (challenge) return;
+
+  const card = pickMechCard(entry, mechSeen);
+  if (!card) return;
+
+  mechCard = card;
+  mechShownAt = Date.now();
+  reportEvent('mech_card_show', {
+    level_idx: entry.idx,
+    mech: card.title,
+  });
+  // 立刻标记为已见：玩家可能一眼不看就拖线，不标记的话下次还会弹，
+  // 而重复弹同一张卡比不弹更糟（他会以为游戏卡了）
+  markSeen(mechSeen, entry);
+  saveMechSeen();
+  audio.light();
+}
+
+/** 关掉机制卡（点它 / 开始拖线 / 自动超时都走这里）。 */
+function dismissMechCard(reason: 'tap' | 'play' | 'timeout'): void {
+  if (!mechCard) return;
+  reportEvent('mech_card_dismiss', { mech: mechCard.title, reason });
+  mechCard = null;
+}
+
+/** 从本地读「已见机制」。损坏时当作空集合（会多讲一遍，但不会崩）。 */
+function loadMechSeen(): void {
+  mechSeen = new Set();
+  const raw = platform.storage.get(KEY_MECH_SEEN);
+  if (!raw) return;
+  try {
+    const arr = JSON.parse(raw) as unknown;
+    if (Array.isArray(arr)) {
+      for (const v of arr) if (typeof v === 'number') mechSeen.add(v);
+    }
+  } catch { /* 坏数据忽略 */ }
+}
+
+/** 写回本地。 */
+function saveMechSeen(): void {
+  platform.storage.set(KEY_MECH_SEEN, JSON.stringify([...mechSeen]));
+}
+
+/**
+ * 新手引导走完 → 把引导教过的机制标记为已见。
+ *
+ * 不标记的话：第 33 关会再给玩家讲一遍星屑（引导第 3 关刚教过），
+ * 他只会觉得"这游戏把我当第一次玩"。
+ */
+function markTutorialTaught(): void {
+  for (const m of TAUGHT_IN_TUTORIAL) mechSeen.add(m);
+  saveMechSeen();
 }
 
 /**
@@ -1268,6 +1593,22 @@ function bindDebugKeys(): void {
  * - 埋一条 `level_load_fail` 便于排查。
  */
 async function enterLevel(idx: number) {
+  // ── 引导关：前端生成，不占正式关号 ──
+  //
+  // 走独立分支而不是"假装它是一关正式的"：引导关不写 `level_records`、
+  // 不推进 `max_level`、不给星、不进地图页 —— 这些"不"如果散在各处
+  // 判断，漏一个就会让玩家在第 3 关郑重其事地跳过一关正式关卡。
+  // 集中在这一个入口，下游只认 `tutorialLevel !== null`。
+  const tut = tutorialByIndex(idx);
+  if (tut) {
+    enterTutorialLevel(tut);
+    return;
+  }
+
+  tutorialLevel = null;
+  // 换关时上一张卡必须清掉 —— 否则它会挂在新盘面上，讲的是上一关的机制
+  mechCard = null;
+
   // 关号越界（通关最后一关后点「下一关」会到这里）
   if (idx < 1 || idx > totalLevelCount()) {
     console.error('关号越界', idx);
@@ -1298,6 +1639,14 @@ async function enterLevel(idx: number) {
 
   const level = decodeCoverLevel(entry);
   session.load(buildCoverRuntime(level));
+
+  // ── 机制首见：该弹哪张卡 ──
+  //
+  // 在 `session.load` 之后、`phase = 'playing'` 之前判定：
+  // 判定要读这一关的 grid（已经解码好了），而卡片的生命周期
+  // 跟这一局绑定。放在 load 之前也行，但那时 `entry` 还没解码。
+  maybeShowMechCard(entry);
+
   phase = 'playing';
   winAnimStart = 0;
   winCascadeMs = 0;
@@ -1693,6 +2042,141 @@ async function editProfile(): Promise<void> {
   }
 }
 
+/**
+ * 打开意见反馈。
+ *
+ * 每次都清空上次的输入：玩家关掉弹层之后再打开，多半是想说**另一件事**，
+ * 残留的旧文字会让他把两件事混在一条里发出来。
+ */
+function openFeedback(): void {
+  feedbackOpen = true;
+  feedbackText = '';
+  feedbackImage = '';
+  feedbackSubmitting = false;
+  feedbackNotice = '';
+  reportEvent('feedback_open', { scene: phase });
+  audio.tap();
+}
+
+/**
+ * 弹系统键盘输入反馈正文。
+ *
+ * 拿不到键盘能力时**不改文案也不假装成功**：`drawFeedback` 那边已经
+ * 把输入框画成「当前环境不能输入文字」，这里直接返回。
+ */
+async function inputFeedbackText(): Promise<void> {
+  if (!platform.inputText) {
+    feedbackNotice = '当前环境不能输入文字';
+    return;
+  }
+  const r = await platform.inputText({
+    defaultValue: feedbackText,
+    confirmText: '完成',
+    maxLength: 500,
+    placeholder: '说说你遇到什么了',
+  });
+  if (r.kind === 'ok') {
+    feedbackText = r.text;
+    feedbackNotice = '';
+  } else if (r.kind === 'unsupported') {
+    feedbackNotice = '当前环境不能输入文字';
+  }
+  // cancel：什么都不做，保留原文本（玩家可能只是点掉了键盘）
+}
+
+/** 从相册选一张截图。 */
+async function pickFeedbackImage(): Promise<void> {
+  if (!platform.pickImage) {
+    feedbackNotice = '当前环境不能选图';
+    return;
+  }
+  const r = await platform.pickImage();
+  if (r.kind === 'ok') {
+    feedbackImage = r.path;
+    feedbackNotice = '';
+  } else if (r.kind === 'unsupported') {
+    // 相册权限被拒 / 老基础库没有这个 API
+    feedbackNotice = '打不开相册，可以直接提交文字';
+  }
+  // cancel：玩家自己取消，不提示（提示等于怪他）
+}
+
+/**
+ * 提交反馈。
+ *
+ * ## 图片读失败也照样提交
+ *
+ * 截图是**附加信息**，文字才是主体。为了传图而让整条反馈失败，
+ * 玩家只会觉得"反馈功能坏了"。所以图片读不出来就丢掉图、只发文字。
+ */
+async function submitFeedbackNow(): Promise<void> {
+  const content = feedbackText.trim();
+  if (!content) {
+    feedbackNotice = '写点内容再提交';
+    return;
+  }
+  if (feedbackSubmitting) return;
+
+  feedbackSubmitting = true;
+  feedbackNotice = '';
+
+  // 打发现场：玩家在哪一页、哪一关。运营看到「playing · 第 47 关」
+  // 比看到「有问题」有用得多。
+  const scene = phase === 'playing' || phase === 'result' ? 'playing' : phase;
+  const levelIdx = session.state?.runtime.level.idx ?? 0;
+
+  let image = '';
+  if (feedbackImage) {
+    // 小游戏端要先把临时文件读成 base64；Web 端返回 null（没有 FS 管理器）
+    const base64 = await readFileBase64(localPlatformCode() === 2 ? 'tt' : 'wx', feedbackImage);
+    if (base64) image = base64;
+  }
+
+  try {
+    await submitFeedback({ content, image, scene, levelIdx, context: deviceContext() });
+    reportEvent('feedback_submit', { has_image: !!image, scene });
+    feedbackOpen = false;
+    feedbackText = '';
+    feedbackImage = '';
+    showToast('收到了，谢谢', 2400);
+    audio.unlock();
+  } catch (e) {
+    // 失败**不清空内容** —— 玩家写了半天，网络一抖就没了是最气人的
+    feedbackNotice = '没发出去，检查网络再试一次';
+    console.warn('[feedback] 提交失败', e);
+  } finally {
+    feedbackSubmitting = false;
+  }
+}
+
+/**
+ * 机型 / 版本快照（随反馈一起上报）。
+ *
+ * 不引第三方 SDK：`getSystemInfoSync` 在两端同形，取几个排查最常用的字段。
+ * 包在 try 里 —— 这个函数失败绝不该让反馈发不出去。
+ */
+function deviceContext(): string {
+  try {
+    const g = globalThis as {
+      wx?: { getSystemInfoSync?: () => Record<string, unknown> };
+      tt?: { getSystemInfoSync?: () => Record<string, unknown> };
+    };
+    const api = localPlatformCode() === 2 ? g.tt : g.wx;
+    const s = api?.getSystemInfoSync?.() ?? {};
+    return JSON.stringify({
+      p: platform.name,
+      brand: s.brand ?? '',
+      model: s.model ?? '',
+      os: s.system ?? '',
+      sdk: s.SDKVersion ?? s.sdkVersion ?? '',
+      w: s.windowWidth ?? 0,
+      h: s.windowHeight ?? 0,
+    });
+  } catch {
+    return '';
+  }
+}
+
 /** 从服务端刷新进度（切后台回前台时）。 */async function refreshProgress() {
   try {
     const res = await fetchProfile();
@@ -1763,6 +2247,22 @@ function openSharePanel(levelIdx: number, undos: number | null, from: Phase = 'm
     showToast('分享挑战暂未开放');
     return;
   }
+
+  // ── 昵称头像没填：先提示一次 ──
+  //
+  // 这是唯一「不填就会后悔」的地方 —— 分享出去的卡片写着「玩家」而不是
+  // 他的名字（好友点开横幅也是「好友的挑战」）。但**不能拦着不让分享**：
+  // 拦下来等于因为一个可选项把核心玩法挡住。
+  //
+  // 所以：提示一次，然后照常打开面板。用 `shareNameHinted` 记住"提醒过了"，
+  // 避免玩家每次点分享都被念一遍（那会变成骚扰，反而让他不想填）。
+  if (!progress.current.avatar && !shareNameHinted) {
+    shareNameHinted = true;
+    showToast('没设昵称的话，好友看到的是「玩家」', 3000);
+    // 顺带把首页那条提示点亮（他从分享面板回来时能看到入口）
+    syncHomeState();
+  }
+
   const nickname = progress.current.nickname || '我';
   // 文案游标以关号为起点：同一关每次打开都是同一条，不会「刚才看着不错，再打开变了」
   sharePanel.copyIndex = levelIdx % shareCopyCount();
@@ -2192,6 +2692,39 @@ function onDown(clientX: number, clientY: number) {
   if (sharePanelOpen) {
     for (const b of sharePanelButtons) {
       if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
+    }
+    return;
+  }
+
+  // ── 机制说明卡：不拦操作，点它才关 ──
+  //
+  // 它**不是**模态：玩家可以忽略它直接点到棋盘上开始拖线。
+  // 所以这里只判"点是否落在卡上"，落在卡上就关，落在别处继续往下走。
+  if (mechCard) {
+    for (const b of mechButtons) {
+      if (hitButton(b, d.x, d.y)) {
+        dismissMechCard('tap');
+        pressedBtn = null;
+        return;
+      }
+    }
+    // 点到棋盘 → 玩家要开始玩了，卡让位（否则会挡住他正在看的地方）
+    dismissMechCard('play');
+  }
+
+  // ── 反馈弹层：模态 ──
+  //
+  // 排在分享抽屉之后、导航之前。它是从「我的」页打开的，
+  // 但绘制在全站模态层 —— 所以拦截也必须在这一层，
+  // 否则玩家会点到底下那一页的按钮。
+  if (feedbackOpen) {
+    for (const b of feedbackButtons) {
+      if (hitButton(b, d.x, d.y)) { pressedBtn = b.id; return; }
+    }
+    // 点卡外关闭（不提交，内容丢失 —— 但那是玩家自己的选择）
+    const r = feedbackCardRect();
+    if (d.x < r.x || d.x > r.x + r.w || d.y < r.y || d.y > r.y + r.h) {
+      pressedBtn = 'fbCancel';
     }
     return;
   }
@@ -2626,6 +3159,22 @@ function onUp() {
     if (id === 'shareGame') { openSharePanel(progress.currentLevel, null, 'profile'); return; }
     // 我的页「昵称头像」：微信资料必须由玩家手势触发，所以只能放在这里。
     if (id === 'editProfile') { void editProfile(); return; }
+    // 我的页「意见反馈」：文字 + 可选截图，落库给后台看
+    if (id === 'feedback') { openFeedback(); return; }
+    // 首页「完善昵称头像」提示条：与「我的 → 昵称头像」同一个动作
+    if (id === 'fillProfile') { void editProfile(); return; }
+    // ── 反馈弹层的按钮 ──
+    if (id === 'fbInput') { void inputFeedbackText(); return; }
+    if (id === 'fbPick') { void pickFeedbackImage(); return; }
+    if (id === 'fbSubmit') { void submitFeedbackNow(); return; }
+    if (id === 'fbCancel' || id === 'fbClose') {
+      // 关掉不清空输入之外的任何东西：文字留在模块变量里也没用
+      // （下次 `openFeedback` 会重置），这里只需关掉弹层。
+      feedbackOpen = false;
+      feedbackNotice = '';
+      audio.tap();
+      return;
+    }
     // 我的页「适龄提示」：首次启动弹过一次，这里随时能回看
     if (id === 'ageGate') {
       ageGateOpen = true;
@@ -2646,9 +3195,15 @@ function onUp() {
     // 游戏内
     if (id === 'hint') void useHint();
     else if (id === 'skip') void useSkip();
-    else if (id === 'backHome') { phase = 'home'; return; }
+    else if (id === 'backHome') { backToHome(); return; }
     else if (id === 'next') void enterLevel(pendingLevel);
-    else if (id === 'home') { phase = 'home'; challenge = null; challengeResult = null; return; }
+    // ── 引导关结算 ──
+    //
+    // 两个按钮都走 `advanceTutorial`：它自己判断"还有没有下一关"，
+    // 最后一关回大厅。不写成 `enterLevel(idx+1)` —— 引导关号是负数递减的，
+    // `+1` 会往前走（-3 → -2），玩家会一直在前两关打转。
+    else if (id === 'tutorialNext' || id === 'tutorialHome') { advanceTutorial(); return; }
+    else if (id === 'home') { backToHome(); return; }
     // 「重来」要回到**刚打完的这一关**，不是下一关。
     //
     // 以前写的是 `pendingLevel`（= 当前关 + 1）——
@@ -3205,7 +3760,16 @@ function renderFrame(now: number, dt: number): void {
   // 若跟着某一页画，从别处打开时就会被后面的页面盖住。
   // 见文件末尾的 `drawSharePanel` 调用点。
 
-  if (phase === 'result' && challengeResult) {
+  // 引导关结算：不走正式结算页（那里有步数/星级/分享，引导关全没有）
+  if (phase === 'result' && tutorialResult && tutorialLevel) {
+    resultButtons = drawTutorialResult(ctx, {
+      step: tutorialResult.step,
+      total: tutorialResult.total,
+      title: tutorialLevel.title,
+      lines: tutorialLevel.lines,
+      isLast: tutorialResult.isLast,
+    });
+  } else if (phase === 'result' && challengeResult) {
     resultButtons = drawChallengeResult(ctx, challengeResult);
   } else if (phase === 'result' && resultData) {
     // 全部通关 = 通关的关号已经等于总关数
@@ -3266,6 +3830,42 @@ function renderFrame(now: number, dt: number): void {
   // 不放进 `isNavPhase` 分支：结算页不是 nav 页，但它也要能开抽屉。
   if (sharePanelOpen) {
     sharePanelButtons = drawSharePanel(ctx, sharePanel);
+  }
+
+  // ── 机制首见说明卡 ──
+  //
+  // 画在页面之后、反馈弹层之前：它是**关卡内**的提示，
+  // 不该盖住全站模态（反馈 / 适龄）。
+  // 淡入 260ms；出现 5 秒后自动收，玩家一动也收（见 `dismissMechCard`）。
+  if (mechCard && phase === 'playing') {
+    const age = now - mechShownAt;
+    const FADE_IN = 260;
+    const HOLD = 5000;
+    const FADE_OUT = 320;
+    if (age > HOLD + FADE_OUT) {
+      dismissMechCard('timeout');
+    } else {
+      // 出现 0→1，收尾 1→0
+      const appear = age < FADE_IN
+        ? age / FADE_IN
+        : age <= HOLD ? 1 : 1 - (age - HOLD) / FADE_OUT;
+      mechButtons = drawMechCard(ctx, mechCard, appear);
+    }
+  }
+
+  // ── 意见反馈弹层 ──
+  //
+  // 与分享抽屉同层（页面与底栏之后、提示条之前）：
+  // 提交后的「收到了，谢谢」提示必须压在弹层之上才看得见。
+  if (feedbackOpen) {
+    feedbackButtons = drawFeedback(ctx, {
+      text: feedbackText,
+      imagePath: feedbackImage,
+      submitting: feedbackSubmitting,
+      notice: feedbackNotice,
+      canInput: !!platform.inputText,
+      canPick: !!platform.pickImage,
+    });
   }
 
   // ── 适龄提示（最上层，压过所有页面与弹层）──
@@ -3474,6 +4074,10 @@ async function boot() {
   profilePage.vibrateOn = platform.storage.get(KEY_VIBRATE) !== '1';
   audio.setVoice(progress.current.currentTheme);
 
+  // 机制首见记录（本地）。必须在**任何 `enterLevel` 之前**加载 ——
+  // 否则第一次进关时 `mechSeen` 是空的，会把引导教过的机制再讲一遍。
+  loadMechSeen();
+
   // ⓪ 适龄提示（首次启动）
   //
   // 放在最前面：它是提审要求，而且要在玩家看到任何界面之前出现 ——
@@ -3518,12 +4122,21 @@ async function boot() {
       // 老服务端不下发 `totalRetries`（undefined）时 `sync` 会跳过，保留本地值。
       adWatchCnt: loginRes.adWatchCnt,
       totalRetries: loginRes.totalRetries,
+      // 引导状态取**并集**：本地记过（断网走完三关）或服务端记过都算完成。
+      // 不能"以服务端为准"直接覆盖 —— 那次登录如果服务端数据是旧的
+      // （刚上报还没生效），会把本地的"已完成"冲掉，玩家被再弹一遍。
+      tutorialDone:
+        !!progress.current.tutorialDone || !!loginRes.tutorialDone,
     });
     syncSkinsPage();
     // 登录成功后补传缓冲 —— 这批事件（app_start 等）现在能带上 uid 了。
     // 不 flush 的话它们要等到攒满 20 条才发，而登录前那几条
     // 已经是「无 uid 的匿名事件」，白白丢掉按玩家聚合的价值。
     void tracker.flush();
+    // 本地记过"引导完成"但服务端不知道（上次上报失败）：补报一次。
+    if (progress.current.tutorialDone && !loginRes.tutorialDone) {
+      void reportTutorialDone().catch(() => { /* 下次登录再补 */ });
+    }
   } catch (e) {
     console.warn('[boot] 登录失败，使用本地进度', e);
   }
@@ -3576,18 +4189,26 @@ async function boot() {
     await enterLevel(challenge.levelIdx);
   } else {
     phase = 'home';
-    homePage = {
-      ...homePage,
-      maxLevel: progress.current.maxLevel,
-      currentLevel: progress.currentLevel,
-      levelCount: config?.coverLevelCount ?? config?.levelCount ?? levels.total,
-      nickname: progress.current.nickname || '玩家',
-      avatar: progress.current.avatar || '',
-      skinCount: progress.current.unlockedSkins.length,
-      totalSkins: SKINS.length,
-      starCount: totalStars(),
-      totalRetries: progress.current.totalRetries ?? 0,
-    };
+    syncHomeState();
+
+    // ── 首次启动：进引导 ──
+    //
+    // 判据三条，任意一条命中就**不弹**：
+    //
+    //   1. `tutorialDone`（本地或服务端任一处为 true）
+    //   2. `maxLevel > 0` —— 老存档没有这个字段，但已经通关过，
+    //      显然不需要再学一次（这条把上线前的老玩家全部排除掉）
+    //   3. 正在走挑战链接（上面那个分支已经处理，走到这里说明没有）
+    //
+    // 引导走完三关才写 `tutorialDone`，中途退出下次还会从第 1 关开始 ——
+    // 这是有意的：三关加起来不到一分钟，记住"做到第几关"的复杂度不值。
+    if (!progress.current.tutorialDone && progress.current.maxLevel <= 0) {
+      reportEvent('tutorial_start', {});
+      await enterLevel(FIRST_TUTORIAL_IDX);
+      return;
+    }
+
+    // 异步拉星级，不阻塞进大厅
     // 异步拉星级，不阻塞进大厅
     //
     // 拉的是 **cover 模式**的星级 —— cover 的星级按悔棋次数算，

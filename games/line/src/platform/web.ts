@@ -190,6 +190,41 @@ export const webPlatform: Platform = {
   /** 复制链接（与 `share` 内部的兜底同一个实现，避免两处不一致）。 */
   clipboard: { set: copyText },
 
+  /**
+   * 浏览器里用原生 `prompt` 收文字。
+   *
+   * 这不是"自己画输入框"，而是**浏览器自带的输入对话框** —— 中文输入法
+   * 正常工作，和系统键盘同一类东西。只为本地调试时能走完反馈流程，
+   * 玩家永远看不到它。
+   */
+  inputText(opts) {
+    if (typeof prompt !== 'function') return Promise.resolve({ kind: 'unsupported' } as const);
+    const v = prompt(opts.placeholder ?? '请输入', opts.defaultValue ?? '');
+    if (v === null) return Promise.resolve({ kind: 'cancel' } as const);
+    return Promise.resolve({ kind: 'ok', text: v } as const);
+  },
+
+  /** 浏览器用 `<input type=file>` 选图，同样只为本地调试。 */
+  pickImage() {
+    if (typeof document === 'undefined') return Promise.resolve({ kind: 'unsupported' } as const);
+    return new Promise((resolve) => {
+      const el = document.createElement('input');
+      el.type = 'file';
+      el.accept = 'image/*';
+      el.onchange = () => {
+        const f = el.files?.[0];
+        if (!f) {
+          resolve({ kind: 'cancel' } as const);
+          return;
+        }
+        // 用 object URL 代替小游戏的临时文件路径 —— 下游只当它是个可读的路径
+        resolve({ kind: 'ok', path: URL.createObjectURL(f) } as const);
+      };
+      el.oncancel = () => resolve({ kind: 'cancel' } as const);
+      el.click();
+    });
+  },
+
   vibrate(pattern: number | number[] = 15) {
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       navigator.vibrate(pattern);

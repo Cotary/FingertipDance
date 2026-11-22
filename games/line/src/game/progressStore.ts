@@ -51,6 +51,19 @@ export interface Progress {
   totalTimeMs: number;
   /** 累计重来次数（结算页点「重来」就 +1，主页/我的页的「重来累计」读它）。 */
   totalRetries: number;
+  /**
+   * 新手引导是否已完成。
+   *
+   * ## 为什么本地也要存一份
+   *
+   * 服务端那份是权威（换设备能同步），但**断网 / 登录失败时也要记住**：
+   * 玩家刚走完三关，网一断就该被当成"没学过"再弹一遍，体验很差。
+   *
+   * 两处取并集：任一处为 true 就算完成（`boot()` 里合并）。
+   * 不做成"以服务端为准覆盖本地"——那会让一次失败的登录把本地的
+   * "已完成"冲掉。
+   */
+  tutorialDone: boolean;
   /** 昵称（来自服务端登录响应）。 */
   nickname: string;
   /** 头像 URL（空则程序化生成）。 */
@@ -143,6 +156,10 @@ export class ProgressStore {
     totalSteps: 0,
     totalTimeMs: 0,
     totalRetries: 0,
+    // 引导未完成。老存档（这个字段还不存在时）读出来是 undefined，
+    // `restore()` 用 `?? ` 兜住 —— 但那时玩家其实早就玩过了，不该再弹一遍。
+    // 判据放在 `boot()`：`maxLevel > 0` 的一律视为走过引导（见那里的注释）。
+    tutorialDone: false,
     nickname: '玩家',
     avatar: '',
     uid: 0,
@@ -239,8 +256,13 @@ export class ProgressStore {
     platform.storage.set(KEY_PROGRESS, JSON.stringify(this.progress));
   }
 
-  /** 写入全量星级（首次进大厅时拉一次）。 */
-  setStars(stars: Record<string, number>): void {
+  /** 标记新手引导已完成（本地立即生效，服务端另报）。 */
+  setTutorialDone(): void {
+    this.progress.tutorialDone = true;
+    platform.storage.set(KEY_PROGRESS, JSON.stringify(this.progress));
+  }
+
+  /** 写入全量星级（首次进大厅时拉一次）。 */  setStars(stars: Record<string, number>): void {
     this.progress.stars = stars;
     platform.storage.set(KEY_PROGRESS, JSON.stringify(this.progress));
   }

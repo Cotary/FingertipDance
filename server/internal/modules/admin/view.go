@@ -161,6 +161,7 @@ func layout(title, active, who, body string) string {
 		{"/admin/players", "玩家", "players"},
 		{"/admin/levels", "关卡", "levels"},
 		{"/admin/ads", "广告", "ads"},
+		{"/admin/feedback", "反馈", "feedback"},
 		{"/admin/config", "配置", "config"},
 	}
 	var navHTML strings.Builder

@@ -34,11 +34,26 @@ func TestTotalRetriesComesFromUndos(t *testing.T) {
 func TestProfileReturnsAdWatchCnt(t *testing.T) {
 	src := readSource(t)
 
-	if !strings.Contains(src, "ad_watch_cnt FROM users WHERE id=$1") {
+	// 只断言「这条查询里包含 ad_watch_cnt」，不把整行 SQL 抄死 ——
+	// 之后往 SELECT 里加列（比如 tutorial_done）是常态，
+	// 抄整行会让无关改动把这条断言弄红，反而不想改它。
+	if !strings.Contains(src, "ad_watch_cnt") || !strings.Contains(src, "FROM users WHERE id=$1") {
 		t.Error("资料接口应从 users.ad_watch_cnt 读累计广告次数")
 	}
 	if !strings.Contains(src, `"adWatchCnt":`) {
 		t.Error("资料响应里要带 adWatchCnt")
+	}
+}
+
+// 新手引导完成状态必须落库并下发。
+func TestProfileReturnsTutorialDone(t *testing.T) {
+	src := readSource(t)
+
+	if !strings.Contains(src, "tutorial_done") {
+		t.Error("登录 / 资料接口要读 tutorial_done")
+	}
+	if !strings.Contains(src, `"tutorialDone":`) {
+		t.Error("响应里要带 tutorialDone，客户端才知道要不要弹引导")
 	}
 }
 

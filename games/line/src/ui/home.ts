@@ -28,6 +28,7 @@ import { DESIGN_W } from '../render/layout';
 import { roundRect } from '../render/board';
 import { fillGrain } from '../render/grain';
 import { trackedText, trackedTextRight, trackedWidth, type Button } from './hud';
+import { drawProfilePrompt } from './profilePrompt';
 
 export interface HomePageState {
   /**
@@ -69,6 +70,18 @@ export interface HomePageState {
    * 分享是核心玩法的一部分，不能因为一次网络失败就消失。
    */
   shareOn?: boolean;
+  /**
+   * 是否显示「完善昵称头像」提示条（昵称为空且不在引导中）。
+   *
+   * ## 为什么放在首页而不是弹窗
+   *
+   * `getUserProfile` 必须由用户手势触发，启动时自动调只会失败。
+   * 而首屏就弹"要不要把头像给我们"，玩家还没玩过任何东西 —— 凭什么给。
+   * 所以做成一条可忽略的提示，想填就点。
+   *
+   * 缺省 / undefined = 不显示（不给就不打扰）。
+   */
+  showProfilePrompt?: boolean;
 }
 
 // ── 版式刻度（设计稿 CSS × 2；y 已减去 36 的假状态栏）──
@@ -96,6 +109,11 @@ const M = {
   world: 788,
   worldH: 220,
 
+  /**
+   * 底部那一条的位置：分享挑战 / 完善资料**共用**这个槽位。
+   *
+   * 两者不会同时出现（见 `drawHomePage` 里替换的理由）。
+   */
   share: 1036,
   shareH: 88,
 
@@ -160,7 +178,20 @@ export function drawHomePage(ctx: CanvasRenderingContext2D, st: HomePageState, n
   //
   // `shareOn === false` 时整条不画（服务端功能开关关掉了分享挑战）：
   // 画出来却被点击拦截，比不画更让人困惑。
-  const shareBtn = st.shareOn === false ? null : drawShareStrip(ctx);
+  // ── 底部那一条：要么「完善资料」，要么「分享挑战」──
+  //
+  // ## 为什么是替换而不是叠加
+  //
+  // 这一屏的纵向间隙加起来只有 103px（CTA→世界卡 32、世界卡→分享条 28、
+  // 分享条→底注 43），而一条提示要 84 —— 叠上去必然压住别的元素。
+  // 硬挤的结果是「无尽征途」盖住金色 CTA，玩家连主按钮都点不到。
+  //
+  // 换掉分享条是安全的：分享入口还有两处（我的页、结算页），
+  // 少这一条不会让功能消失；而"头像没设"这件事，只有在这里说才有用。
+  const shareBtn = st.showProfilePrompt
+    ? null
+    : (st.shareOn === false ? null : drawShareStrip(ctx));
+  const fillBtn = st.showProfilePrompt ? drawProfilePrompt(ctx, M.share) : null;
 
   // ── 底注（居中，设计稿全页唯一一条居中文字）──
   const tip = '每关首次「提示」需看激励视频 · 跳过不给星';
@@ -171,7 +202,10 @@ export function drawHomePage(ctx: CanvasRenderingContext2D, st: HomePageState, n
     1167, 17, C.mutedSoft, 3.74, 500,
   );
 
-  return shareBtn ? [btn, shareBtn] : [btn];
+  const out: Button[] = [btn];
+  if (shareBtn) out.push(shareBtn);
+  if (fillBtn) out.push(...fillBtn);
+  return out;
 }
 
 /** 票券：左「继续 / 047」、右「∞ / 无尽」、撕口下三格读数。 */
